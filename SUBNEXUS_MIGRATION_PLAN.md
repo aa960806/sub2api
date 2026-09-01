@@ -143,13 +143,47 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 禁止在迁移中删除旧列、重命名旧表、重置余额/订单/用量、覆盖既有设置或写入会开启功能的默认值。
 - 每个迁移在空数据库、旧版本数据库、已部分执行数据库和重复启动场景各跑一次；保存文件 SHA256 和 SQL 审查结果。
 
+#### 6.1.1 同内容改名迁移的采用门禁
+
+2026-09-01 的静态审计发现，旧项目与目标 fork 有 23 组“SQL（按 runner 的 `TrimSpace` 规则）内容相同、文件名不同”的迁移。目标 runner 只按完整文件名查询 `schema_migrations`，因此同库启动时会把这些目标文件误判为未执行。映射和重跑风险如下（左侧为旧项目，右侧为目标 fork）：
+
+| 旧文件 | 目标文件 | 重跑分类 |
+| --- | --- | --- |
+| `175_add_usage_log_long_context_billing.sql` | `174_add_usage_log_long_context_billing.sql` | DDL |
+| `177_add_ops_system_logs_host.sql` / `177a_add_ops_system_logs_host_index_notx.sql` | `175_add_ops_system_logs_host.sql` / `175a_add_ops_system_logs_host_index_notx.sql` | DDL/索引 |
+| `182_ops_ingress_reject_aggregates.sql` | `183_ops_ingress_reject_aggregates.sql` | 表/索引 |
+| `183_auth_cache_invalidation_outbox.sql` | `184_auth_cache_invalidation_outbox.sql` | **含 INSERT/UPDATE/DELETE** |
+| `189_alipay_mobile_precreate_deep_link.sql` | `186_alipay_mobile_precreate_deep_link.sql` | **含 INSERT** |
+| `190_group_reasoning_effort_policy.sql` | `185_group_reasoning_effort_policy.sql` | DDL |
+| `193_allow_live_usage_request_type.sql` | `188_allow_live_usage_request_type.sql` | DDL |
+| `197_passkey_credentials.sql` | `191_passkey_credentials.sql` | **含 DELETE/建表** |
+| `204_add_usage_logs_api_key_latest_ip_index_notx.sql` | `174_add_usage_logs_api_key_latest_ip_index_notx.sql` | 索引 |
+| `205_add_group_peak_rate_multiplier_compat.sql` | `158_add_group_peak_rate_multiplier.sql` | DDL |
+| `209_add_usage_log_upstream_model_mismatch_index_notx.sql` | `195_add_usage_log_upstream_model_mismatch_index_notx.sql` | 索引 |
+| `235_group_video_model_prices.sql` / `236_group_audio_voice_pricing.sql` / `237_group_search_price_per_1k.sql` | `217_group_video_model_prices.sql` / `218_group_audio_voice_pricing.sql` / `219_group_search_price_per_1k.sql` | DDL |
+| `239_group_model_pricing.sql` / `240_enable_grok_media_generation_groups.sql` | `221_group_model_pricing.sql` / `158_enable_grok_media_generation_groups.sql` | **含 UPDATE** |
+| `241_group_usage_daily_rollups.sql` / `242_group_usage_rollup_timezone.sql` | `222_group_usage_daily_rollups.sql` / `223_group_usage_rollup_timezone.sql` | **含 INSERT/UPDATE/DELETE** |
+| `244_backfill_codex_fingerprint_seed.sql` | `225_backfill_codex_fingerprint_seed.sql` | **含 UPDATE** |
+| `245_channel_model_time_pricing.sql` | `225_channel_model_time_pricing.sql` | DDL |
+| `246_add_usage_log_effective_model_indexes_notx.sql` | `226_add_usage_log_effective_model_indexes_notx.sql` | 索引 |
+| `253_audit_logs.sql` | `180_audit_logs.sql` | **含 TRUNCATE/建表** |
+
+在取得线上记录前，不得假设上述旧文件是否已执行，也不得直接让候选 runner 全量启动。隔离克隆必须先做以下验证：
+
+1. 以旧项目迁移记录和目标文件 checksum 建立逐项 `old_filename -> target_filename -> exact_checksum` 清单；只有旧记录 checksum 与文件 checksum 完全一致时才允许采用。
+2. 为目标 runner 增加显式、可审计的 alias/adoption 规则：旧记录存在且目标记录缺失时，在同一 advisory lock 下跳过目标 SQL，并仅记录目标文件名与精确 checksum；不得做全局“同 checksum 即跳过”。
+3. `_notx` 索引映射必须额外核对 `to_regclass` 和索引定义；DDL/DML 映射必须在克隆中比较行数、金额、设置和对象定义前后差异。任何 hash 不一致、未知旧文件或对象不匹配都必须硬失败。
+4. 在空库、旧库、部分采用、重复启动和旧版本回滚克隆各运行一次；确认旧二进制可忽略新增记录/表，且 alias 记录不会开启任何功能。
+
+这项采用门禁优先于 Batch 1-4 的业务迁移；在门禁未通过前，不得用手工 `INSERT INTO schema_migrations`、删除记录、改名历史文件或关闭 checksum 校验来“让启动通过”。
+
 ### 6.2 同库前预检
 
 必须获得以下证据后才能切换：
 
 1. PostgreSQL 逻辑备份/快照成功，能列目录并校验 SHA256；Redis 持久化和恢复点明确。
 2. 记录线上应用镜像/提交、配置摘要、迁移记录、表计数、余额总额、未完成订单、订阅数量、用量窗口和关键索引。
-3. 将线上备份恢复到隔离数据库克隆，在克隆上按候选版本启动，自动迁移成功且无 checksum mismatch；随后用旧版本连接同一克隆并完成健康检查、登录、余额查询和只读 Gateway 请求。禁止用生产库承担这一步。
+3. 将线上备份恢复到隔离数据库克隆，在克隆上先完成 6.1.1 的改名迁移采用演练，再按候选版本启动；自动迁移成功且无 checksum mismatch，关键行数/金额/对象定义无非预期变化；随后用旧版本连接同一克隆并完成健康检查、登录、余额查询和只读 Gateway 请求。禁止用生产库承担这一步。
 4. 候选版本先以全部迁移开关关闭启动，确认旧 API、支付回调和后台任务无异常。
 5. 确认文件存储目录、Redis key namespace、定时任务锁和管理员开关不会与旧实例产生双写。
 
