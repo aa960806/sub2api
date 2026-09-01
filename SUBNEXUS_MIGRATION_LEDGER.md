@@ -26,11 +26,11 @@
 | B0-1 | 从目标 `main` 建立独立迁移分支 | 通过 | `feature/subnexus-migration`，HEAD 与 `main` 同源 |
 | B0-2 | 读取规划、旧项目记忆和线上文档 | 通过 | 记录于 `SUBNEXUS_CHANGE_MEMORY.md` |
 | B0-3 | 创建项目上下文、功能矩阵、台账 | 通过 | 上下文、功能矩阵、台账、变更记忆及切换/回滚手册已建立 |
-| B0-4 | 旧/新逐文件功能与迁移差异盘点 | 进行中 | 本地路径/迁移/路由初盘完成；Batch 1 细节已收到只读审计摘要，仍需收敛到最终映射 |
+| B0-4 | 旧/新逐文件功能与迁移差异盘点 | 通过（本地） | 已完成保留/排除功能的后端、前端、路由、设置、迁移对象和目标接入点映射；线上表状态仍单独以 B0-5 为准 |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 待证据 | 需维护者在当前 OVH 服务器执行命令 |
 | B0-6 | 线上 PostgreSQL 备份或可恢复副本 | 未开始 | 不得用生产库直接做本地测试 |
 | B0-7 | 隔离库跑候选迁移并启动旧版本回归 | 未开始 | 需 B0-5/B0-6 后执行 |
-| B0-8 | 新 fork 上游基线构建/测试 | 通过（重点包） | F 盘临时目录运行 `go test -tags=unit ./internal/config ./internal/repository ./internal/server/routes -count=1`，以及设置/公告/支付相关 service 定向单测，均通过；全量/集成测试待后续环境 |
+| B0-8 | 新 fork 上游基线构建/测试 | 通过（本地基线） | 后端 `go test ./... -run '^$' -count=1 -p=1` 退出 0（GOTMPDIR/GOCACHE 指向 F 盘）；前端 `pnpm typecheck`、`pnpm test:run`（249 files/1804 tests）、`pnpm build` 均退出 0；未代表隔离库或生产通过 |
 
 ## 实施批次
 
@@ -56,6 +56,9 @@
 | 证据 | 时间 | 结果 | 备注 |
 | --- | --- | --- |
 | 目标 fork 只读预检脚本 shell 语法 | 2026-09-01 Asia/Shanghai | 通过 | `tools/production-deploy/subnexus-readonly-preflight.sh` 由 Git Bash `bash -n` 校验；未执行生产预检 |
+| Go 后端编译级基线 | 2026-09-01 Asia/Shanghai | 通过 | 在 `backend` 模块执行 `go test ./... -run '^$' -count=1 -p=1`，退出码 0；专用 GOTMPDIR/GOCACHE 位于 `F:\MySub2` |
+| 前端冻结依赖与锁文件 | 2026-09-01 Asia/Shanghai | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` 完成；`frontend/pnpm-lock.yaml` SHA256 保持 `8DBD1876020E41B644D971414D29100C9F428F39EDE953C03D0442B834F6F3AF`，无 diff |
+| 前端 typecheck/Vitest/build | 2026-09-01 Asia/Shanghai | 通过 | `pnpm typecheck`、`pnpm test:run`（249 个文件/1804 个测试）、`pnpm build` 均退出码 0；仅有既有 Browserslist/Vite 警告 |
 | 同库切换手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_CUTOVER_RUNBOOK.md`；仅发布授权后使用 |
 | 回滚手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_ROLLBACK_RUNBOOK.md`；默认应用回滚，不自动恢复数据库 |
 | 线上实时预检 | 待维护者执行 | 待证据 | 需要脱敏回传脚本输出；脚本不执行迁移/备份/重启/切流 |
