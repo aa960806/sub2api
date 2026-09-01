@@ -1,0 +1,44 @@
+# SubNexus 回滚手册
+
+回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络和 release SHA；不得使用历史文档中的硬编码值代替实时 inspect。
+
+## 1. 功能异常
+
+立即把对应迁移功能开关改回 `false`，确认 API/UI/队列/定时任务停止写入，再保留日志和证据。不要删除新增表或修改已执行迁移文件。记录异常时间、功能开关、请求 ID 和数据库行数。
+
+## 2. 应用异常：快速回滚
+
+适用于隔离演练已证明旧版本兼容新增表/可选字段的情况：
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+docker inspect <旧容器名> <候选容器名> --format '{{.Name}} {{.Config.Image}} {{.State.Running}}'
+docker stop <候选容器名>
+docker start <旧容器名>
+nginx -t && nginx -s reload
+curl -fsS --max-time 8 https://<公网健康域名>/health
+```
+
+如果 Nginx 已切到候选端口，先恢复切换前配置副本再 reload。快速回滚不恢复数据库，因新增隔离表/可选字段应被旧版本忽略；切回后必须验证登录、API Key、余额、订阅、订单、支付回调、用量和健康检查。
+
+## 3. 应用无法启动
+
+保留候选容器、日志和数据库现场，先确认是否为配置、镜像权限、Redis 或连接问题：
+
+```bash
+docker logs --tail=300 <候选容器名>
+docker inspect <候选容器名> --format '{{json .Mounts}}'
+docker inspect <候选容器名> --format '{{json .NetworkSettings.Networks}}'
+```
+
+修复配置后仍失败则停止候选、启动旧容器并恢复入口。不要为“让旧版本启动”而手工删除 `schema_migrations` 记录或迁移表。
+
+## 4. 数据库灾难恢复（最后手段）
+
+只有确认数据已损坏、旧版本无法兼容迁移后的库、并得到维护者明确批准时才恢复切换前备份。恢复前冻结写入，评估备份之后新增的订单、余额和用量；恢复会丢失备份时间之后的数据，不能静默执行。
+
+恢复完成后必须校验：旧版本启动无 checksum 错误；用户、API Key、余额、订阅、订单、支付回调和用量正常；关键计数/金额与切换前审计记录一致；Redis 恢复点与数据库时间一致。恢复命令由维护者根据实时容器和备份路径填写，禁止直接复制历史示例中的密码或容器名。
+
+## 5. 记录与复盘
+
+每次回滚追加 `SUBNEXUS_CHANGE_MEMORY.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`：写明触发条件、开关、候选/旧版本 SHA、是否恢复数据库、备份校验和、验证结果和下一步。旧版本和备份在维护者确认前长期保留。
