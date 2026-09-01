@@ -223,6 +223,12 @@
 - 回滚点/回滚命令：本次仅文档变更；可回到父提交 `c836c2632` 或代码基线 `d596d0844`，不使用破坏性 Git 命令。
 - 下一步：先由维护者执行固定提交的只读 preflight 并脱敏回传；取得可恢复备份后，在隔离克隆验证 alias/adoption、同名 checksum 差异和旧版本回滚，再进入 Batch 1 代码迁移。
 
+## 2026-09-01（Asia/Shanghai）— 静态审计分类更正
+
+- 依据实际目标迁移 SQL 复核：`184_auth_cache_invalidation_outbox.sql` 的 `INSERT` 出现在函数体中，迁移执行阶段不会直接写 outbox，但文件会重建函数和触发器；`191_passkey_credentials.sql` 与 `180_audit_logs.sql` 本身均为建表/索引，不含直接 `DELETE` 或 `TRUNCATE`。
+- 规划 6.1.1 的表格已改为“函数体含 DML/触发器重建”和“纯建表/索引”；原审计记录保留，以上更正作为后续取信记录。
+- 本次仍未访问线上、未执行数据库写入；下一步不变：在隔离克隆验证对象契约和 alias/adoption 后再启动候选版本。
+
 ## 后续记录模板
 
 ```text

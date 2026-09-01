@@ -152,11 +152,11 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 | `175_add_usage_log_long_context_billing.sql` | `174_add_usage_log_long_context_billing.sql` | DDL |
 | `177_add_ops_system_logs_host.sql` / `177a_add_ops_system_logs_host_index_notx.sql` | `175_add_ops_system_logs_host.sql` / `175a_add_ops_system_logs_host_index_notx.sql` | DDL/索引 |
 | `182_ops_ingress_reject_aggregates.sql` | `183_ops_ingress_reject_aggregates.sql` | 表/索引 |
-| `183_auth_cache_invalidation_outbox.sql` | `184_auth_cache_invalidation_outbox.sql` | **含 INSERT/UPDATE/DELETE** |
+| `183_auth_cache_invalidation_outbox.sql` | `184_auth_cache_invalidation_outbox.sql` | **函数体含 DML/触发器重建** |
 | `189_alipay_mobile_precreate_deep_link.sql` | `186_alipay_mobile_precreate_deep_link.sql` | **含 INSERT** |
 | `190_group_reasoning_effort_policy.sql` | `185_group_reasoning_effort_policy.sql` | DDL |
 | `193_allow_live_usage_request_type.sql` | `188_allow_live_usage_request_type.sql` | DDL |
-| `197_passkey_credentials.sql` | `191_passkey_credentials.sql` | **含 DELETE/建表** |
+| `197_passkey_credentials.sql` | `191_passkey_credentials.sql` | **纯建表/索引** |
 | `204_add_usage_logs_api_key_latest_ip_index_notx.sql` | `174_add_usage_logs_api_key_latest_ip_index_notx.sql` | 索引 |
 | `205_add_group_peak_rate_multiplier_compat.sql` | `158_add_group_peak_rate_multiplier.sql` | DDL |
 | `209_add_usage_log_upstream_model_mismatch_index_notx.sql` | `195_add_usage_log_upstream_model_mismatch_index_notx.sql` | 索引 |
@@ -166,7 +166,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 | `244_backfill_codex_fingerprint_seed.sql` | `225_backfill_codex_fingerprint_seed.sql` | **含 UPDATE** |
 | `245_channel_model_time_pricing.sql` | `225_channel_model_time_pricing.sql` | DDL |
 | `246_add_usage_log_effective_model_indexes_notx.sql` | `226_add_usage_log_effective_model_indexes_notx.sql` | 索引 |
-| `253_audit_logs.sql` | `180_audit_logs.sql` | **含 TRUNCATE/建表** |
+| `253_audit_logs.sql` | `180_audit_logs.sql` | **纯建表/索引** |
 
 在取得线上记录前，不得假设上述旧文件是否已执行，也不得直接让候选 runner 全量启动。隔离克隆必须先做以下验证：
 
