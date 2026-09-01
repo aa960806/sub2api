@@ -20,7 +20,7 @@ sudo bash /srv/subnexus-repo/tools/production-deploy/subnexus-readonly-preflight
   /srv/subnexus-migration/preflight
 ```
 
-脚本对应用、Docker、PostgreSQL 和 Redis 只执行读取；唯一写入是证据目录中的 `evidence.txt`、SHA-256 文件和并发锁文件，不执行迁移、备份、DDL/DML、重启或切流。它会全量记录 `schema_migrations`（含旧编号）、Atlas revision 摘要、活动相关对象、开关和估算行数，并输出脱敏的 Nginx/存储配置摘要。请把脱敏后的内容回传到本地台账。证据中不得包含密码、Token、Cookie、JWT/TOTP secret、API Key、完整环境变量或完整 Nginx 配置。
+脚本对应用、Docker、PostgreSQL 和 Redis 只执行读取；唯一写入是证据目录中的 `evidence.txt`、SHA-256 文件和并发锁文件，不执行迁移、备份、DDL/DML、重启或切流。它会全量记录 `schema_migrations`（含旧编号）、Atlas revision 摘要、活动相关对象、旧/新活动设置 key 和估算行数，并输出脱敏的 Nginx/存储配置摘要。请把脱敏后的内容回传到本地台账。证据中不得包含密码、Token、Cookie、JWT/TOTP secret、API Key、完整环境变量或完整 Nginx 配置。
 
 ## 3. 备份与候选启动
 

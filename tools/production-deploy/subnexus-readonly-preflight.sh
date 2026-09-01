@@ -94,7 +94,7 @@ docker exec "$redis_container" sh -c 'command -v redis-cli >/dev/null' || fail "
 
 db_psql() {
   docker exec -i "$database_container" sh -c \
-    'password="$1"; user="$2"; database="$3"; shift 3; PGPASSWORD="$password" exec psql -X -v ON_ERROR_STOP=1 -U "$user" -d "$database" "$@"' \
+    'password="$1"; user="$2"; database="$3"; shift 3; PGPASSWORD="$password" PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=30s -c lock_timeout=3s" exec psql -X -v ON_ERROR_STOP=1 -U "$user" -d "$database" "$@"' \
     sh "$database_password" "$database_user" "$database_name" "$@"
 }
 
@@ -174,6 +174,10 @@ FROM schema_migrations;
 SELECT filename, checksum, applied_at
 FROM schema_migrations
 ORDER BY applied_at NULLS FIRST, filename;
+SELECT filename, checksum, applied_at
+FROM schema_migrations
+ORDER BY applied_at DESC NULLS LAST, filename DESC
+LIMIT 1;
 COMMIT;
 SQL
   else
@@ -203,6 +207,10 @@ FROM atlas_schema_revisions;
 SELECT version, description, type, applied, total, executed_at, hash
 FROM atlas_schema_revisions
 ORDER BY executed_at NULLS FIRST, version;
+SELECT version, description, type, applied, total, executed_at, hash
+FROM atlas_schema_revisions
+ORDER BY executed_at DESC NULLS LAST, version DESC
+LIMIT 1;
 COMMIT;
 SQL
   else
@@ -250,7 +258,7 @@ BEGIN READ ONLY;
 SET LOCAL default_transaction_read_only = on;
 SELECT key,
        CASE
-         WHEN key IN ('ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'invoice_config', 'battle_pass_config')
+         WHEN key IN ('ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'INVOICE_CONFIG', 'invoice_config', 'BATTLE_PASS_CONFIG', 'battle_pass_config')
            THEN 'enabled=' || COALESCE((regexp_match(value, '"enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
                 || ';value_length=' || length(value)::text
          WHEN key ILIKE '%secret%' OR key ILIKE '%password%' OR key ILIKE '%token%' THEN '[redacted]'
@@ -263,7 +271,8 @@ WHERE key IN (
   'subnexus_first_recharge_enabled', 'subnexus_invite_rewards_enabled',
   'invoice_enabled', 'battle_pass_enabled',
   'affiliate_enabled', 'channel_monitor_enabled',
-  'ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'invoice_config', 'battle_pass_config'
+  'ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'INVOICE_CONFIG', 'invoice_config',
+  'BATTLE_PASS_CONFIG', 'battle_pass_config'
 )
 ORDER BY key;
 SELECT relname AS table_name, n_live_tup::bigint AS estimated_rows
