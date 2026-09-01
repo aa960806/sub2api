@@ -170,12 +170,12 @@ SET LOCAL default_transaction_read_only = on;
 SELECT COUNT(*) AS migration_count,
        COALESCE(MAX(applied_at)::text, '(none)') AS latest_applied_at,
        COALESCE(MAX(filename), '(none)') AS lexicographic_latest_filename
-FROM schema_migrations;
+FROM public.schema_migrations;
 SELECT filename, checksum, applied_at
-FROM schema_migrations
+FROM public.schema_migrations
 ORDER BY applied_at NULLS FIRST, filename;
 SELECT filename, checksum, applied_at
-FROM schema_migrations
+FROM public.schema_migrations
 ORDER BY applied_at DESC NULLS LAST, filename DESC
 LIMIT 1;
 COMMIT;
@@ -203,12 +203,12 @@ BEGIN READ ONLY;
 SET LOCAL default_transaction_read_only = on;
 SELECT COUNT(*) AS revision_count,
        COALESCE(MAX(executed_at)::text, '(none)') AS latest_executed_at
-FROM atlas_schema_revisions;
+FROM public.atlas_schema_revisions;
 SELECT version, description, type, applied, total, executed_at, hash
-FROM atlas_schema_revisions
+FROM public.atlas_schema_revisions
 ORDER BY executed_at NULLS FIRST, version;
 SELECT version, description, type, applied, total, executed_at, hash
-FROM atlas_schema_revisions
+FROM public.atlas_schema_revisions
 ORDER BY executed_at DESC NULLS LAST, version DESC
 LIMIT 1;
 COMMIT;
@@ -222,6 +222,290 @@ SQL
   fi
 else
   printf '\n=== ATLAS_SCHEMA_REVISIONS ===\nABSENT\n' >> "$evidence_file"
+fi
+
+if [[ "$schema_table" != "" && "$schema_table" != "(null)" \
+  && ",${schema_columns:-}," == *,filename,* \
+  && ",${schema_columns:-}," == *,checksum,* \
+  && ",${schema_columns:-}," == *,applied_at,* ]]; then
+  db_psql -P pager=off <<'SQL' >> "$evidence_file"
+\pset footer off
+\pset null '(null)'
+\echo === RENAMED_MIGRATION_CONTRACT_INVENTORY ===
+BEGIN READ ONLY;
+SET LOCAL default_transaction_read_only = on;
+-- Exact old/target filename pairs are checked locally against the reviewed
+-- allowlist; production evidence supplies only the recorded rows.
+SELECT filename, checksum, applied_at
+FROM public.schema_migrations
+WHERE filename = ANY (ARRAY[
+  '205_add_group_peak_rate_multiplier_compat.sql',
+  '158_add_group_peak_rate_multiplier.sql',
+  '240_enable_grok_media_generation_groups.sql',
+  '158_enable_grok_media_generation_groups.sql',
+  '175_add_usage_log_long_context_billing.sql',
+  '174_add_usage_log_long_context_billing.sql',
+  '204_add_usage_logs_api_key_latest_ip_index_notx.sql',
+  '174_add_usage_logs_api_key_latest_ip_index_notx.sql',
+  '177_add_ops_system_logs_host.sql',
+  '175_add_ops_system_logs_host.sql',
+  '177a_add_ops_system_logs_host_index_notx.sql',
+  '175a_add_ops_system_logs_host_index_notx.sql',
+  '253_audit_logs.sql',
+  '180_audit_logs.sql',
+  '182_ops_ingress_reject_aggregates.sql',
+  '183_ops_ingress_reject_aggregates.sql',
+  '183_auth_cache_invalidation_outbox.sql',
+  '184_auth_cache_invalidation_outbox.sql',
+  '190_group_reasoning_effort_policy.sql',
+  '185_group_reasoning_effort_policy.sql',
+  '189_alipay_mobile_precreate_deep_link.sql',
+  '186_alipay_mobile_precreate_deep_link.sql',
+  '193_allow_live_usage_request_type.sql',
+  '188_allow_live_usage_request_type.sql',
+  '197_passkey_credentials.sql',
+  '191_passkey_credentials.sql',
+  '209_add_usage_log_upstream_model_mismatch_index_notx.sql',
+  '195_add_usage_log_upstream_model_mismatch_index_notx.sql',
+  '235_group_video_model_prices.sql',
+  '217_group_video_model_prices.sql',
+  '236_group_audio_voice_pricing.sql',
+  '218_group_audio_voice_pricing.sql',
+  '237_group_search_price_per_1k.sql',
+  '219_group_search_price_per_1k.sql',
+  '239_group_model_pricing.sql',
+  '221_group_model_pricing.sql',
+  '241_group_usage_daily_rollups.sql',
+  '222_group_usage_daily_rollups.sql',
+  '242_group_usage_rollup_timezone.sql',
+  '223_group_usage_rollup_timezone.sql',
+  '244_backfill_codex_fingerprint_seed.sql',
+  '225_backfill_codex_fingerprint_seed.sql',
+  '245_channel_model_time_pricing.sql',
+  '225_channel_model_time_pricing.sql',
+  '246_add_usage_log_effective_model_indexes_notx.sql',
+  '226_add_usage_log_effective_model_indexes_notx.sql'
+]::text[])
+ORDER BY applied_at NULLS FIRST, filename;
+
+SELECT table_name, column_name, data_type, udt_name, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+    (table_name = 'groups' AND column_name IN (
+      'peak_rate_enabled', 'peak_start', 'peak_end', 'peak_rate_multiplier',
+      'allow_image_generation', 'max_reasoning_effort', 'reasoning_effort_mappings',
+      'video_model_prices', 'audio_realtime_price_per_min',
+      'audio_tts_price_per_million_chars', 'audio_stt_price_per_hour',
+      'search_price_per_1k', 'long_context_pricing_enabled', 'model_pricing'
+    ))
+    OR (table_name = 'usage_logs' AND column_name IN (
+      'long_context_billing_applied', 'request_type', 'upstream_model_mismatch'
+    ))
+    OR (table_name = 'ops_system_logs' AND column_name = 'host')
+    OR (table_name = 'channel_model_pricing' AND column_name = 'time_pricing')
+    OR table_name IN (
+      'audit_logs',
+      'ops_ingress_reject_aggregates',
+      'auth_cache_invalidation_outbox',
+      'passkey_user_handles',
+      'passkey_credentials',
+      'usage_group_daily_rollups',
+      'usage_group_rollup_state'
+    )
+  )
+ORDER BY table_name, ordinal_position;
+
+SELECT idx.relname AS index_name,
+       tbl.relname AS table_name,
+       i.indisvalid,
+       i.indisready,
+       i.indisunique,
+       replace(pg_get_indexdef(i.indexrelid), E'\n', ' ') AS index_definition
+FROM pg_class idx
+JOIN pg_index i ON i.indexrelid = idx.oid
+JOIN pg_class tbl ON tbl.oid = i.indrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND idx.relname = ANY (ARRAY[
+    'idx_usage_logs_api_key_latest_ip',
+    'idx_ops_system_logs_host_created_at',
+    'idx_audit_logs_created_at_id',
+    'idx_audit_logs_actor_created',
+    'idx_audit_logs_action',
+    'idx_audit_logs_client_ip',
+    'idx_ops_ingress_reject_aggregates_bucket',
+    'idx_ops_ingress_reject_aggregates_reason_bucket',
+    'idx_ops_ingress_reject_aggregates_ip_bucket',
+    'idx_auth_cache_invalidation_outbox_available',
+    'idx_auth_cache_invalidation_outbox_lease',
+    'idx_auth_cache_invalidation_outbox_cache_key',
+    'idx_auth_cache_invalidation_outbox_created_at',
+    'passkey_credentials_user_id_idx',
+    'passkey_credentials_last_used_at_idx',
+    'idx_usage_logs_upstream_model_mismatch_created_at',
+    'idx_usage_logs_effective_requested_model_created',
+    'idx_usage_logs_effective_upstream_model_created'
+  ]::text[])
+ORDER BY idx.relname;
+
+SELECT c.conrelid::regclass::text AS table_name,
+       c.conname,
+       c.contype,
+       c.convalidated,
+       c.confdeltype,
+       NULLIF(c.confrelid, 0)::regclass::text AS referenced_table,
+       replace(pg_get_constraintdef(c.oid), E'\n', ' ') AS constraint_definition
+FROM pg_constraint c
+JOIN pg_class tbl ON tbl.oid = c.conrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND (
+    (tbl.relname = 'ops_ingress_reject_aggregates')
+    OR (tbl.relname = 'usage_logs' AND c.conname = 'usage_logs_request_type_check')
+    OR (tbl.relname = 'auth_cache_invalidation_outbox')
+    OR tbl.relname IN (
+      'audit_logs',
+      'passkey_user_handles',
+      'passkey_credentials',
+      'usage_group_daily_rollups',
+      'usage_group_rollup_state'
+    )
+  )
+ORDER BY table_name, c.conname;
+
+SELECT n.nspname AS schema_name,
+       p.proname,
+       pg_get_function_identity_arguments(p.oid) AS arguments,
+       replace(pg_get_functiondef(p.oid), E'\n', ' ') AS function_definition
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+  AND p.proname = ANY (ARRAY[
+    'enqueue_auth_cache_invalidation',
+    'enqueue_api_key_auth_cache_invalidation',
+    'enqueue_user_auth_cache_invalidation',
+    'enqueue_group_auth_cache_invalidation',
+    'enqueue_allowed_group_auth_cache_invalidation',
+    'invalidate_group_usage_rollup_state',
+    'invalidate_group_usage_rollup_state_after_insert'
+  ]::text[])
+ORDER BY p.proname, arguments;
+
+SELECT n.nspname AS schema_name,
+       c.relname AS table_name,
+       t.tgname,
+       t.tgenabled,
+       replace(pg_get_triggerdef(t.oid), E'\n', ' ') AS trigger_definition
+FROM pg_trigger t
+JOIN pg_class c ON c.oid = t.tgrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE NOT t.tgisinternal
+  AND n.nspname = 'public'
+  AND t.tgname = ANY (ARRAY[
+    'trg_api_keys_auth_cache_invalidation',
+    'trg_users_auth_cache_invalidation',
+    'trg_groups_auth_cache_invalidation',
+    'trg_user_allowed_groups_auth_cache_invalidation',
+    'usage_logs_group_rollup_invalidate_insert',
+    'usage_logs_group_rollup_invalidate_delete',
+    'usage_logs_group_rollup_invalidate_update'
+  ]::text[])
+ORDER BY c.relname, t.tgname;
+
+COMMIT;
+SQL
+
+  groups_table="$(db_psql -Atc "SELECT to_regclass('public.groups')")"
+  groups_columns="$(db_psql -Atc "SELECT string_agg(column_name, ',' ORDER BY column_name) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'groups'")"
+  if [[ "$groups_table" != "" && "$groups_table" != "(null)" && ",$groups_columns," == *,platform,* && ",$groups_columns," == *,allow_image_generation,* ]]; then
+    db_psql -P pager=off <<'SQL' >> "$evidence_file"
+\pset footer off
+\pset null '(null)'
+\echo === RENAMED_MIGRATION_DATA_POSTCONDITIONS_GROUPS ===
+\echo NOTE=mutable_operator_setting_nonzero_is_not_an_alias_failure
+BEGIN READ ONLY;
+SET LOCAL default_transaction_read_only = on;
+SELECT 'grok_allow_image_generation_false' AS check_name,
+       COUNT(*)::bigint AS observed_rows
+FROM public.groups
+WHERE platform = 'grok' AND allow_image_generation = FALSE;
+COMMIT;
+SQL
+  else
+    printf '\n=== RENAMED_MIGRATION_DATA_POSTCONDITIONS_GROUPS ===\nSKIPPED_REQUIRED_OBJECT_ABSENT\n' >> "$evidence_file"
+  fi
+
+  if [[ "$groups_table" != "" && "$groups_table" != "(null)" && ",$groups_columns," == *,long_context_pricing_enabled,* ]]; then
+    db_psql -P pager=off <<'SQL' >> "$evidence_file"
+\pset footer off
+\pset null '(null)'
+\echo === RENAMED_MIGRATION_DATA_POSTCONDITIONS_LONG_CONTEXT ===
+\echo NOTE=mutable_operator_setting_nonzero_is_not_an_alias_failure
+BEGIN READ ONLY;
+SET LOCAL default_transaction_read_only = on;
+SELECT 'groups_long_context_not_true' AS check_name,
+       COUNT(*)::bigint AS observed_rows
+FROM public.groups
+WHERE long_context_pricing_enabled IS DISTINCT FROM TRUE;
+COMMIT;
+SQL
+  else
+    printf '\n=== RENAMED_MIGRATION_DATA_POSTCONDITIONS_LONG_CONTEXT ===\nSKIPPED_REQUIRED_OBJECT_ABSENT\n' >> "$evidence_file"
+  fi
+
+  accounts_table="$(db_psql -Atc "SELECT to_regclass('public.accounts')")"
+  accounts_columns="$(db_psql -Atc "SELECT string_agg(column_name, ',' ORDER BY column_name) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts'")"
+  if [[ "$accounts_table" != "" && "$accounts_table" != "(null)" && ",$accounts_columns," == *,deleted_at,* && ",$accounts_columns," == *,platform,* && ",$accounts_columns," == *,type,* && ",$accounts_columns," == *,extra,* ]]; then
+    db_psql -P pager=off <<'SQL' >> "$evidence_file"
+\pset footer off
+\pset null '(null)'
+\echo === RENAMED_MIGRATION_DATA_POSTCONDITIONS_CODEX_SEED ===
+BEGIN READ ONLY;
+SET LOCAL default_transaction_read_only = on;
+SELECT 'invalid_codex_fingerprint_seed' AS check_name,
+       COUNT(*)::bigint AS violating_rows
+FROM public.accounts
+WHERE deleted_at IS NULL
+  AND platform = 'openai'
+  AND type = 'oauth'
+  AND COALESCE(extra->>'codex_fingerprint_mode', '') IN ('device', 'session', 'full')
+  AND (
+    extra->>'codex_fingerprint_seed' IS NULL
+    OR btrim(extra->>'codex_fingerprint_seed') = ''
+    OR NOT (
+      extra->>'codex_fingerprint_seed' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      AND extra->>'codex_fingerprint_seed' <> '00000000-0000-0000-0000-000000000000'
+    )
+  );
+COMMIT;
+SQL
+  else
+    printf '\n=== RENAMED_MIGRATION_DATA_POSTCONDITIONS_CODEX_SEED ===\nSKIPPED_REQUIRED_OBJECT_ABSENT\n' >> "$evidence_file"
+  fi
+
+  rollup_state_table="$(db_psql -Atc "SELECT to_regclass('public.usage_group_rollup_state')")"
+  rollup_state_columns="$(db_psql -Atc "SELECT string_agg(column_name, ',' ORDER BY column_name) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usage_group_rollup_state'")"
+  if [[ "$rollup_state_table" != "" && "$rollup_state_table" != "(null)" && ",$rollup_state_columns," == *,id,* ]]; then
+    db_psql -P pager=off <<'SQL' >> "$evidence_file"
+\pset footer off
+\pset null '(null)'
+\echo === RENAMED_MIGRATION_DATA_POSTCONDITIONS_ROLLUP ===
+BEGIN READ ONLY;
+SET LOCAL default_transaction_read_only = on;
+SELECT 'usage_group_rollup_state_singleton' AS check_name,
+       COUNT(*)::bigint AS id_one_rows
+FROM public.usage_group_rollup_state
+WHERE id = 1;
+COMMIT;
+SQL
+  else
+    printf '\n=== RENAMED_MIGRATION_DATA_POSTCONDITIONS_ROLLUP ===\nSKIPPED_REQUIRED_OBJECT_ABSENT\n' >> "$evidence_file"
+  fi
+elif [[ "$schema_table" != "" && "$schema_table" != "(null)" ]]; then
+  printf '\n=== RENAMED_MIGRATION_CONTRACT_INVENTORY ===\nSKIPPED_SCHEMA_MIGRATIONS_COLUMNS_MISMATCH=%s\n' "${schema_columns:-'(none)'}" >> "$evidence_file"
+else
+  printf '\n=== RENAMED_MIGRATION_CONTRACT_INVENTORY ===\nSKIPPED_SCHEMA_MIGRATIONS_ABSENT\n' >> "$evidence_file"
 fi
 
 db_psql -P pager=off <<'SQL' >> "$evidence_file"
@@ -270,13 +554,14 @@ SELECT key,
          WHEN key ILIKE '%secret%' OR key ILIKE '%password%' OR key ILIKE '%token%' THEN '[redacted]'
          ELSE value
        END AS value
-FROM settings
+FROM public.settings
 WHERE key IN (
   'subnexus_checkin_enabled', 'subnexus_leaderboard_enabled',
   'subnexus_activity_center_enabled', 'subnexus_marquee_enabled',
   'subnexus_first_recharge_enabled', 'subnexus_invite_rewards_enabled',
   'invoice_enabled', 'battle_pass_enabled',
   'affiliate_enabled', 'channel_monitor_enabled',
+  'ALIPAY_MOBILE_PRECREATE_DEEP_LINK',
   'ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'INVOICE_CONFIG', 'invoice_config',
   'BATTLE_PASS_CONFIG', 'battle_pass_config'
 )

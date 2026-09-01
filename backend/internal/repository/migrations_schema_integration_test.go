@@ -182,6 +182,14 @@ WHERE ns.nspname = 'public'
 	requireColumn(t, tx, "user_allowed_groups", "created_at", "timestamp with time zone", 0, false)
 }
 
+func TestMigrationsRunner_LegacyAliasContractsMatchCurrentSchema(t *testing.T) {
+	for migrationName := range migrationAliasContracts {
+		t.Run(migrationName, func(t *testing.T) {
+			require.NoError(t, validateMigrationAliasContract(context.Background(), integrationDB, migrationName))
+		})
+	}
+}
+
 func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) {
 	tx := testTx(t)
 

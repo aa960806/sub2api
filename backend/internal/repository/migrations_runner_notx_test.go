@@ -125,6 +125,9 @@ func TestApplyMigrationsFS_NonTransactionalMigration_LatestAPIKeyIPIndexDropsInv
 	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
 		WithArgs(latestAPIKeyIPIndexMigration).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs("204_add_usage_logs_api_key_latest_ip_index_notx.sql").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery("SELECT EXISTS \\(").
 		WithArgs(latestAPIKeyIPIndex).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
@@ -164,6 +167,9 @@ func TestApplyMigrationsFS_NonTransactionalMigration_UsageModelMismatchIndexDrop
 	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
 		WithArgs(usageLogsUpstreamModelMismatchIndexMigration).
 		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs("209_add_usage_log_upstream_model_mismatch_index_notx.sql").
+		WillReturnError(sql.ErrNoRows)
 	mock.ExpectQuery("SELECT EXISTS \\(").
 		WithArgs(usageLogsUpstreamModelMismatchIndex).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
@@ -199,6 +205,9 @@ func TestApplyMigrationsFS_NonTransactionalMigration_EffectiveModelIndexesDropIn
 	prepareMigrationsBootstrapExpectations(mock)
 	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
 		WithArgs(usageLogsEffectiveModelIndexesMigration).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs("246_add_usage_log_effective_model_indexes_notx.sql").
 		WillReturnError(sql.ErrNoRows)
 	for _, indexName := range []string{usageLogsEffectiveRequestedModelIndex, usageLogsEffectiveUpstreamModelIndex} {
 		mock.ExpectQuery("SELECT EXISTS \\(").

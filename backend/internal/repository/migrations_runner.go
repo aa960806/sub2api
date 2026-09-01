@@ -86,6 +86,9 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 	"123_fix_legacy_auth_source_grant_on_signup_defaults.sql": newMigrationChecksumCompatibilityRule("2ce43c2cd89e9f9e1febd34a407ed9e84d177386c5544b6f02c1f58a21129f57", "6cd33422f215dcd1f486ab6f35c0ea5805d9ca69bb25906d94bc649156657145"),
 	"159_batch_image_foundation.sql":                          newMigrationChecksumCompatibilityRule("d902b70982025ec519749faf058aab7631e82c3f48167b9a4ae4db718eb72cce", "82da85b5d98e67a0507647b873a40373e84538e4adafdeed6767c0ac8b6570b2"),
 	"161_batch_image_pricing_snapshot.sql":                    newMigrationChecksumCompatibilityRule("4012af3e43636cb6af22e0176d59d1fcc70615c0f310194329461ae462c4fbd6", "96d915c9b7a6941ae99039e0ff3f1a61481eb9bddd933d11c6fadb2274554e87"),
+	// The target file only adds a descriptive comment; the legacy database
+	// already contains the same ALTER/INDEX statements under this filename.
+	"181_group_duplicate_operation_id.sql": newMigrationChecksumCompatibilityRule("429011c514dfa3a65dd844cb19dfe32ceeae4068f499b15f915cee97687ed7bd", "cf273ce97ebbd045636fdc724f2c284e8258b7049fdb630e6e6bb1606749f828"),
 	// 195 originally seeded mode=v2; flipped to v1 (safe default / opt-in v2). Existing DBs
 	// that already applied the v2 seed keep their row and the historical checksum.
 	"195_channel_monitor_mode.sql": newMigrationChecksumCompatibilityRule("13f3792f3e3e53ee96e26415c884cf8062c77172824b54fcc9a8c0c2b1f185ec", "4c74fe33ef2274cc72e1bb49671e651274532c034b29f5b2982c2a4c88d101a6"),
@@ -175,6 +178,9 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	if err != nil {
 		return fmt.Errorf("list migrations: %w", err)
 	}
+	if err := validateLegacyMigrationAliasMap(); err != nil {
+		return fmt.Errorf("validate legacy migration alias map: %w", err)
+	}
 	sort.Strings(files) // 确保按文件名顺序执行迁移
 
 	for _, name := range files {
@@ -194,10 +200,14 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		sum := sha256.Sum256([]byte(content))
 		checksum := hex.EncodeToString(sum[:])
 
-		// 检查该迁移是否已经应用
-		var existing string
-		rowErr := lockConn.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE filename = $1", name).Scan(&existing)
-		if rowErr == nil {
+		// 检查该迁移是否已经应用。
+		// 迁移记录始终按目标文件名保存；legacy alias 只在目标记录缺失时
+		// 额外检查，避免把“同 checksum”误当成全局跳过条件。
+		existing, found, rowErr := lookupMigrationChecksum(ctx, lockConn, name)
+		if rowErr != nil {
+			return fmt.Errorf("check migration %s: %w", name, rowErr)
+		}
+		if found {
 			// 迁移已应用，验证校验和是否匹配
 			if existing != checksum {
 				// 兼容特定历史误改场景（仅白名单规则），其余仍保持严格不可变约束。
@@ -218,8 +228,36 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 			}
 			continue // 迁移已应用且校验和匹配，跳过
 		}
-		if !errors.Is(rowErr, sql.ErrNoRows) {
-			return fmt.Errorf("check migration %s: %w", name, rowErr)
+
+		// 旧二开和目标 fork 对部分同一 SQL 使用了不同文件名。若旧记录
+		// 存在且 checksum 与白名单完全匹配，说明 SQL 已在该数据库执行过；
+		// 在同一 advisory lock 下只补写目标文件名记录，不再次执行 SQL。
+		if alias, ok := legacyMigrationAliases[name]; ok {
+			legacyChecksum, legacyFound, aliasErr := lookupMigrationChecksum(ctx, lockConn, alias.legacyFilename)
+			if aliasErr != nil {
+				return fmt.Errorf("check legacy migration alias %s for %s: %w", alias.legacyFilename, name, aliasErr)
+			}
+			if legacyFound {
+				if checksum != alias.checksum {
+					return fmt.Errorf(
+						"legacy migration alias %s target checksum mismatch (file=%s expected=%s)",
+						name, checksum, alias.checksum,
+					)
+				}
+				if legacyChecksum != alias.checksum {
+					return fmt.Errorf(
+						"legacy migration alias %s checksum mismatch (db=%s expected=%s)",
+						alias.legacyFilename, legacyChecksum, alias.checksum,
+					)
+				}
+				if err := validateMigrationAliasContract(ctx, lockConn, name); err != nil {
+					return fmt.Errorf("validate legacy migration %s contract before adopting as %s: %w", alias.legacyFilename, name, err)
+				}
+				if err := adoptLegacyMigration(ctx, lockConn, name, checksum); err != nil {
+					return fmt.Errorf("adopt legacy migration %s as %s: %w", alias.legacyFilename, name, err)
+				}
+				continue
+			}
 		}
 
 		nonTx, err := validateMigrationExecutionMode(name, content)
@@ -278,6 +316,46 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		}
 	}
 
+	return nil
+}
+
+// lookupMigrationChecksum looks up one migration record without treating a missing
+// row as an error. Keeping this query in one place ensures alias adoption and
+// the normal path use identical lookup semantics.
+func lookupMigrationChecksum(ctx context.Context, db migrationConnection, name string) (string, bool, error) {
+	var checksum string
+	err := db.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE filename = $1", name).Scan(&checksum)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return checksum, true, nil
+}
+
+// adoptLegacyMigration records a target filename after its legacy alias has
+// been verified. The insert is intentionally metadata-only: the old SQL is
+// never replayed, and a conflicting target row is checked after the insert.
+func adoptLegacyMigration(ctx context.Context, db migrationConnection, targetFilename, checksum string) error {
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO schema_migrations (filename, checksum)
+		VALUES ($1, $2)
+		ON CONFLICT (filename) DO NOTHING
+	`, targetFilename, checksum); err != nil {
+		return err
+	}
+
+	recorded, found, err := lookupMigrationChecksum(ctx, db, targetFilename)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("target migration record was not written")
+	}
+	if recorded != checksum {
+		return fmt.Errorf("target migration record checksum mismatch (db=%s expected=%s)", recorded, checksum)
+	}
 	return nil
 }
 
