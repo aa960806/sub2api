@@ -11,7 +11,14 @@ app_container="${1:?usage: $0 APP_CONTAINER [PUBLIC_HEALTH_URL] [EVIDENCE_ROOT]}
 public_url="${2:-}"
 evidence_root="${3:-/root/subnexus-migration/preflight}"
 
-for command_name in docker curl awk grep sed date mkdir chmod sha256sum flock; do
+case "$evidence_root" in
+  ""|/|/root|/root/|/srv|/srv/|/var|/var/|/home|/home/)
+    printf 'ERROR: evidence root is too broad: %s\n' "$evidence_root" >&2
+    exit 1
+    ;;
+esac
+
+for command_name in docker curl awk grep sed sort tr date mkdir chmod sha256sum flock; do
   command -v "$command_name" >/dev/null 2>&1 || {
     printf 'ERROR: missing command: %s\n' "$command_name" >&2
     exit 1
@@ -152,23 +159,61 @@ SQL
 
 schema_table="$(db_psql -Atc "SELECT to_regclass('public.schema_migrations')")"
 if [[ "$schema_table" != "" && "$schema_table" != "(null)" ]]; then
-  db_psql -P pager=off <<'SQL' >> "$evidence_file"
+  schema_columns="$(db_psql -Atc "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'schema_migrations'")"
+  if [[ ",$schema_columns," == *,filename,* && ",$schema_columns," == *,checksum,* && ",$schema_columns," == *,applied_at,* ]]; then
+    db_psql -P pager=off <<'SQL' >> "$evidence_file"
 \pset footer off
 \pset null '(null)'
 \echo === SCHEMA_MIGRATIONS ===
 BEGIN READ ONLY;
 SET LOCAL default_transaction_read_only = on;
 SELECT COUNT(*) AS migration_count,
-       COALESCE(MAX(filename), '(none)') AS lexicographic_latest
+       COALESCE(MAX(applied_at)::text, '(none)') AS latest_applied_at,
+       COALESCE(MAX(filename), '(none)') AS lexicographic_latest_filename
 FROM schema_migrations;
 SELECT filename, checksum, applied_at
 FROM schema_migrations
-WHERE filename ~ '^(23[0-9]|24[0-9]|25[0-9]|26[0-9]|27[0-9]|28[0-9]|29[0-9]|3[0-9]{2})_'
-ORDER BY filename;
+ORDER BY applied_at NULLS FIRST, filename;
 COMMIT;
 SQL
+  else
+    {
+      printf '\n=== SCHEMA_MIGRATIONS ===\n'
+      printf 'SCHEMA_MISMATCH_COLUMNS=%s\n' "${schema_columns:-'(none)'}"
+      printf 'REQUIRED_COLUMNS=filename,checksum,applied_at\n'
+    } >> "$evidence_file"
+  fi
 else
   printf '\n=== SCHEMA_MIGRATIONS ===\nABSENT\n' >> "$evidence_file"
+fi
+
+atlas_table="$(db_psql -Atc "SELECT to_regclass('public.atlas_schema_revisions')")"
+if [[ "$atlas_table" != "" && "$atlas_table" != "(null)" ]]; then
+  atlas_columns="$(db_psql -Atc "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'atlas_schema_revisions'")"
+  if [[ ",$atlas_columns," == *,version,* && ",$atlas_columns," == *,hash,* && ",$atlas_columns," == *,applied,* && ",$atlas_columns," == *,executed_at,* ]]; then
+    db_psql -P pager=off <<'SQL' >> "$evidence_file"
+\pset footer off
+\pset null '(null)'
+\echo === ATLAS_SCHEMA_REVISIONS ===
+BEGIN READ ONLY;
+SET LOCAL default_transaction_read_only = on;
+SELECT COUNT(*) AS revision_count,
+       COALESCE(MAX(executed_at)::text, '(none)') AS latest_executed_at
+FROM atlas_schema_revisions;
+SELECT version, description, type, applied, total, executed_at, hash
+FROM atlas_schema_revisions
+ORDER BY executed_at NULLS FIRST, version;
+COMMIT;
+SQL
+  else
+    {
+      printf '\n=== ATLAS_SCHEMA_REVISIONS ===\n'
+      printf 'SCHEMA_MISMATCH_COLUMNS=%s\n' "${atlas_columns:-'(none)'}"
+      printf 'REQUIRED_COLUMNS=version,hash,applied,executed_at\n'
+    } >> "$evidence_file"
+  fi
+else
+  printf '\n=== ATLAS_SCHEMA_REVISIONS ===\nABSENT\n' >> "$evidence_file"
 fi
 
 db_psql -P pager=off <<'SQL' >> "$evidence_file"
@@ -195,20 +240,30 @@ ORDER BY indexname;
 COMMIT;
 SQL
 
-db_psql -P pager=off <<'SQL' >> "$evidence_file"
+settings_table="$(db_psql -Atc "SELECT to_regclass('public.settings')")"
+if [[ "$settings_table" != "" && "$settings_table" != "(null)" ]]; then
+  db_psql -P pager=off <<'SQL' >> "$evidence_file"
 \pset footer off
 \pset null '(null)'
 \echo === SETTINGS_AND_COUNTS ===
 BEGIN READ ONLY;
 SET LOCAL default_transaction_read_only = on;
-SELECT key, CASE WHEN key ILIKE '%secret%' OR key ILIKE '%password%' OR key ILIKE '%token%' THEN '[redacted]' ELSE value END AS value
+SELECT key,
+       CASE
+         WHEN key IN ('ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'invoice_config', 'battle_pass_config')
+           THEN 'enabled=' || COALESCE((regexp_match(value, '"enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
+                || ';value_length=' || length(value)::text
+         WHEN key ILIKE '%secret%' OR key ILIKE '%password%' OR key ILIKE '%token%' THEN '[redacted]'
+         ELSE value
+       END AS value
 FROM settings
 WHERE key IN (
   'subnexus_checkin_enabled', 'subnexus_leaderboard_enabled',
   'subnexus_activity_center_enabled', 'subnexus_marquee_enabled',
   'subnexus_first_recharge_enabled', 'subnexus_invite_rewards_enabled',
   'invoice_enabled', 'battle_pass_enabled',
-  'affiliate_enabled', 'channel_monitor_enabled'
+  'affiliate_enabled', 'channel_monitor_enabled',
+  'ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'invoice_config', 'battle_pass_config'
 )
 ORDER BY key;
 SELECT relname AS table_name, n_live_tup::bigint AS estimated_rows
@@ -217,6 +272,26 @@ WHERE relname IN ('users', 'payment_orders', 'subscriptions', 'usage_logs', 'set
 ORDER BY relname;
 COMMIT;
 SQL
+else
+  printf '\n=== SETTINGS_AND_COUNTS ===\nSETTINGS_TABLE=ABSENT\n' >> "$evidence_file"
+fi
+
+{
+  printf '\n=== STORAGE_ENV_KEYS ===\n'
+  docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$app_container" |
+    awk -F= '{name=tolower($1); if (name ~ /(upload|storage|invoice|media|file).*(dir|path|root|bucket|endpoint|url)?$/ || name ~ /^(upload|storage|invoice|media|file)(_|$)/) print $1}' |
+    sort -u
+  printf '\n=== NGINX_RUNTIME ===\n'
+  if command -v nginx >/dev/null 2>&1; then
+    nginx_test="$(nginx -t 2>&1 || true)"
+    printf 'NGINX_TEST=%s\n' "$(printf '%s' "$nginx_test" | sed -E 's/(password|secret|token|authorization)[^;]*/\1 [redacted]/Ig' | tr '\n' ' ')"
+    nginx -T 2>&1 |
+      awk '/^[[:space:]]*(listen|server_name|proxy_pass|root|alias|client_max_body_size)[[:space:]]/ {print}' |
+      sed -E 's#(https?://)([^/@:]+):[^/@]+@#\1[redacted]@#g; s/(password|secret|token|authorization)[^;]*/\1 [redacted]/Ig' || true
+  else
+    printf 'NGINX_COMMAND=unavailable\n'
+  fi
+} >> "$evidence_file"
 
 {
   printf '\n=== REDIS_RUNTIME ===\n'
