@@ -258,8 +258,14 @@ BEGIN READ ONLY;
 SET LOCAL default_transaction_read_only = on;
 SELECT key,
        CASE
-         WHEN key IN ('ACTIVITY_CONFIG', 'ACTIVITY_CENTER_CONFIG', 'INVOICE_CONFIG', 'invoice_config', 'BATTLE_PASS_CONFIG', 'battle_pass_config')
-           THEN 'enabled=' || COALESCE((regexp_match(value, '"enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
+         WHEN key = 'ACTIVITY_CONFIG'
+           THEN 'checkin_enabled=' || COALESCE((regexp_match(value, '(?i)"checkin_enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
+                || ';leaderboard_enabled=' || COALESCE((regexp_match(value, '(?i)"leaderboard_enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
+                || ';broadcast_enabled=' || COALESCE((regexp_match(value, '(?i)"broadcast_enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
+                || ';first_recharge_enabled=' || COALESCE((regexp_match(value, '(?i)"first_recharge_enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
+                || ';value_length=' || length(value)::text
+         WHEN key IN ('ACTIVITY_CENTER_CONFIG', 'INVOICE_CONFIG', 'invoice_config', 'BATTLE_PASS_CONFIG', 'battle_pass_config')
+           THEN 'enabled=' || COALESCE((regexp_match(value, '(?i)"enabled"[[:space:]]*:[[:space:]]*(true|false)'))[1], 'unknown')
                 || ';value_length=' || length(value)::text
          WHEN key ILIKE '%secret%' OR key ILIKE '%password%' OR key ILIKE '%token%' THEN '[redacted]'
          ELSE value
