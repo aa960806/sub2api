@@ -313,3 +313,24 @@
 - 回滚点/回滚命令：
 - 下一步：
 ```
+
+## 2026-09-02（Asia/Shanghai）— 固化 Batch 0 文档固定点
+
+### 目的与授权
+
+- 目的：修正文档中“当前 HEAD”与“文档发布前固定点”的表述，避免后续提交造成版本定位歧义。
+- 是否得到维护者明确授权：是（迁移分支文档维护）；未获生产写入、部署、切流或开关修改授权。
+- 是否访问线上：否。
+
+### 变更与验证
+
+- 触碰文件：`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_LEDGER.md`。
+- 变更内容：仅更新历史固定点说明；未改变迁移 runner、预检脚本、业务代码、依赖或数据库。
+- 已执行：提交并推送 `docs: clarify migration branch fixed points`；脚本 SHA256、Git Bash `bash -n`、`git diff --check`、远端分支指向核对通过。
+- 当前分支：`feature/subnexus-migration`；`main`/`origin/main` 未修改。当前 SHA 以 `git rev-parse HEAD` 实时查询为准。
+
+### 风险、回滚与下一步
+
+- 风险：线上状态、备份可恢复性和隔离恢复仍未取得证据；Batch 1 业务迁移继续保持门禁阻断。
+- 回滚点：文档提交可按 Git 提交回退；本次没有数据库或生产状态变化。
+- 下一步：维护者执行固定脚本的线上只读 preflight，回传脱敏证据后继续 B0-5/B0-6/B0-7。
