@@ -229,6 +229,38 @@
 - 规划 6.1.1 的表格已改为“函数体含 DML/触发器重建”和“纯建表/索引”；原审计记录保留，以上更正作为后续取信记录。
 - 本次仍未访问线上、未执行数据库写入；下一步不变：在隔离克隆验证对象契约和 alias/adoption 后再启动候选版本。
 
+## 2026-09-01（Asia/Shanghai）— 完成改名迁移 adoption 门禁与本地 PostgreSQL 验证
+
+### 目的与授权
+
+- 目的：把静态审计发现的 23 组旧文件名→目标文件名兼容风险固化到目标迁移 runner；确保同库启动不会重放历史 DDL/DML 或 `CREATE INDEX CONCURRENTLY`，并完善线上只读证据采集。
+- 是否得到维护者明确授权：是（迁移前本地代码、测试、文档和只读工具工作）；未获生产写入授权。
+- 是否访问线上：否。本轮没有连接生产 PostgreSQL/Redis，没有执行生产 SQL、备份、部署、重启、切流或开关修改。
+
+### 变更/命令
+
+- 分支与基线：`feature/subnexus-migration`，基于目标 `main` `d596d0844`；安全门禁提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0`，已推送到 `origin/feature/subnexus-migration`。
+- 触碰文件：`backend/internal/repository/migrations_runner.go`、`migrations_runner_notx_test.go`、`migrations_schema_integration_test.go`、新增 `migrations_legacy_aliases.go` / `migrations_legacy_contracts.go` 及测试；`tools/production-deploy/subnexus-readonly-preflight.sh`；规划和上下文文档随后更新。
+- 执行的命令类别（脱敏）：`gofmt`；repository 单测、`go vet`、全后端编译级测试；Git Bash `bash -n`；`git diff --check`；目标/旧仓库 23 组 SQL 的 TrimSpace+SHA256 逐项核对；本机临时 PostgreSQL 16 隔离集群执行 23 个目标迁移并查询列、索引、约束、函数、触发器目录输出；`git commit`、`git push`。
+- runner 行为：目标记录缺失时才查询精确旧文件名；旧 checksum、目标 checksum 和数据库对象/数据契约全部通过后，在 advisory lock 下只插入目标 `schema_migrations` 记录，不重放旧 SQL；任一不匹配 fail-closed。Grok 图片开关和 long-context 定价值按可变运维设置处理，Codex seed/rollup 单例仍严格检查。
+- 预检脚本：补充 23 组记录、相关对象和后置数据观察；PostgreSQL 查询统一使用 `public` 表名并通过 `PGOPTIONS` 强制只读。当前脚本 SHA256=`004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`。
+
+### 验证结果
+
+- `go test ./internal/repository -count=1 -p=1`：通过。
+- `go vet ./internal/repository`：通过。
+- `go test ./... -run '^$' -count=1 -p=1`：通过。
+- `go test -tags integration ./internal/repository -run '^TestMigrationsRunner_LegacyAliasContractsMatchCurrentSchema$' -count=1 -p=1`：编译/运行通过；当前环境无 Docker 时按 harness 约定跳过实际容器测试。
+- Git Bash `bash -n tools/production-deploy/subnexus-readonly-preflight.sh`、`git diff --check`：通过。
+- 本机 PostgreSQL 16：23 个目标 SQL 均可执行；系统目录查询语法通过。复核时发现 PostgreSQL 会规范化多事件触发器顺序、且 `groups.platform` 实际为 `NOT NULL`，已分别修正契约顺序和非空约束，并补单测。
+- 线上证据：仍无；脚本只生成证据文件，不执行迁移或部署。
+
+### 风险、回滚与下一步
+
+- 风险：生产 `schema_migrations`/Atlas 记录、真实对象定义、备份可恢复性、Redis 恢复点和旧版本回归尚未验证；不得据本地合成库结论直接启动生产候选。
+- 回滚点/回滚命令：代码可回到 `df0e6a136`（本轮父提交）或目标基线 `d596d0844`；本轮未改变任何数据库状态。线上仅在维护者批准后按回滚手册操作。
+- 下一步：维护者在服务器下载并校验上述固定提交的脚本，执行只读 preflight，脱敏回传 `evidence.txt`；取得 PostgreSQL/Redis 可恢复备份并完成隔离恢复、adoption 演练和旧版本回归后，才开始 Batch 1 业务代码迁移。
+
 ## 后续记录模板
 
 ```text

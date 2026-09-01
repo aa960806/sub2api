@@ -14,7 +14,10 @@
 
 在生产服务器执行（替换容器名和公网健康 URL；不要把密码写进命令）：
 
+当前可审计脚本固定于迁移分支提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0`，文件 SHA256 为 `004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`。执行前先在服务器对脚本运行 `sha256sum`，不一致就停止，不要直接运行未校验副本。
+
 ```bash
+sha256sum /srv/subnexus-repo/tools/production-deploy/subnexus-readonly-preflight.sh
 sudo bash /srv/subnexus-repo/tools/production-deploy/subnexus-readonly-preflight.sh \
   subnexus-cutover https://www.yydsapi.uno/health \
   /srv/subnexus-migration/preflight

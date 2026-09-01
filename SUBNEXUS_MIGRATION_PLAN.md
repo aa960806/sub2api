@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
-> 版本：v1.2（2026-09-01，根据线上文档审计更新）
-> 状态：Batch 0 本地执行中；尚未执行业务代码迁移、生产迁移或线上切换
+> 版本：v1.3（2026-09-01，完成改名迁移 adoption 门禁实现与本地目录验证）
+> 状态：Batch 0 本地控制与 adoption 门禁已完成；等待线上只读预检和可恢复备份证据
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -176,6 +176,16 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 4. 在空库、旧库、部分采用、重复启动和旧版本回滚克隆各运行一次；确认旧二进制可忽略新增记录/表，且 alias 记录不会开启任何功能。
 
 这项采用门禁优先于 Batch 1-4 的业务迁移；在门禁未通过前，不得用手工 `INSERT INTO schema_migrations`、删除记录、改名历史文件或关闭 checksum 校验来“让启动通过”。
+
+#### 6.1.2 目标 runner 的 adoption 实现状态
+
+目标分支已将上述规则固化到 `backend/internal/repository/migrations_runner.go` 和显式 alias/contract 清单中：
+
+- 仅对 23 组审核过的旧文件名→目标文件名进行 adoption；先查目标记录，目标缺失时才查精确旧文件名。
+- 同时验证旧记录 checksum、目标文件 checksum，以及表/列/索引有效性与定义、约束、函数、触发器和关键数据契约；任一不符立即 fail-closed。
+- adoption 在同一 PostgreSQL advisory lock 下只补写目标 `schema_migrations` 元数据，不重新执行旧 SQL；`*_notx.sql` 索引也不会重放 `CREATE INDEX CONCURRENTLY`。
+- Grok 图片开关和 long-context 定价开关属于可被管理员修改的运行时设置，adoption 只核对字段契约并记录当前观察值，不把当前关闭状态误判为迁移失败；Codex seed 和 rollup 单例等不可变数据契约仍严格校验。
+- alias 清单、PostgreSQL 规范化触发器事件顺序和完整目标迁移后的契约校验均有单测/integration-only 测试覆盖。线上数据库尚未执行 adoption；必须先取得实时记录和隔离恢复结果。
 
 ### 6.2 同库前预检
 
