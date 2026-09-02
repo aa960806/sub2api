@@ -325,7 +325,7 @@ resolve_shared_container() {
 }
 
 capture_app_port_bindings() {
-  docker inspect --format '{{range $containerPort, $bindings := .HostConfig.PortBindings}}{{if eq $containerPort "8080/tcp"}}{{range $bindings}}{{printf "%s|%s\n" .HostIP .HostPort}}{{end}}{{end}}{{end}}' "$app_container_id" |
+  docker inspect --format '{{range $containerPort, $bindings := .HostConfig.PortBindings}}{{if eq $containerPort "8080/tcp"}}{{range $bindings}}{{printf "%s|%s\n" .HostIp .HostPort}}{{end}}{{end}}{{end}}' "$app_container_id" |
     LC_ALL=C sort
 }
 

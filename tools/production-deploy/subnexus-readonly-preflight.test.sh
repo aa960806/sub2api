@@ -149,6 +149,7 @@ assert_contains 'sh "$database_connect_host"'
 assert_contains 'sh "$redis_connect_host"'
 assert_contains 'assert_runtime_identities "before_finalize"'
 assert_contains 'script_sha256_final='
+assert_contains '.HostIp'
 assert_contains 'PGHOST="$host" PGPORT="$port" PGSSLMODE="$sslmode"'
 assert_contains 'database name must be a simple PostgreSQL identifier'
 assert_contains 'unset PGHOSTADDR PGSERVICE PGSERVICEFILE PGPASSFILE'
@@ -161,5 +162,23 @@ assert_not_contains 'READ_ONLY_PREFLIGHT_OK'
 assert_not_contains 'sh "$database_password"'
 assert_not_contains 'sh "$redis_password"'
 assert_not_contains 'nginx -T'
+assert_not_contains '.HostIP'
+
+# Docker's PortBinding field is HostIp (lowercase p). Keep a small executable
+# fixture here so a template spelling regression fails before production use.
+port_source="$(sed -n '/^capture_app_port_bindings() {$/,/^}$/p' "$subject")"
+[[ -n "$port_source" ]] || fail "port binding helper not found"
+(
+  eval "$port_source"
+  docker() {
+    if [[ "$1" == "inspect" && "$2" == "--format" && "$3" == *HostConfig.PortBindings* ]]; then
+      printf '%s\n' '127.0.0.1|18083'
+      return 0
+    fi
+    return 1
+  }
+  app_container_id='fixture-app'
+  assert_eq '127.0.0.1|18083' "$(capture_app_port_bindings)" "Docker HostIp port binding"
+)
 
 printf 'subnexus readonly preflight tests passed\n'
