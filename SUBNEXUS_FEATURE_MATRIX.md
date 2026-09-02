@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移矩阵
 
-> 最后更新：2026-09-03。当前代码已在 `feature/subnexus-migration` 本地完成迁移实现和定向/全量静态测试；Batch 5 的 Docker 运行时、隔离 PostgreSQL/Redis、候选启动和旧版本回归受本机 Docker daemon 阻塞，维护者验收前不得推送或部署。
+> 最后更新：2026-09-03。当前代码已在 `feature/subnexus-migration` 本地完成迁移实现和定向/全量测试；隔离 PostgreSQL、miniredis/候选主机 smoke 和旧版回滚克隆已通过，持久化 Redis、Docker 运行和生产备份克隆仍待完成，维护者验收前不得推送或部署。
 > 本表是逐模块迁移的唯一状态入口。路径是调查线索，不代表目标代码可以直接复制；“待证据”不等于可上线。
 
 ## 保留功能
@@ -39,7 +39,7 @@
 ## 当前状态与统一开关
 
 - 所有迁移功能默认关闭；`9011_subnexus_rollout_gates.sql` 只以 `ON CONFLICT DO NOTHING` 补齐缺失 gate，不覆盖管理员已有值。
-- 当前候选只存在本地工作树；代码门禁已通过，但 Docker 运行时验证受本机 daemon 阻塞；未推送当前改动、未部署、未连接线上 PostgreSQL/Redis，Release Gate 尚未通过。
+- 当前候选只存在本地工作树；代码门禁、隔离 PostgreSQL、miniredis/候选主机 smoke 和旧版回滚克隆已通过，但 Docker 镜像运行、持久化 Redis 恢复和生产备份克隆仍待验证；未推送当前改动、未部署、未连接线上 PostgreSQL/Redis，Release Gate 尚未通过。
 - `RechargeWheelView.vue` 是累计充值奖励转盘，属于 F06；明确排除的是每日消耗转盘。
 
 ## 以上游为准的重叠模块
@@ -95,4 +95,4 @@
 - 排行查询只能读取目标 `usage_logs`/`users`，不得改变网关计费；调度器在排行/周期开关关闭时必须 no-op。
 - 签到写入须在事务内锁定/创建 streak，重复日期、并发请求和 IP 限制必须幂等；关闭时不写任何活动表或余额。
 - 活动中心使用独立新开关，不继承旧 `ACTIVITY_CENTER_CONFIG`；用户列表关闭时返回 `{enabled:false,items:[]}` 且不查表，管理列表关闭时为空且不查表，管理写操作返回禁用错误。管理员配置接口始终保留用于显式开启。
-- 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（280 个文件/1950 个测试）/build、迁移契约及重点并发/关闭态测试；仍待 Docker 候选、隔离 PostgreSQL/Redis 和旧版本回滚证据。前端只在 flag 开启后加载活动 API。
+- 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（280 个文件/1950 个测试）/build、迁移契约及重点并发/关闭态测试；隔离 PostgreSQL、miniredis/候选主机 smoke 和旧版回滚克隆已通过，仍待 Docker 候选镜像、持久化 Redis 恢复和生产备份克隆证据。前端只在 flag 开启后加载活动 API。

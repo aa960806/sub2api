@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-03（本地 Batch 1-4 实现和代码测试完成；Batch 5 运行时证据受本机 Docker daemon 阻塞；维护者验收后才推送/进入生产 Release Gate）
+> 最后更新：2026-09-03（Batch 1-4 代码、隔离 PostgreSQL、miniredis 主机 smoke 和旧版回滚克隆已通过；持久化 Redis/Docker/生产 Release Gate 仍待完成）
 
 ## 项目身份
 
@@ -20,7 +20,7 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | 本地优先：Batch 0 控制和 adoption 门禁已完成；Batch 1-4 本地实现完成，Batch 5 代码门禁通过但运行时验收受本机 Docker daemon 阻塞 |
+| 迁移阶段 | 本地优先：Batch 0 控制和 adoption 门禁已完成；Batch 1-4 本地实现完成；Batch 5 的 PostgreSQL 隔离接管、miniredis/候选主机 smoke 和旧版回滚克隆已通过，持久化 Redis、Docker 镜像和生产备份克隆仍待完成 |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 本任务尚未执行 |
@@ -57,7 +57,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 ## 默认关闭标准
 
-每个迁移功能必须有后端设置，默认值为 `false`；公共设置和前端入口同步关闭；关闭时 API 只返回稳定的禁用错误/约定 404，不写数据；定时任务、队列、通知和奖励发放 no-op；关闭状态不能改变上游原有行为。开关名必须先搜索目标代码，避免与已有上游设置冲突。
+每个迁移功能必须有后端设置，默认值为 `false`；公共设置和前端入口同步关闭；关闭时只读接口可以稳定返回 `200` 携带 `enabled:false`/空列表，写接口返回约定的禁用错误（通常为 `403` 或 `404`），任何情况下不写业务数据；定时任务、队列、通知和奖励发放 no-op；关闭状态不能改变上游原有行为。开关名必须先搜索目标代码，避免与已有上游设置冲突。
 
 当前独立开关（均默认关闭；缺失/非法按关闭处理）：
 
@@ -103,6 +103,6 @@ registration_ip_cooldown_enabled
 
 ## 下一步入口
 
-1. 在本地完成 Batch 5：待 Docker daemon 恢复后执行候选启动、隔离 PostgreSQL/Redis、关闭态/开启态 smoke 和旧版本回滚克隆；所有开关继续关闭。
+1. 在本地完成 Batch 5：已通过隔离 PostgreSQL、miniredis/候选主机 smoke 和旧版回滚克隆；仍需在 Docker daemon 可用时完成持久化 Redis/容器验证，并补齐上游核心回归、关闭态/开启态验收；所有开关继续关闭。
 2. 维护者验收本地候选、功能矩阵和测试证据后，才推送迁移分支并固定 release SHA；当前不得执行服务器命令。
 3. Release Gate 取得线上只读拓扑、可恢复 PostgreSQL/Redis 备份并完成隔离恢复、adoption 和旧版本回归后，才进入受控切换。

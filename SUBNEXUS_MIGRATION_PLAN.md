@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v1.7（2026-09-03，已同步最新上游，本地优先完成全部二开功能，生产门禁后移）
-> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4 本地实现和代码测试完成，Batch 5 运行时证据待执行。本地候选完成并经维护者验收前不推送、不让服务器拉取、不执行任何生产命令
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4 本地实现、隔离 PostgreSQL、miniredis/候选主机 smoke 和旧版回滚克隆已通过，持久化 Redis/Docker/生产备份克隆仍待完成。本地候选完成并经维护者验收前不推送、不让服务器拉取、不执行任何生产命令
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -133,9 +133,9 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 门禁：扫描器在关闭时不读取/写入 `usage_logs`；充值任务只计算允许的订单状态和净额；邀请任务复用现有 Affiliate 关系但不写返利账；进度重算、退款减少进度、重复发奖、赛季草稿/发布/归档和未来赛季可见性均有测试。
 
-### Batch 5：集成验收和文档收敛（代码测试完成，运行时证据受本机 Docker daemon 阻塞）
+### Batch 5：集成验收和文档收敛（PG、主机候选 smoke 与旧版回滚通过；持久化 Redis/Docker 待办）
 
-- 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、Docker 候选镜像启动和健康检查；后端全量/重点包测试、前端 typecheck/Vitest/build 已完成。当前本机 Docker Desktop 启动失败（Inference manager 路径错误），因此容器运行、隔离 Redis 和候选健康检查保持待办；不得为此连接线上服务或执行生产命令。
+- 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、Docker 候选镜像启动和健康检查；后端全量/重点包测试、前端 typecheck/Vitest/build 已完成。隔离 PostgreSQL 16 的目标迁移、旧迁移和同库接管矩阵已通过（目标 290、旧版 268、接管后 371 条记录）。使用本机 miniredis（`127.0.0.1:56379`）完成非持久化候选主机进程 smoke（`18180`，health、setup、管理员登录、关闭态和二次启动）；旧版 `0.1.135` 在同一 371-record 克隆（`18183`）完成 health、setup、公共设置、有效管理员登录、`auth/me`、管理员只读接口及重启幂等回归。持久化 Redis 恢复、Docker daemon/候选镜像运行仍待办；本机 Docker Desktop 当前因 Inference manager 路径错误不可用，不得为此连接线上服务或执行生产命令。
 - 运行上游核心回归矩阵：认证、API Key、余额、订阅、订单、退款、用量计费、模型列表、Gateway 各协议、插件、Model Plaza、Grok、批量生图和安全设置。
 - 形成并持续维护精简上下文、功能矩阵、迁移台账、切换手册和回滚手册；当前文档已同步本地候选状态，不把历史记忆误当作当前实现状态。
 
@@ -256,7 +256,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 | 生产主机 | OVH `51.81.211.97`，SSH 用户 `ubuntu` | 只使用当前主机实时状态；不假设历史 IP/主机仍未变化 |
 | 源码工作树 | `/srv/subnexus-repo` | 仅用于 fetch/构建；不覆盖 `/srv/subnexus-migration` 证据和回滚资产 |
 | 生产应用 | `subnexus-cutover`，`127.0.0.1:18083 -> 8080` | 从运行容器实时派生网络、端口、挂载、环境和 healthcheck |
-| PostgreSQL | `sub2api-postgres`，PostgreSQL 18 | 从应用 `DATABASE_HOST` 验证容器和共享网络；不打印密码 |
+| PostgreSQL | 历史记录为 `sub2api-postgres`、PostgreSQL 18（未实时确认） | Release Gate 从应用 `DATABASE_HOST` 验证实际版本、容器和共享网络；不打印密码 |
 | Redis | `sub2api-redis`，Redis 8，AOF 关闭、RDB 开启 | 以运行实例配置为准，禁止被仓库 Compose 默认值覆盖 |
 | Docker 网络 | `sub2api-net`（历史记录另有 CPA 网络） | 不使用曾导致事故的 `sub2api_net` 硬编码；CPA 依赖单独审计 |
 | 部署证据/备份 | `/srv/subnexus-migration` | 只追加带时间戳的证据；不得当作 Git 工作树覆盖 |
@@ -330,7 +330,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
-3. 完成 Batch 5 的后端、前端、本地 PostgreSQL/Redis、Docker 和旧版本回滚矩阵，向维护者提交本地验收报告。
+3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/miniredis、候选主机和旧版本回滚矩阵，向维护者提交本地验收报告；Docker 镜像与持久化 Redis 恢复仍需运行环境可用后补齐。
 4. 维护者验收前只保留本地提交，不再推送，不要求服务器拉取或运行任何迁移资产。
 
 维护者确认本地迁移完成后，Release Gate 仍必须取得线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑、可恢复备份和隔离恢复证据，尤其确认旧项目 `254_battle_pass.sql` 的真实状态。未满足 Release Gate 时可以继续本地修复和测试，但不得让服务器拉取候选、连接生产库启动、执行迁移、打开开关或替换线上版本。

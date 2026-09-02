@@ -786,3 +786,35 @@
 
 - 将上下文和台账中的“当前 HEAD”改为明确的“功能代码候选 SHA=`b26c42e08fb190f3915f08949aaaba48dbe61a26`”，并说明文档收尾提交应以 `git rev-parse HEAD` 实时获取，避免把文档提交误当作代码回滚点。
 - 本次仅修改迁移文档并提交；未改变业务代码、迁移 SQL、开关默认值或依赖，未访问旧项目可写路径、服务器、线上数据库/Redis，未推送。
+
+## 2026-09-03（Asia/Shanghai）— Batch 5 隔离 PostgreSQL 接管矩阵
+
+- 在本机专用 PostgreSQL 16 集群 `F:\MySub2\.subnexus-pg16-20260903`（仅监听 `127.0.0.1:56000`）完成 Batch 5 的数据库子门禁：目标迁移集合 290/290 成功，旧项目迁移集合 268/268 成功。
+- 使用旧库执行当前 runner 的首次接管、第二次幂等运行以及旧迁移集合重复校验；接管后 `schema_migrations` 共 371 条，目标迁移 checksum（兼容 alias 白名单除外）匹配，invalid index 数量为 0。
+- 临时运行时测试和测试数据均位于本机隔离集群，已移除临时测试文件；没有访问 `F:\Sub2Api\SubNexus` 的可写路径，没有连接线上 PostgreSQL/Redis，没有执行生产 SQL、备份、部署、重启、切流或开关修改。
+- 当前 Batch 5 仍未全部完成：隔离 Redis、候选应用启动/健康检查、Docker 镜像运行和旧版本回滚克隆待验证；所有迁移功能继续保持默认关闭。
+
+## 2026-09-03（Asia/Shanghai）— Batch 5 运行时 smoke 与旧版同库回归收口
+
+### 本轮目的
+
+- 在不触碰生产和旧项目写路径的前提下，补齐候选主机进程、隔离 Redis 和旧版回滚克隆的运行时证据，并把文档从“全部受 Docker 阻塞”校准为分项状态。
+
+### 已执行与结果
+
+- 隔离 PostgreSQL `127.0.0.1:56000` 继续使用 `F:\MySub2\.subnexus-pg16-20260903`；目标 290/290、旧集合 268/268、同库接管后 `schema_migrations=371`、checksum/索引契约均通过。
+- 使用仅监听 `127.0.0.1:56379` 的 miniredis 完成候选主机进程 smoke（候选端口 `18180`）：health、setup、自动初始化、管理员登录、全部关闭态检查和二次启动通过。该 Redis 为临时非持久化夹具，不能替代生产 Redis 恢复演练。
+- 从 `F:\Sub2Api\SubNexus\backend\server.exe` 的旧版本 `0.1.135` 在 `subnexus_old_regression_login_20260903` 克隆（`schema_migrations=371`、users=1、settings=52）启动 `18183`；首轮 PID `46736`、重启后 PID `47404`。两次启动的 health/setup/public settings、有效管理员登录、旧/新 token 的 `auth/me` 和管理员只读 GET 均通过；旧版不识别新增签到/排行榜/邀请活动路由而返回预期 404，数据管理弃用代理返回预期 503。
+- 旧版回归前后 users=1、settings=52、schema_migrations=371、合规记录=1；没有重复创建用户或迁移，audit_logs 仅因第二次登录增加一条预期记录。新增活动/发票/Battle Pass 等表未被旧版删除。证据日志和计数文件保存在本机 `.old-version-regression-20260903\clone\`。
+- 旧版启动日志显示会读取 GitHub model-price-repo；这是本机测试配置的外部只读依赖，生产发布前需单独确认价格文件缓存/网络策略，不得把该访问误认为连接线上业务。
+
+### 尚未完成
+
+- Docker daemon 仍因本机 Inference manager 路径错误不可用；未创建容器或镜像。持久化 Redis/AOF 或 RDB 恢复、生产 PostgreSQL（历史记录的 PostgreSQL 18 版本需实时确认）备份隔离克隆、Docker 候选镜像验证和上游核心回归仍是 Release Gate 前置条件。
+- 当前所有迁移开关继续默认关闭；候选代码功能提交仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`，文档收尾尚未提交/推送，不能让服务器拉取或执行服务器命令。
+
+### 安全与回滚
+
+- 本轮只使用 `F:\MySub2\sub2api`、本机隔离 PostgreSQL/miniredis 和临时旧版进程；未写入 `F:\Sub2Api\SubNexus`，未触碰 fork `main`、PID `79272`/端口 `18080`、Memurai PID `4644`/端口 `6379`，未连接线上 PostgreSQL/Redis，未执行生产 SQL、备份、部署、重启、切流或开关修改。
+- `.old-version-regression-20260903`、`.rollback-validation-*`、`.subnexus-pg16-*` 等日志、二进制和数据库目录是本轮本地隔离测试产物，已被 `.gitignore` 排除；收口时必须按 PID/路径精确停止临时进程并在确认审计需要后再删除目录，禁止使用宽泛递归删除。
+- 应用回滚仍优先使用候选前代码 SHA，数据库不自动恢复；只有数据损坏且获得明确批准时才使用已验证备份。

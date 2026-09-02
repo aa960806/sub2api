@@ -31,7 +31,7 @@
 | B0-4 | 旧/新逐文件功能与迁移差异盘点 | 通过（本地） | 已完成保留/排除功能的后端、前端、路由、设置、迁移对象和目标接入点映射；线上表状态仍单独以 B0-5 为准 |
 | B0-4a | 同内容/语义改名迁移逐项审计 | 通过（本地静态） | 共 27 组显式 alias：历史 23 组内容相同、2 组语义接管，另有学生优惠/注册冷却 2 组独立表接管；含 DML/索引/约束的重放风险已登记于规划 6.1.1；需隔离库和线上记录验证 adoption |
 | B0-4b | 改名迁移 alias/adoption runner 与对象契约 | 本地实现通过；发布证据待办 | 当前工作树为 27 组显式映射；本地测试不阻塞 Batch 1-5，生产备份隔离恢复仍是 Release Gate |
-| B0-8 | 新 fork 上游基线构建/测试 | 通过（本地候选） | 后端默认构建与 `unit` 标签全量测试、`go vet` 通过；前端 `pnpm typecheck`、Vitest（280 个文件/1950 个测试）、`pnpm build` 通过；未代表 Docker、隔离库或生产通过 |
+| B0-8 | 新 fork 上游基线构建/测试 | 通过（本地候选） | 后端默认构建与 `unit` 标签全量测试、`go vet` 通过；前端 `pnpm typecheck`、Vitest（280 个文件/1950 个测试）、`pnpm build` 通过；主机进程 smoke 通过不代表 Docker、持久化 Redis 或生产通过 |
 
 ## Release Gate（保留历史编号）
 
@@ -51,7 +51,7 @@
 | Batch 2 | 首充礼包、二开邀请奖励、学生充值优惠、注册 IP 冷却 | Batch 1 规则、订单/Affiliate/Auth 审计 | 默认关闭，奖励/注册 reservation 幂等 | 本地实现完成，待最终证据/维护者验收 |
 | Batch 3 | 发票事务系统 | 数据目录、订单快照、邮件和权限审计 | `subnexus_invoice_enabled=false`（public 映射 `invoice_enabled`） | 本地实现完成，待最终证据/维护者验收 |
 | Batch 4 | Battle Pass、Channel Monitor V3、默认语言、客服按钮 | 用量/充值/邀请数据合同；上游监控基础 | 所有功能/模式默认关闭或回退安全默认 | 本地实现完成，待最终证据/维护者验收 |
-| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | 代码测试完成；运行时证据因本机 Docker daemon 阻塞 |
+| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | PostgreSQL 隔离迁移/接管、miniredis 主机 smoke、候选主机进程 smoke、旧版 0.1.135 回滚克隆已通过；持久化 Redis 恢复、Docker 镜像运行和生产备份克隆仍待办 |
 
 ## 迁移文件登记
 
@@ -91,8 +91,9 @@
 | 线上实时预检 | 本地验收后执行 | 已延后 | 当前禁止服务器操作；最终候选固定后重新生成批准入口 |
 | 改名迁移静态审计 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧迁移按 `SHA256(TrimSpace(SQL))` 比较，确认 23 组同内容改名；另审计 2 组语义接管；含 DML 的文件不得在同库直接重跑 |
 | 改名迁移 adoption 本地 runner 验证 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧文件 checksum 23/23 一致；repository 单测、`go vet`、全后端编译级测试和 integration-only 编译通过；触发器规范化顺序与 `groups.platform NOT NULL` 契约已校正 |
-| 目标迁移 SQL 隔离目录验证 | 2026-09-01 Asia/Shanghai | 通过（本机 PostgreSQL 16） | 在临时隔离集群执行目标迁移集合，并读取列、索引有效性/定义、约束、函数、触发器；未使用生产数据库，集群已停止 |
-| 本地 Batch 1-4 全量验证 | 2026-09-03 Asia/Shanghai | 通过（本地代码层） | Go 默认/`unit` 全量、`go vet`、前端 Vitest 279/1946、typecheck、build 通过；Docker、隔离 Redis/候选启动和旧版本回归仍待 Batch 5 |
+| 目标迁移 SQL 隔离目录验证 | 2026-09-01 Asia/Shanghai | 通过（本机 PostgreSQL 16） | 在临时隔离集群执行目标迁移集合，并读取列、索引有效性/定义、约束、函数、触发器；未使用生产数据库，历史集群已停止 |
+| 本地 PostgreSQL 同库接管矩阵 | 2026-09-03 Asia/Shanghai | 通过 | 隔离 PostgreSQL 16（`127.0.0.1:56000`）中目标集合 290 条迁移、旧集合 268 条迁移均成功；旧库交给当前 runner 首次接管、再次幂等和旧集合重复校验均通过，最终 `schema_migrations=371`；目标 checksum（兼容 alias 除外）和索引有效性检查通过。该集群仅用于本地测试，未连接生产库 |
+| 本地 Batch 1-4 全量验证 | 2026-09-03 Asia/Shanghai | 通过（本地代码层） | Go 默认/`unit` 全量、`go vet`、前端 Vitest 280/1950、typecheck、build 通过；运行时子门禁另见下方 Batch 5 记录 |
 
 ## 线上证据登记
 
@@ -130,5 +131,8 @@
 | 2026-09-02 Asia/Shanghai | 邀请活动与明确排除项静态审计 | 邀请活动后端 3 组 Go 专项、迁移契约和前端 5 文件/22 测试通过；排除项无新增 SubNexus 文件、路由、handler/service 或迁移 | 仅保留邀请抽奖、累计充值奖励转盘和邀请里程碑；每日消耗转盘、红包雨、运行日历、Media Studio/Creative Workshop 不迁移；未访问线上、未执行 SQL、未部署或开启开关 |
 | 2026-09-03 Asia/Shanghai | Batch 1-4 本地候选收敛与文档校准 | 通过（代码层）；Batch 5 运行时证据待办 | 后端 `go test -tags unit ./... -count=1 -p=1 -timeout=30m`、默认 `go test ./... -count=1 -p=1 -timeout=45m`、`go vet` 通过；前端 Vitest 280 文件/1950 测试、typecheck、build 通过；F01-F13 状态统一为“本地实现完成，待最终证据/维护者验收” | 当前只在本地候选工作树；未推送当前改动、未连接线上 PostgreSQL/Redis、未部署、未重启、未切流、未修改生产开关 |
 | 2026-09-03 Asia/Shanghai | 前端 feature flag stale-cache fail-closed | 本地专项通过 | `isFeatureFlagEnabled` 在 `publicSettingsLoaded` 非 true 时强制关闭；registry 补齐 marquee、first recharge、student benefit、invite activities；新增 `featureFlags.spec.ts` 4 个测试 | 未访问线上；所有迁移功能仍默认关闭 |
-| 2026-09-03 Asia/Shanghai | Batch 5 Docker 能力检查 | 待执行 | `docker compose version` 可用，但 Docker daemon 未运行（Windows named pipe 不存在）；未创建容器，隔离 PostgreSQL/Redis、候选启动和旧版本回归保持待办 | 未访问线上；未启动/修改 Docker 服务 |
-| 2026-09-03 Asia/Shanghai | 本地候选最终代码复核与 Docker 再检查 | 代码门禁通过；运行时阻塞 | `go generate ./cmd/server`、Go 默认/`unit` 全量、`go vet`、迁移契约、gofmt、敏感扫描、`pnpm lint:check`、typecheck、Vitest 280/1950、build 通过；修复 `InvoicesView.vue` 3 处 ESLint 多余分号；compose 静态 config 通过。Docker Desktop 启动后 Inference manager 路径错误，未创建容器 | 仅本地操作；未访问旧项目可写路径、线上、生产数据库/Redis，未推送、部署或修改开关 |
+| 2026-09-03 Asia/Shanghai | Batch 5 Docker 能力检查 | Docker daemon 阻塞（静态 config 通过） | `docker compose version` 可用，但 Docker daemon 未运行（Windows named pipe 不存在）；未创建容器或镜像，Docker 运行时门禁保留待办 | 未访问线上；未启动/修改 Docker 服务 |
+| 2026-09-03 Asia/Shanghai | 本地候选最终代码复核与 Docker 再检查 | 代码门禁通过；Docker 运行时阻塞 | `go generate ./cmd/server`、Go 默认/`unit` 全量、`go vet`、迁移契约、gofmt、敏感扫描、`pnpm lint:check`、typecheck、Vitest 280/1950、build 通过；修复 `InvoicesView.vue` 3 处 ESLint 多余分号；compose 静态 config 通过。Docker Desktop 启动后 Inference manager 路径错误，未创建容器 | 仅本地操作；未访问旧项目可写路径、线上、生产数据库/Redis，未推送、部署或修改开关 |
+| 2026-09-03 Asia/Shanghai | Batch 5 隔离 PostgreSQL 接管和幂等验证 | 通过（PostgreSQL 子门禁） | 在 `F:\MySub2\.subnexus-pg16-20260903`（仅监听 `127.0.0.1:56000`）复核目标 290 条迁移、旧版 268 条迁移、旧库向当前 runner 的首次接管/第二次幂等/旧集合重复执行；接管后 `schema_migrations=371`，目标 checksum（兼容白名单除外）匹配且无 invalid index。Redis 持久化恢复、Docker 镜像运行和生产备份克隆仍待办 | 未访问线上；未执行生产 SQL、备份、部署、重启、切流或开关修改 |
+| 2026-09-03 Asia/Shanghai | Batch 5 隔离 miniredis 与候选主机 smoke | 通过（轻量运行时子门禁） | miniredis 仅监听 `127.0.0.1:56379`；候选主机进程 `18180` 的 health、setup、管理员登录、关闭态响应和二次启动通过；不代表 Redis 持久化、Docker 镜像或生产通过 | 未访问线上；Redis 数据仅为本地临时测试 |
+| 2026-09-03 Asia/Shanghai | 旧版 0.1.135 同库回滚克隆回归 | 通过（隔离克隆） | 在 `subnexus_old_regression_login_20260903`（`schema_migrations=371`、users=1、settings=52）首轮及重启后验证 health/setup/public settings、有效管理员登录、`auth/me`、管理员只读 GET；旧版不存在的新迁移路由按预期 404，data-management deprecated 按预期 503；用户/迁移计数不变，仅第二次登录产生预期审计记录，无 checksum 错误 | 未访问线上；旧版进程和 Redis 均使用本机隔离资源 |
