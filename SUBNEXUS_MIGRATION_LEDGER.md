@@ -101,4 +101,4 @@
 | --- | --- | --- | --- |
 | 2026-09-02 Asia/Shanghai | 提交并推送文档固定点表述修正（`docs: clarify migration branch fixed points`） | 通过；脚本哈希、Shell 语法、差异检查和远端分支指向已复核 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
 | 2026-09-02 Asia/Shanghai | 25 组旧迁移接管与预检安全收尾复核 | 本地通过；线上待证据 | repository/migrations 单测、`go vet`、Shell 夹具和完整旧迁移隔离集成测试通过；后端全量仅保留 Windows service 基线测试残余（详见变更记忆） | 仅使用本机临时 PostgreSQL；未访问线上，未执行生产 SQL、备份、部署、切流或开关修改 |
-| 2026-09-02 Asia/Shanghai | 统一 Batch 0 预检固定点到当前 tip | 通过；线上待证据 | 手册和台账统一使用 `7200e5ae1f48d8f78bce43565814378b636c842b`，并保留父提交关系与脚本 SHA256；`git diff --check` 通过 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
+| 2026-09-02 Asia/Shanghai | 统一 Batch 0 预检批准脚本发布点 | 通过；线上待证据 | 手册和台账统一使用批准脚本提交 `7200e5ae1f48d8f78bce43565814378b636c842b`，并保留父提交关系与脚本 SHA256；`git diff --check` 通过 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
