@@ -775,3 +775,9 @@
 
 - 当前代码候选可提交但不能宣称 Release Gate 通过；维护者验收前继续保持所有功能关闭。
 - 若本地 Docker 恢复，优先运行隔离 compose 健康检查和旧版本回滚克隆；失败不影响旧线上版本。应用回滚仍使用提交前代码 SHA，数据库不自动恢复。
+
+## 2026-09-03（Asia/Shanghai）— 本地迁移候选提交固定
+
+- 将当前 311 个迁移代码、测试、SQL 和项目记忆文件固定为本地提交 `b26c42e08fb190f3915f08949aaaba48dbe61a26`（`feat: migrate SubNexus features to upstream baseline`）。提交前 `git diff --cached --check`、gofmt、敏感扫描、依赖校验和全量测试均已通过。
+- 提交后工作树干净，当前分支仍为 `feature/subnexus-migration`，相对 `origin/feature/subnexus-migration` 仅本地领先；未推送、未修改 `main`、旧项目或服务器。
+- 该提交是可回滚的本地候选，不代表 Release Gate 通过；所有迁移开关保持关闭，Docker/隔离 PostgreSQL/Redis/旧版本回归仍受本机 Docker daemon 故障阻塞。

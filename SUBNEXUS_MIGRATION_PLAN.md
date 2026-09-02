@@ -25,7 +25,7 @@
 | 项目 | 旧二开 `SubNexus` | 新 fork `sub2api` |
 | --- | --- | --- |
 | 分支 | `alignment/v0.1.181-local` | `main`（本规划从此创建迁移分支） |
-| HEAD | `ccffee6c6` | fork `main`=`d596d0844`；最新上游=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`；迁移分支=`23d6e8ec0e773e74146976a39f6573b3da68660a` |
+| HEAD | `ccffee6c6` | fork `main`=`d596d0844`；最新上游=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`；迁移分支本地候选=`b26c42e08fb190f3915f08949aaaba48dbe61a26`（上游同步父提交=`23d6e8ec0`） |
 | 应用版本 | `0.1.135` | `0.2.0`（最新上游） |
 | Go 版本 | `1.26.6` | `1.27.0` |
 | Git merge-base | 无 | 无 |
