@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移规划
 
-> 版本：v1.3（2026-09-01，完成改名迁移 adoption 门禁实现与本地目录验证）
+> 版本：v1.4（2026-09-02，完成 25 组改名迁移接管规则与预检安全收敛）
 > 状态：Batch 0 本地控制与 adoption 门禁已完成；等待线上只读预检和可恢复备份证据
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
@@ -145,7 +145,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 #### 6.1.1 同内容改名迁移的采用门禁
 
-2026-09-01 的静态审计发现，旧项目与目标 fork 有 23 组“SQL（按 runner 的 `TrimSpace` 规则）内容相同、文件名不同”的迁移。目标 runner 只按完整文件名查询 `schema_migrations`，因此同库启动时会把这些目标文件误判为未执行。映射和重跑风险如下（左侧为旧项目，右侧为目标 fork）：
+2026-09-01 的静态审计发现，旧项目与目标 fork 有 23 组“SQL（按 runner 的 `TrimSpace` 规则）内容相同、文件名不同”的迁移。随后又确认 2 组文件名不同但 SQL 语义不完全相同、可通过独立后置契约安全接管的迁移（共 25 组显式 alias）。目标 runner 只按完整文件名查询 `schema_migrations`，因此同库启动时会把这些目标文件误判为未执行。下面表格列出 23 组精确内容映射（左侧为旧项目，右侧为目标 fork）：
 
 | 旧文件 | 目标文件 | 重跑分类 |
 | --- | --- | --- |
@@ -168,9 +168,16 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 | `246_add_usage_log_effective_model_indexes_notx.sql` | `226_add_usage_log_effective_model_indexes_notx.sql` | 索引 |
 | `253_audit_logs.sql` | `180_audit_logs.sql` | **纯建表/索引** |
 
+另外 2 组语义接管规则不属于上表的“内容相同”集合，必须单独执行契约校验：
+
+| 旧文件 | 目标文件 | 接管方式 |
+| --- | --- | --- |
+| `194_add_group_allow_live.sql` | `189_add_group_allow_live.sql` | 旧 checksum 与目标 checksum 分别精确匹配；验证 `groups.allow_live` 为 `boolean NOT NULL` 且默认值仍为 `false` 后只补写目标元数据 |
+| `247_channel_monitor_quota_mode.sql` | `226_channel_monitor_quota_mode.sql` | 旧 checksum 与目标 checksum 分别精确匹配；在同一事务中删除已知重复 `channel_monitors_check_mode_check` 约束，执行完整目标 SQL，再验证 provider/check-mode/外键/设置契约 |
+
 在取得线上记录前，不得假设上述旧文件是否已执行，也不得直接让候选 runner 全量启动。隔离克隆必须先做以下验证：
 
-1. 以旧项目迁移记录和目标文件 checksum 建立逐项 `old_filename -> target_filename -> exact_checksum` 清单；只有旧记录 checksum 与文件 checksum 完全一致时才允许采用。
+1. 以旧项目迁移记录和目标文件 checksum 建立逐项 `old_filename -> target_filename -> exact_checksum` 清单；23 组精确映射要求 checksum 相同，2 组语义接管分别要求旧/目标 checksum 与审计清单一致。
 2. 为目标 runner 增加显式、可审计的 alias/adoption 规则：旧记录存在且目标记录缺失时，在同一 advisory lock 下跳过目标 SQL，并仅记录目标文件名与精确 checksum；不得做全局“同 checksum 即跳过”。
 3. `_notx` 索引映射必须额外核对 `to_regclass` 和索引定义；DDL/DML 映射必须在克隆中比较行数、金额、设置和对象定义前后差异。任何 hash 不一致、未知旧文件或对象不匹配都必须硬失败。
 4. 在空库、旧库、部分采用、重复启动和旧版本回滚克隆各运行一次；确认旧二进制可忽略新增记录/表，且 alias 记录不会开启任何功能。
@@ -181,9 +188,9 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 目标分支已将上述规则固化到 `backend/internal/repository/migrations_runner.go` 和显式 alias/contract 清单中：
 
-- 仅对 23 组审核过的旧文件名→目标文件名进行 adoption；先查目标记录，目标缺失时才查精确旧文件名。
+- 仅对 25 组审核过的旧文件名→目标文件名进行 adoption：23 组精确内容映射只补写元数据，2 组语义接管按显式 replay 规则执行；先查目标记录，目标缺失时才查精确旧文件名。
 - 同时验证旧记录 checksum、目标文件 checksum，以及表/列/索引有效性与定义、约束、函数、触发器和关键数据契约；任一不符立即 fail-closed。
-- adoption 在同一 PostgreSQL advisory lock 下只补写目标 `schema_migrations` 元数据，不重新执行旧 SQL；`*_notx.sql` 索引也不会重放 `CREATE INDEX CONCURRENTLY`。
+- 23 组精确映射在同一 PostgreSQL advisory lock 下只补写目标 `schema_migrations` 元数据，不重新执行旧 SQL；`*_notx` 索引也不会重放 `CREATE INDEX CONCURRENTLY`。`189` 与 `226` 使用各自审计过的目标 SQL/后置契约，失败即回滚并拒绝启动。
 - Grok 图片开关和 long-context 定价开关属于可被管理员修改的运行时设置，adoption 只核对字段契约并记录当前观察值，不把当前关闭状态误判为迁移失败；Codex seed 和 rollup 单例等不可变数据契约仍严格校验。
 - alias 清单、PostgreSQL 规范化触发器事件顺序和完整目标迁移后的契约校验均有单测/integration-only 测试覆盖。线上数据库尚未执行 adoption；必须先取得实时记录和隔离恢复结果。
 

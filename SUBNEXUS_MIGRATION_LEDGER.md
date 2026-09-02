@@ -27,8 +27,8 @@
 | B0-2 | 读取规划、旧项目记忆和线上文档 | 通过 | 记录于 `SUBNEXUS_CHANGE_MEMORY.md` |
 | B0-3 | 创建项目上下文、功能矩阵、台账 | 通过 | 上下文、功能矩阵、台账、变更记忆及切换/回滚手册已建立 |
 | B0-4 | 旧/新逐文件功能与迁移差异盘点 | 通过（本地） | 已完成保留/排除功能的后端、前端、路由、设置、迁移对象和目标接入点映射；线上表状态仍单独以 B0-5 为准 |
-| B0-4a | 同内容改名迁移逐项审计 | 通过（本地静态） | 发现 23 组 old filename→target filename；含 DML/索引的重跑风险已登记于规划 6.1.1；需隔离库和线上记录验证 adoption |
-| B0-4b | 改名迁移 alias/adoption runner 与对象契约 | 待证据（本地实现通过） | 提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0`；23 组显式映射、checksum/对象/数据契约、同锁元数据 adoption 和 `_notx` 不重放均有测试；仍需 B0-7 隔离库及线上记录验证 |
+| B0-4a | 同内容/语义改名迁移逐项审计 | 通过（本地静态） | 23 组 old filename→target filename 内容完全相同，另有 2 组已审计语义接管（共 25 组）；含 DML/索引/约束的重放风险已登记于规划 6.1.1；需隔离库和线上记录验证 adoption |
+| B0-4b | 改名迁移 alias/adoption runner 与对象契约 | 待证据（本地实现通过） | 当前工作树为 25 组显式映射；23 组元数据 adoption、`189/226` 事务 replay、checksum/对象/数据契约、同锁和 `_notx` 不重放均有测试；仍需 B0-7 隔离库及线上记录验证 |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 待证据 | 需维护者在当前 OVH 服务器执行命令 |
 | B0-6 | 线上 PostgreSQL 备份或可恢复副本 | 未开始 | 不得用生产库直接做本地测试 |
 | B0-7 | 隔离库跑候选迁移并启动旧版本回归 | 未开始 | 需 B0-4a、B0-5、B0-6 后执行；先验证改名迁移 adoption |
@@ -62,16 +62,16 @@
 | 迁移分支远端固定 | 2026-09-01 Asia/Shanghai | 通过 | `origin/feature/subnexus-migration` 已推送至 `aa960806/sub2api`，提交 `402d0b0e473bd6c0b8bc80a815a7da335e0a0c5a`；只新增远端分支，未修改 `main` |
 | 迁移分支文档发布前固定点 | 2026-09-01 Asia/Shanghai | 通过 | 文档发布前 `origin/feature/subnexus-migration` 与本地均为 `7747627d5646b140e4b716463d5e6342673d343c`；`main` 保持 `d596d0844f274c3e7933c966231851f9f20b0d47`；当前 SHA 以 Git 实时查询为准 |
 | 线上预检脚本发布校验（历史固定提交） | 2026-09-01 Asia/Shanghai | 待维护者执行 | 历史提交脚本 SHA256=`ECB985233881E3C20BD20B8D394275D35F50AF1F344EBFADDB1BF13AA9A02E84`；本轮已更新脚本，以下一行是当前固定版本 |
-| 线上预检脚本发布校验（当前固定提交） | 2026-09-01 Asia/Shanghai | 待维护者执行 | 提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0` 中 `tools/production-deploy/subnexus-readonly-preflight.sh` SHA256=`004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`；服务器下载后先校验再运行 |
+| 线上预检脚本发布校验（历史固定提交，已过期） | 2026-09-01 Asia/Shanghai | 已被本轮 supersede | 历史提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0` 的脚本 SHA256=`004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`；不得用于本轮线上执行 |
 | Go 后端编译级基线 | 2026-09-01 Asia/Shanghai | 通过 | 在 `backend` 模块执行 `go test ./... -run '^$' -count=1 -p=1`，退出码 0；专用 GOTMPDIR/GOCACHE 位于 `F:\MySub2` |
 | 前端冻结依赖与锁文件 | 2026-09-01 Asia/Shanghai | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` 完成；`frontend/pnpm-lock.yaml` SHA256 保持 `8DBD1876020E41B644D971414D29100C9F428F39EDE953C03D0442B834F6F3AF`，无 diff |
 | 前端 typecheck/Vitest/build | 2026-09-01 Asia/Shanghai | 通过 | `pnpm typecheck`、`pnpm test:run`（249 个文件/1804 个测试）、`pnpm build` 均退出码 0；仅有既有 Browserslist/Vite 警告 |
 | 同库切换手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_CUTOVER_RUNBOOK.md`；仅发布授权后使用 |
 | 回滚手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_ROLLBACK_RUNBOOK.md`；默认应用回滚，不自动恢复数据库 |
 | 线上实时预检 | 待维护者执行 | 待证据 | 需要脱敏回传脚本输出；脚本不执行迁移/备份/重启/切流 |
-| 改名迁移静态审计 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧迁移按 `SHA256(TrimSpace(SQL))` 比较，确认 23 组同内容改名；含 DML 的文件不得在同库直接重跑 |
+| 改名迁移静态审计 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧迁移按 `SHA256(TrimSpace(SQL))` 比较，确认 23 组同内容改名；另审计 2 组语义接管；含 DML 的文件不得在同库直接重跑 |
 | 改名迁移 adoption 本地 runner 验证 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧文件 checksum 23/23 一致；repository 单测、`go vet`、全后端编译级测试和 integration-only 编译通过；触发器规范化顺序与 `groups.platform NOT NULL` 契约已校正 |
-| 目标迁移 SQL 隔离目录验证 | 2026-09-01 Asia/Shanghai | 通过（本机 PostgreSQL 16） | 在临时隔离集群执行 23 个目标 SQL，并读取列、索引有效性/定义、约束、函数、触发器；未使用生产数据库，集群已停止 |
+| 目标迁移 SQL 隔离目录验证 | 2026-09-01 Asia/Shanghai | 通过（本机 PostgreSQL 16） | 在临时隔离集群执行目标迁移集合，并读取列、索引有效性/定义、约束、函数、触发器；未使用生产数据库，集群已停止 |
 
 ## 线上证据登记
 
@@ -99,3 +99,4 @@
 | 时间 | 操作 | 结果 | 线上/数据库影响 |
 | --- | --- | --- | --- |
 | 2026-09-02 Asia/Shanghai | 提交并推送文档固定点表述修正（`docs: clarify migration branch fixed points`） | 通过；脚本哈希、Shell 语法、差异检查和远端分支指向已复核 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
+| 2026-09-02 Asia/Shanghai | 25 组旧迁移接管与预检安全收尾复核 | 本地通过；线上待证据 | repository/migrations 单测、`go vet`、Shell 夹具和完整旧迁移隔离集成测试通过；后端全量仅保留 Windows service 基线测试残余（详见变更记忆） | 仅使用本机临时 PostgreSQL；未访问线上，未执行生产 SQL、备份、部署、切流或开关修改 |

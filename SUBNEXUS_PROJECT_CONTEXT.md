@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-01（Batch 0 adoption 门禁与本地目录验证完成，线上预检待执行）
+> 最后更新：2026-09-02（Batch 0 adoption 门禁与预检安全收敛完成，线上预检待执行）
 
 ## 项目身份
 
@@ -20,7 +20,7 @@
 | --- | --- |
 | 迁移阶段 | Batch 0：本地控制、改名迁移 adoption 门禁已完成；等待线上只读证据 |
 | 业务代码迁移 | 未开始 |
-| 新 fork 数据库迁移 | 未新增业务迁移；runner 已增加 23 组显式旧文件名 adoption 兼容门禁 |
+| 新 fork 数据库迁移 | 未新增业务迁移；runner 已增加 25 组显式旧文件名接管门禁（23 组精确映射 + 2 组语义接管） |
 | 生产数据库访问 | 本任务尚未执行 |
 | 生产部署/切换 | 未执行 |
 | 生产开关 | 未修改 |
@@ -49,7 +49,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 数据：PostgreSQL + Redis；迁移由 `backend/internal/repository/migrations_runner.go` 启动时自动执行。
 - 迁移追踪：`schema_migrations(filename, checksum, applied_at)`；checksum 为 `SHA256(TrimSpace(SQL))`。
 - 事务规则：普通 `.sql` 在事务中执行；`*_notx.sql` 仅用于并发索引等明确非事务场景。
-- 同库兼容：23 组精确旧文件名 alias 仅在目标记录缺失、两侧 checksum 和数据库对象契约全部通过时补写目标记录；旧 SQL 不重放，失败时拒绝启动。
+- 同库兼容：25 组显式旧文件名 alias 仅在目标记录缺失、旧/目标 checksum 和数据库对象契约全部通过时处理；23 组只补写目标记录，`189/226` 两组按审计过的事务 replay 规则执行，失败时拒绝启动。
 - 核心入口：`backend/internal/server/router.go`、`backend/internal/server/routes/`、`backend/internal/handler/`、`backend/internal/service/`、`backend/internal/repository/`。
 - 前端开关入口：`frontend/src/utils/featureFlags.ts`、`frontend/src/stores/app.ts`、`frontend/src/components/layout/AppSidebar.vue`、公共设置 API。
 
@@ -96,6 +96,6 @@ battle_pass_enabled   # 若目标已有则复用，不重复创建
 ## 下一步入口
 
 1. 等维护者从迁移分支固定提交执行当前 OVH 拓扑的只读 preflight，返回脱敏的 `evidence.txt`。
-2. 依据证据核对 23 组旧/目标迁移记录、对象定义、容器/网络/挂载和 Redis 恢复条件。
+2. 依据证据核对 25 组旧/目标迁移记录（23 组精确映射、2 组语义接管）、对象定义、容器/网络/挂载和 Redis 恢复条件。
 3. 创建可恢复 PostgreSQL 备份和 Redis 恢复点，在隔离 PostgreSQL/Redis 克隆上验证 adoption、候选启动和旧版本回归。
 4. B0-5/B0-6/B0-7 全部通过后，才从低耦合活动基础能力开始 Batch 1，所有开关继续默认关闭。

@@ -1,20 +1,30 @@
 package repository
 
-// legacyMigrationAlias describes one exact SQL migration whose filename was
-// renumbered between the legacy SubNexus build and this fork. The checksum is
-// SHA256(strings.TrimSpace(SQL)), matching migrations_runner.go. Keeping the
-// expected checksum in the map makes a future edit to either historical file
-// fail closed instead of silently adopting a different statement set.
+// legacyMigrationAlias describes one migration whose durable schema effect
+// already exists under a legacy SubNexus filename. Checksums are
+// SHA256(strings.TrimSpace(SQL)), matching migrations_runner.go. Most entries
+// use identical SQL and therefore share one checksum. A narrow set has
+// separately audited target/legacy checksums; replayPrelude is used only when
+// the target SQL must still run after removing a known duplicate blocker.
 type legacyMigrationAlias struct {
 	legacyFilename string
-	checksum       string
+	checksum       string // Target migration checksum.
+	legacyChecksum string // Empty means the target checksum is also required.
+	replayPrelude  string // Transactional SQL run immediately before target SQL.
+}
+
+func (a legacyMigrationAlias) expectedLegacyChecksum() string {
+	if a.legacyChecksum != "" {
+		return a.legacyChecksum
+	}
+	return a.checksum
 }
 
 // legacyMigrationAliases is intentionally an explicit, narrow allowlist. It
 // is not a generic "same checksum" shortcut: only a target filename listed
-// here may adopt a matching legacy record. The target and legacy SQL files in
-// this list were byte-for-byte identical after TrimSpace during the Batch 0
-// audit on 2026-09-01.
+// here may use a matching legacy record. Metadata-only adoption requires a
+// durable schema contract. A replay rule additionally runs the reviewed target
+// SQL and validates its postcondition in the same transaction.
 var legacyMigrationAliases = map[string]legacyMigrationAlias{
 	"158_add_group_peak_rate_multiplier.sql": {
 		legacyFilename: "205_add_group_peak_rate_multiplier_compat.sql",
@@ -64,6 +74,11 @@ var legacyMigrationAliases = map[string]legacyMigrationAlias{
 		legacyFilename: "193_allow_live_usage_request_type.sql",
 		checksum:       "0233dba07a75bd9c740402a64e3af75c2a3884dfc8c4b63145df115e716fd35e",
 	},
+	"189_add_group_allow_live.sql": {
+		legacyFilename: "194_add_group_allow_live.sql",
+		checksum:       "51172b10c160e7f560346dbaf736dc8e92feb793cd00169f5fb876c399460862",
+		legacyChecksum: "d6d2e6ac7f201da0cebcc81bdc7b8a5ffff7f93abfb149f17d3dd609fa316ea6",
+	},
 	"191_passkey_credentials.sql": {
 		legacyFilename: "197_passkey_credentials.sql",
 		checksum:       "d79e7093f28b1a2ba923da35d7376423683c9a5d21dffd0e581f3c45b5afd817",
@@ -107,5 +122,11 @@ var legacyMigrationAliases = map[string]legacyMigrationAlias{
 	"226_add_usage_log_effective_model_indexes_notx.sql": {
 		legacyFilename: "246_add_usage_log_effective_model_indexes_notx.sql",
 		checksum:       "8b85d3a071e0822f75244cc242dbf56df83ac85f7fdca3940590185335b5c239",
+	},
+	"226_channel_monitor_quota_mode.sql": {
+		legacyFilename: "247_channel_monitor_quota_mode.sql",
+		checksum:       "c36c6c0ec6cc8727bb986e8cdc645990dcf8dad8f56a8c4647422e24e9dff88d",
+		legacyChecksum: "ef297c957b0d8813e552272adce6ed4cf72a1177a8c40cccc1a9e7fd39d52d14",
+		replayPrelude:  "SET LOCAL search_path = public; ALTER TABLE public.channel_monitors DROP CONSTRAINT IF EXISTS channel_monitors_check_mode_check",
 	},
 }

@@ -211,27 +211,37 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 			// 迁移已应用，验证校验和是否匹配
 			if existing != checksum {
 				// 兼容特定历史误改场景（仅白名单规则），其余仍保持严格不可变约束。
-				if isMigrationChecksumCompatible(name, existing, checksum) {
-					continue
+				if !isMigrationChecksumCompatible(name, existing, checksum) {
+					// 校验和不匹配意味着迁移文件在应用后被修改，这是危险的。
+					// 正确的做法是创建新的迁移文件来进行变更。
+					return fmt.Errorf(
+						"migration %s checksum mismatch (db=%s file=%s)\n"+
+							"This means the migration file was modified after being applied to the database.\n"+
+							"Solutions:\n"+
+							"  1. Revert to original: git log --oneline -- migrations/%s && git checkout <commit> -- migrations/%s\n"+
+							"  2. For new changes, create a new migration file instead of modifying existing ones\n"+
+							"Note: Modifying applied migrations breaks the immutability principle and can cause inconsistencies across environments",
+						name, existing, checksum, name, name,
+					)
 				}
-				// 校验和不匹配意味着迁移文件在应用后被修改，这是危险的。
-				// 正确的做法是创建新的迁移文件来进行变更。
-				return fmt.Errorf(
-					"migration %s checksum mismatch (db=%s file=%s)\n"+
-						"This means the migration file was modified after being applied to the database.\n"+
-						"Solutions:\n"+
-						"  1. Revert to original: git log --oneline -- migrations/%s && git checkout <commit> -- migrations/%s\n"+
-						"  2. For new changes, create a new migration file instead of modifying existing ones\n"+
-						"Note: Modifying applied migrations breaks the immutability principle and can cause inconsistencies across environments",
-					name, existing, checksum, name, name,
-				)
+			}
+			// A semantic alias may have a target record that was written by an
+			// earlier runner (or manually).  The filename/checksum alone cannot
+			// prove that the durable schema effect is still present, so re-check
+			// its contract before treating the migration as complete.
+			if alias, ok := legacyMigrationAliases[name]; ok &&
+				(alias.legacyChecksum != "" || alias.replayPrelude != "") {
+				if err := validateMigrationAliasContract(ctx, lockConn, name); err != nil {
+					return fmt.Errorf("validate existing migration %s contract: %w", name, err)
+				}
 			}
 			continue // 迁移已应用且校验和匹配，跳过
 		}
 
-		// 旧二开和目标 fork 对部分同一 SQL 使用了不同文件名。若旧记录
-		// 存在且 checksum 与白名单完全匹配，说明 SQL 已在该数据库执行过；
-		// 在同一 advisory lock 下只补写目标文件名记录，不再次执行 SQL。
+		// 旧二开和目标 fork 对部分迁移使用了不同文件名。绝大多数规则
+		// 在精确 checksum 和对象契约通过后只采用元数据；少量语义等价但
+		// SQL 不同的规则会先移除已知重复阻断，再在同一事务中执行目标 SQL。
+		legacyReplayPrelude := ""
 		if alias, ok := legacyMigrationAliases[name]; ok {
 			legacyChecksum, legacyFound, aliasErr := lookupMigrationChecksum(ctx, lockConn, alias.legacyFilename)
 			if aliasErr != nil {
@@ -244,19 +254,24 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 						name, checksum, alias.checksum,
 					)
 				}
-				if legacyChecksum != alias.checksum {
+				expectedLegacyChecksum := alias.expectedLegacyChecksum()
+				if legacyChecksum != expectedLegacyChecksum {
 					return fmt.Errorf(
 						"legacy migration alias %s checksum mismatch (db=%s expected=%s)",
-						alias.legacyFilename, legacyChecksum, alias.checksum,
+						alias.legacyFilename, legacyChecksum, expectedLegacyChecksum,
 					)
 				}
-				if err := validateMigrationAliasContract(ctx, lockConn, name); err != nil {
-					return fmt.Errorf("validate legacy migration %s contract before adopting as %s: %w", alias.legacyFilename, name, err)
+				if alias.replayPrelude != "" {
+					legacyReplayPrelude = alias.replayPrelude
+				} else {
+					if err := validateMigrationAliasContract(ctx, lockConn, name); err != nil {
+						return fmt.Errorf("validate legacy migration %s contract before adopting as %s: %w", alias.legacyFilename, name, err)
+					}
+					if err := adoptLegacyMigration(ctx, lockConn, name, checksum); err != nil {
+						return fmt.Errorf("adopt legacy migration %s as %s: %w", alias.legacyFilename, name, err)
+					}
+					continue
 				}
-				if err := adoptLegacyMigration(ctx, lockConn, name, checksum); err != nil {
-					return fmt.Errorf("adopt legacy migration %s as %s: %w", alias.legacyFilename, name, err)
-				}
-				continue
 			}
 		}
 
@@ -266,6 +281,9 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		}
 
 		if nonTx {
+			if legacyReplayPrelude != "" {
+				return fmt.Errorf("legacy migration replay %s cannot target a non-transactional migration", name)
+			}
 			if err := prepareNonTransactionalMigration(ctx, lockConn, name); err != nil {
 				return fmt.Errorf("prepare migration %s: %w", name, err)
 			}
@@ -296,17 +314,54 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		if err != nil {
 			return fmt.Errorf("begin migration %s: %w", name, err)
 		}
+		if legacyReplayPrelude != "" {
+			if _, err := tx.ExecContext(ctx, legacyReplayPrelude); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("prepare legacy migration replay %s: %w", name, err)
+			}
+		}
 
 		// 执行迁移 SQL
 		if _, err := tx.ExecContext(ctx, content); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
+		if legacyReplayPrelude != "" {
+			if err := validateMigrationAliasContract(ctx, tx, name); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("validate legacy migration replay %s postcondition: %w", name, err)
+			}
+		}
 
 		// 记录迁移已完成，保存文件名和校验和
-		if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)", name, checksum); err != nil {
+		var recordErr error
+		if legacyReplayPrelude != "" {
+			_, recordErr = tx.ExecContext(ctx, `
+				INSERT INTO schema_migrations (filename, checksum)
+				VALUES ($1, $2)
+				ON CONFLICT (filename) DO NOTHING
+			`, name, checksum)
+		} else {
+			_, recordErr = tx.ExecContext(ctx, "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)", name, checksum)
+		}
+		if recordErr != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("record migration %s: %w", name, err)
+			return fmt.Errorf("record migration %s: %w", name, recordErr)
+		}
+		if legacyReplayPrelude != "" {
+			recorded, found, err := lookupMigrationChecksum(ctx, tx, name)
+			if err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("verify legacy migration replay %s record: %w", name, err)
+			}
+			if !found {
+				_ = tx.Rollback()
+				return fmt.Errorf("verify legacy migration replay %s record: target migration record was not written", name)
+			}
+			if recorded != checksum {
+				_ = tx.Rollback()
+				return fmt.Errorf("verify legacy migration replay %s record: target migration record checksum mismatch (db=%s expected=%s)", name, recorded, checksum)
+			}
 		}
 
 		// 提交事务
@@ -322,7 +377,7 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 // lookupMigrationChecksum looks up one migration record without treating a missing
 // row as an error. Keeping this query in one place ensures alias adoption and
 // the normal path use identical lookup semantics.
-func lookupMigrationChecksum(ctx context.Context, db migrationConnection, name string) (string, bool, error) {
+func lookupMigrationChecksum(ctx context.Context, db migrationQueryConnection, name string) (string, bool, error) {
 	var checksum string
 	err := db.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE filename = $1", name).Scan(&checksum)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -359,10 +414,14 @@ func adoptLegacyMigration(ctx context.Context, db migrationConnection, targetFil
 	return nil
 }
 
+type migrationQueryConnection interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 type migrationConnection interface {
+	migrationQueryConnection
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 

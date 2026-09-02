@@ -16,7 +16,7 @@ import (
 // inspect the legacy checkout: production adoption is based on the recorded
 // legacy filename/checksum, while this test protects the target-side contract.
 func TestLegacyMigrationAliasesStaticContract(t *testing.T) {
-	const expectedAliasCount = 23
+	const expectedAliasCount = 25
 
 	require.Len(t, legacyMigrationAliases, expectedAliasCount)
 
@@ -26,6 +26,7 @@ func TestLegacyMigrationAliasesStaticContract(t *testing.T) {
 	for targetName, alias := range legacyMigrationAliases {
 		require.NotEmpty(t, targetName)
 		require.NotEmpty(t, alias.legacyFilename)
+		require.Regexp(t, `^[0-9a-f]{64}$`, alias.expectedLegacyChecksum())
 		require.NotEqual(t, targetName, alias.legacyFilename,
 			"an alias must represent a filename change")
 
@@ -50,6 +51,18 @@ func TestLegacyMigrationAliasesStaticContract(t *testing.T) {
 		require.False(t, overlaps,
 			"a target migration filename must not also be used as a legacy alias")
 	}
+}
+
+func TestLegacyMigrationSemanticCompatibilityRulesAreExplicit(t *testing.T) {
+	allowLive := legacyMigrationAliases["189_add_group_allow_live.sql"]
+	require.Equal(t, "194_add_group_allow_live.sql", allowLive.legacyFilename)
+	require.Equal(t, "d6d2e6ac7f201da0cebcc81bdc7b8a5ffff7f93abfb149f17d3dd609fa316ea6", allowLive.expectedLegacyChecksum())
+	require.Empty(t, allowLive.replayPrelude)
+
+	quotaMode := legacyMigrationAliases["226_channel_monitor_quota_mode.sql"]
+	require.Equal(t, "247_channel_monitor_quota_mode.sql", quotaMode.legacyFilename)
+	require.Equal(t, "ef297c957b0d8813e552272adce6ed4cf72a1177a8c40cccc1a9e7fd39d52d14", quotaMode.expectedLegacyChecksum())
+	require.Equal(t, "SET LOCAL search_path = public; ALTER TABLE public.channel_monitors DROP CONSTRAINT IF EXISTS channel_monitors_check_mode_check", quotaMode.replayPrelude)
 }
 
 func TestGroupDuplicateOperationIDLegacyChecksumCompatibility(t *testing.T) {

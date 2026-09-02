@@ -334,3 +334,32 @@
 - 风险：线上状态、备份可恢复性和隔离恢复仍未取得证据；Batch 1 业务迁移继续保持门禁阻断。
 - 回滚点：文档提交可按 Git 提交回退；本次没有数据库或生产状态变化。
 - 下一步：维护者执行固定脚本的线上只读 preflight，回传脱敏证据后继续 B0-5/B0-6/B0-7。
+
+## 2026-09-02（Asia/Shanghai）— 完成 25 组旧迁移接管与预检收尾复核
+
+### 目的与授权
+
+- 目的：继续执行 Batch 0 规划，完成旧 SubNexus 与新 fork 同库切换所需的迁移文件接管门禁、隔离库复核和只读预检脚本安全收敛。
+- 是否得到维护者明确授权：是（本地迁移分支代码、测试和文档）；未获生产 SQL、备份、部署、重启、切流或线上开关修改授权。
+- 是否访问线上：否。
+
+### 变更与命令
+
+- 分支与基线：`feature/subnexus-migration`，目标 `main` 基线 `d596d0844f274c3e7933c966231851f9f20b0d47`；`main` 未修改。
+- 触碰文件：`backend/internal/repository/migrations_runner.go`、`migrations_legacy_aliases.go`、`migrations_legacy_contracts.go` 及其单测/隔离集成测试；`tools/production-deploy/subnexus-readonly-preflight.sh` 及夹具；`SUBNEXUS_MIGRATION_PLAN.md`、`SUBNEXUS_PROJECT_CONTEXT.md`、`SUBNEXUS_MIGRATION_LEDGER.md`、`SUBNEXUS_CUTOVER_RUNBOOK.md`。
+- 迁移规则：固定 25 组显式旧文件名接管（23 组精确 checksum 元数据 adoption，`189/226` 两组分别执行契约校验和事务 replay）；禁止全局 checksum 跳过，使用 PostgreSQL advisory lock，失败 fail-closed。
+- 执行的命令类别（脱敏）：`gofmt`；`go test ./internal/repository -count=1 -p=1`；`go test ./migrations -count=1 -p=1`；`go vet ./internal/repository`；Git Bash `bash -n tools/production-deploy/subnexus-readonly-preflight.sh`；预检夹具；`git diff --check`；本地 PostgreSQL 16 隔离集群启动/停止及完整旧迁移接管集成测试。
+- 数据库迁移/开关/部署动作：仅在本机临时隔离数据库执行测试迁移；集群监听 `127.0.0.1:60001`，测试完成后已停止；未连接生产库，未修改任何线上数据或开关。
+
+### 验证结果
+
+- repository 单测、migrations 单测、`go vet`、Shell 语法和预检夹具均通过。
+- `go test -tags legacyintegration ./internal/repository -run '^TestMigrationsRunner_FullLegacyCheckoutHandoff$' -count=1 -p=1` 通过（完整旧迁移目录、当前 runner 接管、重复启动、旧目录重跑及 `189/226` 最终契约）。
+- 后端全量 `go test ./... -count=1 -p=1` 的业务包均完成，但 Windows 本地 `internal/service` 保留基线残余：`TestContentModerationRuntimeSnapshotRefreshFailureKeepsStaleConfig` 的 1 秒异步刷新等待存在时序竞态；4 个 `TestPluginPackageInstaller*` 在 Windows 对仍打开的 zip 临时文件执行 `os.Rename` 时失败（`The process cannot access the file because it is being used by another process`）。本轮未修改 `internal/service`；`git diff main...HEAD -- backend/internal/service` 为空，生产部署目标为 Linux，需另开跨平台测试修复任务。
+- 线上证据：无；预检脚本只读，输出仍需维护者在服务器执行后脱敏回传。
+
+### 风险、回滚与下一步
+
+- 风险：生产 `schema_migrations`/Atlas 记录、真实对象、备份可恢复性、Redis 恢复点及旧版本回归尚未验证；不能据本地隔离库直接启动候选或创建 Batch 1 业务迁移。
+- 回滚点/回滚命令：本轮代码提交前的 `074756ad1b7ab93234ab26b4fcf6d10f0f989363`；数据库无生产变更，应用回滚优先，不恢复数据库。
+- 下一步：维护者下载并校验本轮提交中的只读预检脚本，在当前 OVH 服务器执行并回传脱敏 `evidence.txt`；只有 B0-5/B0-6/B0-7 全部通过后才开始 Batch 1，所有新功能继续默认关闭。

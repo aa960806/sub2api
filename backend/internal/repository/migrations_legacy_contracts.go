@@ -240,6 +240,25 @@ var migrationAliasContracts = map[string]migrationAliasContract{
 			fragments: []string{"request_type", ">= 0", "<= 5"}, requireValid: true,
 		}},
 	},
+	"189_add_group_allow_live.sql": {
+		tables:  []string{"groups"},
+		columns: []migrationColumnContract{{table: "groups", column: "allow_live", dataType: "boolean", notNull: true}},
+		dataChecks: []migrationDataContract{{
+			description: "groups.allow_live keeps the target false default",
+			query: `
+SELECT COALESCE((
+    SELECT lower(btrim(pg_get_expr(d.adbin, d.adrelid))) IN ('false', 'false::boolean')
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+    WHERE n.nspname = 'public'
+      AND c.relname = 'groups'
+      AND a.attname = 'allow_live'
+      AND NOT a.attisdropped
+), FALSE)`,
+		}},
+	},
 	"191_passkey_credentials.sql": {
 		tables: []string{"passkey_user_handles", "passkey_credentials"},
 		columns: []migrationColumnContract{
@@ -439,6 +458,76 @@ SELECT NOT EXISTS (
 			{table: "usage_logs", name: "idx_usage_logs_effective_upstream_model_created", fragments: []string{"usage_logs", "coalesce", "upstream_model", "btrim", "model", "created_at DESC", "id DESC"}},
 		},
 	},
+	"226_channel_monitor_quota_mode.sql": {
+		tables: []string{"channel_monitors", "channel_monitor_request_templates", "channel_monitor_histories", "accounts", "settings"},
+		columns: []migrationColumnContract{
+			{table: "channel_monitors", column: "check_mode", dataType: "character varying(32)", notNull: true},
+			{table: "channel_monitors", column: "account_id", dataType: "bigint"},
+			{table: "channel_monitor_histories", column: "quota", dataType: "jsonb"},
+		},
+		indexes: []migrationIndexContract{{
+			table: "channel_monitors", name: "idx_channel_monitors_account_id", fragments: []string{"channel_monitors", "account_id"},
+		}},
+		constraints: []migrationConstraintContract{
+			{
+				table: "channel_monitors", name: "channel_monitors_provider_check",
+				fragments: []string{"provider", "openai", "anthropic", "gemini", "grok", "antigravity", "kimi", "zhipu", "deepseek"}, requireValid: true,
+			},
+			{
+				table: "channel_monitor_request_templates", name: "channel_monitor_request_templates_provider_check",
+				fragments: []string{"provider", "openai", "anthropic", "gemini", "grok", "antigravity", "kimi", "zhipu", "deepseek"}, requireValid: true,
+			},
+			{
+				table: "channel_monitors", name: "channel_monitors_check_mode_check",
+				fragments: []string{"check_mode", "probe", "quota", "quota_probe"}, requireValid: true,
+			},
+		},
+		settings: []migrationSettingContract{{key: "channel_monitor_show_quota"}},
+		dataChecks: []migrationDataContract{
+			{
+				description: "channel_monitors.check_mode keeps the target probe default",
+				query: `
+SELECT COALESCE((
+    SELECT regexp_replace(lower(btrim(pg_get_expr(d.adbin, d.adrelid))), '::.*$', '') = '''probe'''
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+    WHERE n.nspname = 'public'
+      AND c.relname = 'channel_monitors'
+      AND a.attname = 'check_mode'
+      AND NOT a.attisdropped
+), FALSE)`,
+			},
+			{
+				description: "channel_monitors.account_id references accounts(id) with set null",
+				query: `
+SELECT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class child ON child.oid = c.conrelid
+    JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+    JOIN pg_class parent ON parent.oid = c.confrelid
+    JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+    JOIN pg_attribute child_col ON child_col.attrelid = child.oid
+    JOIN pg_attribute parent_col ON parent_col.attrelid = parent.oid
+    WHERE child_ns.nspname = 'public'
+      AND parent_ns.nspname = 'public'
+      AND child.relname = 'channel_monitors'
+      AND parent.relname = 'accounts'
+      AND c.contype = 'f'
+      AND c.confdeltype = 'n'
+      AND c.convalidated
+      AND array_length(c.conkey, 1) = 1
+      AND array_length(c.confkey, 1) = 1
+      AND child_col.attname = 'account_id'
+      AND child_col.attnum = ANY (c.conkey)
+      AND parent_col.attname = 'id'
+      AND parent_col.attnum = ANY (c.confkey)
+)`,
+			},
+		},
+	},
 }
 
 var migrationChecksumPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -450,6 +539,9 @@ func validateLegacyMigrationAliasMap() error {
 	for target, alias := range legacyMigrationAliases {
 		if !migrationChecksumPattern.MatchString(alias.checksum) {
 			return fmt.Errorf("legacy migration alias %s has invalid checksum %q", target, alias.checksum)
+		}
+		if !migrationChecksumPattern.MatchString(alias.expectedLegacyChecksum()) {
+			return fmt.Errorf("legacy migration alias %s has invalid legacy checksum %q", target, alias.expectedLegacyChecksum())
 		}
 		if strings.TrimSpace(alias.legacyFilename) == "" {
 			return fmt.Errorf("legacy migration alias %s has empty legacy filename", target)
@@ -487,7 +579,7 @@ func validateLegacyMigrationAliasMap() error {
 	return nil
 }
 
-func validateMigrationAliasContract(ctx context.Context, db migrationConnection, migrationName string) error {
+func validateMigrationAliasContract(ctx context.Context, db migrationQueryConnection, migrationName string) error {
 	contract, ok := migrationAliasContracts[migrationName]
 	if !ok {
 		return fmt.Errorf("no schema contract registered for legacy migration alias %s", migrationName)
@@ -615,7 +707,7 @@ func validateMigrationAliasContract(ctx context.Context, db migrationConnection,
 	return nil
 }
 
-func lookupMigrationColumn(ctx context.Context, db migrationConnection, contract migrationColumnContract) (string, bool, error) {
+func lookupMigrationColumn(ctx context.Context, db migrationQueryConnection, contract migrationColumnContract) (string, bool, error) {
 	var dataType string
 	var notNull bool
 	err := db.QueryRowContext(ctx, `
@@ -631,7 +723,7 @@ WHERE n.nspname = 'public'
 	return dataType, notNull, err
 }
 
-func migrationTableExists(ctx context.Context, db migrationConnection, tableName string) (bool, error) {
+func migrationTableExists(ctx context.Context, db migrationQueryConnection, tableName string) (bool, error) {
 	var exists bool
 	err := db.QueryRowContext(ctx, `
 SELECT EXISTS (
@@ -646,7 +738,7 @@ SELECT EXISTS (
 	return exists, err
 }
 
-func lookupMigrationIndex(ctx context.Context, db migrationConnection, name, table string) (bool, bool, string, error) {
+func lookupMigrationIndex(ctx context.Context, db migrationQueryConnection, name, table string) (bool, bool, string, error) {
 	var valid bool
 	var ready bool
 	var definition string
@@ -667,7 +759,7 @@ LIMIT 1
 	return valid, ready, definition, err
 }
 
-func lookupMigrationConstraint(ctx context.Context, db migrationConnection, table, name string) (string, bool, error) {
+func lookupMigrationConstraint(ctx context.Context, db migrationQueryConnection, table, name string) (string, bool, error) {
 	var definition string
 	var validated bool
 	err := db.QueryRowContext(ctx, `
@@ -682,7 +774,7 @@ WHERE ns.nspname = 'public'
 	return definition, validated, err
 }
 
-func lookupMigrationFunction(ctx context.Context, db migrationConnection, name string, argCount int) (string, string, error) {
+func lookupMigrationFunction(ctx context.Context, db migrationQueryConnection, name string, argCount int) (string, string, error) {
 	var definition string
 	var returnType string
 	err := db.QueryRowContext(ctx, `
@@ -699,7 +791,7 @@ LIMIT 1
 	return definition, returnType, err
 }
 
-func lookupMigrationTrigger(ctx context.Context, db migrationConnection, table, name string) (string, error) {
+func lookupMigrationTrigger(ctx context.Context, db migrationQueryConnection, table, name string) (string, error) {
 	var definition string
 	err := db.QueryRowContext(ctx, `
 SELECT pg_get_triggerdef(t.oid)
@@ -715,7 +807,7 @@ WHERE ns.nspname = 'public'
 	return definition, err
 }
 
-func lookupMigrationSetting(ctx context.Context, db migrationConnection, key string) (string, error) {
+func lookupMigrationSetting(ctx context.Context, db migrationQueryConnection, key string) (string, error) {
 	var value string
 	err := db.QueryRowContext(ctx, `
 SELECT value

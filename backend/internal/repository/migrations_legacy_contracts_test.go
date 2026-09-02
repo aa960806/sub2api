@@ -79,6 +79,217 @@ func TestApplyMigrationsFS_LegacyAliasAdoptsMetadataAfterContractValidation(t *t
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestApplyMigrationsFS_LegacyAliasAdoptsDifferentAuditedChecksum(t *testing.T) {
+	const targetName = "189_add_group_allow_live.sql"
+	const legacyName = "194_add_group_allow_live.sql"
+	const targetChecksum = "51172b10c160e7f560346dbaf736dc8e92feb793cd00169f5fb876c399460862"
+	const legacyChecksum = "d6d2e6ac7f201da0cebcc81bdc7b8a5ffff7f93abfb149f17d3dd609fa316ea6"
+
+	content, err := migrations.FS.ReadFile(targetName)
+	require.NoError(t, err)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(legacyName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(legacyChecksum))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("groups").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT format_type\(`).
+		WithArgs("groups", "allow_live").
+		WillReturnRows(sqlmock.NewRows([]string{"format_type", "attnotnull"}).AddRow("boolean", true))
+	mock.ExpectQuery(`SELECT COALESCE\(`).
+		WillReturnRows(sqlmock.NewRows([]string{"ok"}).AddRow(true))
+	mock.ExpectExec(`INSERT INTO schema_migrations`).
+		WithArgs(targetName, targetChecksum).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(targetChecksum))
+	mock.ExpectExec(`SELECT pg_advisory_unlock`).
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = applyMigrationsFS(context.Background(), db, fstest.MapFS{
+		targetName: &fstest.MapFile{Data: content},
+	})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyMigrationsFS_LegacyReplayRunsPreludeAndTargetAtomically(t *testing.T) {
+	const targetName = "999_test_legacy_replay.sql"
+	const legacyName = "998_test_legacy_replay.sql"
+	const targetChecksum = "17db4fd369edb9244b9f91d9aeed145c3d04ad8ba6e95d06247f07a63527d11a"
+	const legacyChecksum = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	const prelude = "SET LOCAL search_path = public; SELECT 2;"
+	const content = "SELECT 1;"
+
+	legacyMigrationAliases[targetName] = legacyMigrationAlias{
+		legacyFilename: legacyName,
+		checksum:       targetChecksum,
+		legacyChecksum: legacyChecksum,
+		replayPrelude:  prelude,
+	}
+	migrationAliasContracts[targetName] = migrationAliasContract{}
+	defer func() {
+		delete(legacyMigrationAliases, targetName)
+		delete(migrationAliasContracts, targetName)
+	}()
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(legacyName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(legacyChecksum))
+	mock.ExpectBegin()
+	mock.ExpectExec(`SELECT 2;`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`SELECT 1;`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO schema_migrations`).
+		WithArgs(targetName, targetChecksum).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(targetChecksum))
+	mock.ExpectCommit()
+	mock.ExpectExec(`SELECT pg_advisory_unlock`).
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = applyMigrationsFS(context.Background(), db, fstest.MapFS{
+		targetName: &fstest.MapFile{Data: []byte(content)},
+	})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyMigrationsFS_ExistingSemanticAliasRecordRequiresContract(t *testing.T) {
+	const targetName = "189_add_group_allow_live.sql"
+	const targetChecksum = "51172b10c160e7f560346dbaf736dc8e92feb793cd00169f5fb876c399460862"
+
+	content, err := migrations.FS.ReadFile(targetName)
+	require.NoError(t, err)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(targetChecksum))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("groups").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT format_type\(`).
+		WithArgs("groups", "allow_live").
+		WillReturnRows(sqlmock.NewRows([]string{"format_type", "attnotnull"}).AddRow("boolean", true))
+	mock.ExpectQuery(`SELECT COALESCE\(`).
+		WillReturnRows(sqlmock.NewRows([]string{"ok"}).AddRow(true))
+	mock.ExpectExec(`SELECT pg_advisory_unlock`).
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = applyMigrationsFS(context.Background(), db, fstest.MapFS{
+		targetName: &fstest.MapFile{Data: content},
+	})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyMigrationsFS_ExistingSemanticAliasRecordRejectsMissingContract(t *testing.T) {
+	const targetName = "189_add_group_allow_live.sql"
+	const targetChecksum = "51172b10c160e7f560346dbaf736dc8e92feb793cd00169f5fb876c399460862"
+
+	content, err := migrations.FS.ReadFile(targetName)
+	require.NoError(t, err)
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(targetChecksum))
+	mock.ExpectQuery(`SELECT EXISTS \(`).
+		WithArgs("groups").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectExec(`SELECT pg_advisory_unlock`).
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = applyMigrationsFS(context.Background(), db, fstest.MapFS{
+		targetName: &fstest.MapFile{Data: content},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "validate existing migration 189_add_group_allow_live.sql contract")
+	require.Contains(t, err.Error(), "table groups is missing")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyMigrationsFS_LegacyReplayConflictingTargetRecordRollsBack(t *testing.T) {
+	const targetName = "999_test_legacy_replay.sql"
+	const legacyName = "998_test_legacy_replay.sql"
+	const targetChecksum = "17db4fd369edb9244b9f91d9aeed145c3d04ad8ba6e95d06247f07a63527d11a"
+	const legacyChecksum = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	const prelude = "SELECT 2;"
+	const content = "SELECT 1;"
+	const conflictingChecksum = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+
+	legacyMigrationAliases[targetName] = legacyMigrationAlias{
+		legacyFilename: legacyName,
+		checksum:       targetChecksum,
+		legacyChecksum: legacyChecksum,
+		replayPrelude:  prelude,
+	}
+	migrationAliasContracts[targetName] = migrationAliasContract{}
+	defer func() {
+		delete(legacyMigrationAliases, targetName)
+		delete(migrationAliasContracts, targetName)
+	}()
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(legacyName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(legacyChecksum))
+	mock.ExpectBegin()
+	mock.ExpectExec(`SELECT 2;`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`SELECT 1;`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO schema_migrations`).
+		WithArgs(targetName, targetChecksum).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT checksum FROM schema_migrations WHERE filename = \$1`).
+		WithArgs(targetName).
+		WillReturnRows(sqlmock.NewRows([]string{"checksum"}).AddRow(conflictingChecksum))
+	mock.ExpectRollback()
+	mock.ExpectExec(`SELECT pg_advisory_unlock`).
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = applyMigrationsFS(context.Background(), db, fstest.MapFS{
+		targetName: &fstest.MapFile{Data: []byte(content)},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "target migration record checksum mismatch")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestValidateMigrationAliasContract_GrokPlatformNullabilityIsExplicit(t *testing.T) {
 	contract, ok := migrationAliasContracts["158_enable_grok_media_generation_groups.sql"]
 	require.True(t, ok)
