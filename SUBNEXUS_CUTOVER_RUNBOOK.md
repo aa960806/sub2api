@@ -14,7 +14,7 @@
 
 在生产服务器执行（替换容器名和公网健康 URL；不要把密码写进命令）：
 
-最终发布清单必须同时记录预检脚本所在提交的完整 40 位 SHA 和该文件的 64 位 SHA256；脚本或其依赖环境每次变更后都必须重新生成这两个值，不能沿用历史固定值。服务器上的副本必须与维护者批准的发布清单逐项比对，不一致就停止，不要直接运行未校验副本。
+最终发布清单必须同时记录批准预检脚本发布提交的完整 40 位 SHA 和该文件的 64 位 SHA256；脚本或其依赖环境每次变更后都必须重新生成这两个值，不能沿用历史固定值。服务器上的副本必须与维护者批准的发布清单逐项比对，不一致就停止，不要直接运行未校验副本。
 
 本轮 Batch 0 只读预检脚本发布点（不代表生产发布授权）：批准提交 `7200e5ae1f48d8f78bce43565814378b636c842b`；脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`。该提交只补充固定点文档，脚本内容与父提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29` 相同；服务器工作树可以是该提交的后代，但必须同时校验批准提交中的脚本和当前执行文件。
 
@@ -24,21 +24,41 @@ repo_root='<approved-repo-root-from-live-inspect>'
 app_container='<actual-running-app-container-name>'
 public_health_url='<optional-public-health-url>'
 evidence_root='/srv/subnexus-migration/preflight'
+# Pass user-selected paths/identifiers as positional arguments. The root
+# wrapper verifies the approved Git blob, copies it to a root-only temporary
+# file, and executes that verified copy so hash-check and execution share one
+# privilege boundary and do not have a TOCTOU gap.
+sudo bash -s -- "$repo_root" "$app_container" "$public_health_url" "$evidence_root" <<'PREFLIGHT_VERIFY_AND_RUN'
+set -Eeuo pipefail
+export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+repo_root="$1"
+app_container="$2"
+public_health_url="$3"
+evidence_root="$4"
 script_relative_path='tools/production-deploy/subnexus-readonly-preflight.sh'
 script_path="$repo_root/$script_relative_path"
 approved_script_commit_sha='7200e5ae1f48d8f78bce43565814378b636c842b'
 expected_script_sha256='D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1'
 [[ "$approved_script_commit_sha" =~ ^[0-9a-f]{40}$ ]]
 [[ "$expected_script_sha256" =~ ^[0-9A-F]{64}$ ]]
+[[ -d "$repo_root/.git" ]] || { printf 'ERROR: repo root is not a Git worktree: %s\n' "$repo_root" >&2; exit 1; }
+[[ "$(stat -c '%u' -- "$repo_root")" == '0' ]] || { printf 'ERROR: repo root must be root-owned\n' >&2; exit 1; }
+[[ "$(stat -c '%u' -- "$repo_root/.git")" == '0' ]] || { printf 'ERROR: Git metadata must be root-owned\n' >&2; exit 1; }
 git -C "$repo_root" cat-file -e "$approved_script_commit_sha^{commit}"
 test "$(git -C "$repo_root" show "$approved_script_commit_sha:$script_relative_path" | sha256sum | awk '{print toupper($1)}')" = "$expected_script_sha256"
 test "$(sha256sum "$script_path" | awk '{print toupper($1)}')" = "$expected_script_sha256"
-sudo bash "$script_path" "$app_container" "$public_health_url" "$evidence_root"
+verified_script="$(mktemp /tmp/subnexus-readonly-preflight.XXXXXX)"
+trap 'rm -f -- "$verified_script"' EXIT
+chmod 700 -- "$verified_script"
+git -C "$repo_root" show "$approved_script_commit_sha:$script_relative_path" > "$verified_script"
+test "$(sha256sum "$verified_script" | awk '{print toupper($1)}')" = "$expected_script_sha256"
+bash "$verified_script" "$app_container" "$public_health_url" "$evidence_root"
+PREFLIGHT_VERIFY_AND_RUN
 ```
 
 ### 执行前置条件
 
-- 使用 root 运行；主机提供 GNU Bash 4+、GNU `timeout`（支持 `--foreground` 和 `--kill-after`）、`stat`、`realpath`、`flock`，以及 `python3`、`curl`、`sha256sum` 等脚本依赖。
+- 使用 root 运行；主机提供 GNU Bash 4+、GNU `timeout`（支持 `--foreground` 和 `--kill-after`）、`stat`、`realpath`、`flock`、`mktemp`，以及 `python3`、`curl`、`sha256sum` 等脚本依赖。用于校验的隔离仓库副本及其 `.git` 元数据必须由 root 持有；不要在旧版本正在使用的工作树上执行。
 - Docker CLI 必须连接本机默认 Docker context（Unix socket）；`DOCKER_HOST` 必须未设置。应用、PostgreSQL 和 Redis 容器必须正在运行并与应用加入同一 Docker 网络。脚本有意拒绝外部/托管数据库或 Redis 地址；仅有 IPv6 的 `8080/tcp` 发布也会被拒绝。
 - 应用环境必须提供可解析到该网络容器的 `DATABASE_HOST`、`DATABASE_USER` 和简单 `DATABASE_DBNAME`（最多 63 个 ASCII 字符，以字母开头且其余仅字母、数字和下划线，不能是 PostgreSQL conninfo/URI）；仅配置 `DATABASE_URL` 的实例不满足本预检输入合同。
 - PostgreSQL 容器内必须有可执行的 `psql`，Redis 容器内必须有 `redis-cli`。Redis 预检要求 standalone（Redis Cluster 不在本脚本支持范围），且 ACL 用户允许 `PING`、`INFO`、`DBSIZE` 和选择目标逻辑库（`-n` 会执行数据库选择）；建议 Redis server 与 CLI 使用 6.x 或更新的同一主版本。
