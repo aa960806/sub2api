@@ -15,7 +15,7 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支同步 HEAD | `b26c42e08fb190f3915f08949aaaba48dbe61a26`（本地候选；上游同步父提交为 `23d6e8ec0`） |
+| 迁移分支功能候选 SHA | `b26c42e08fb190f3915f08949aaaba48dbe61a26`（上游同步父提交为 `23d6e8ec0`；文档提交以 `git rev-parse HEAD` 为准） |
 | 旧项目参考 SHA | `ccffee6c6` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
