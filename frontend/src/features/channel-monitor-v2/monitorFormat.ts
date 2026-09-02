@@ -77,6 +77,22 @@ export function formatMonitorSuccessRateFromError(errorRate: number): string {
   return formatMonitorPercent(1 - (errorRate || 0))
 }
 
+/** V3 availability display uses percentage points (0..100), not a ratio. */
+export function availabilityTextClass(percent: number | null | undefined): string {
+  if (percent == null || Number.isNaN(percent)) return 'text-gray-500 dark:text-gray-400'
+  if (percent >= 90) return 'text-emerald-600 dark:text-emerald-400'
+  if (percent >= 80) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-600 dark:text-red-400'
+}
+
+/** Stable V3 timeline bar classes for availability percentage points. */
+export function availabilityBarClass(percent: number | null | undefined): string {
+  if (percent == null || Number.isNaN(percent)) return 'bg-gray-300 dark:bg-dark-600'
+  if (percent >= 90) return 'bg-emerald-500'
+  if (percent >= 80) return 'bg-amber-500'
+  return 'bg-red-500'
+}
+
 /**
  * Map continuous 0–100 score to 11 fine bands for multi-stop green→yellow→red.
  * score10 = best (green), score0 = worst (red).

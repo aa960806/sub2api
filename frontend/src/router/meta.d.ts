@@ -56,6 +56,34 @@ declare module 'vue-router' {
     requiresRiskControl?: boolean
 
     /**
+     * Whether the user invoice route requires the invoice feature gate.
+     * Administrators use the management route even while new applications
+     * are disabled so historical requests remain operable.
+     */
+    requiresInvoice?: boolean
+
+    /**
+     * Whether this route requires the SubNexus activity-center opt-in flag.
+     * Missing settings and failed settings loads are treated as disabled.
+     */
+    requiresActivityCenter?: boolean
+
+    /** Whether this route requires the SubNexus leaderboard opt-in flag. */
+    requiresLeaderboard?: boolean
+
+    /** Whether this route requires the independent Battle Pass opt-in flag. */
+    requiresBattlePass?: boolean
+
+    /**
+     * Independent public flag for one migrated invite activity. The route
+     * also requires the aggregate invite-activities switch.
+     */
+    requiresInviteActivity?:
+      | 'subnexus_invite_lottery_enabled'
+      | 'subnexus_recharge_wheel_enabled'
+      | 'subnexus_invite_milestone_enabled'
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string

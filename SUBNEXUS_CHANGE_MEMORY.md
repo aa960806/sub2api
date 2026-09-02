@@ -536,3 +536,242 @@
 
 - 维护者本地验收前只允许本地提交，不再 `git push`，不执行服务器预检、备份、部署、拉取、重启、切流或开关修改。
 - 下一步：提交本地顺序修正文档，合并 `upstream/main`，运行更新后的基线和 migration runner 测试，再实现 Batch 1 的首个默认关闭切片。
+
+## 2026-09-02（Asia/Shanghai）— 补齐 Channel Monitor V3 时间线边界测试
+
+### 目的与范围
+
+- 只读比对旧项目与目标 fork 的 V3 页面、卡片、时间线组件和时间线算法；四个实现文件内容一致，旧项目未被修改。
+- 确认 Passkey 已由最新上游完整提供，核心 service 内容一致，归类为“以上游为准”，不重复迁移。
+- 在目标 fork 新增 `frontend/src/features/channel-monitor-v2/__tests__/monitorTimeline.spec.ts`，覆盖尾部空桶、全空数据和非法时间戳三个边界。
+
+### 安全边界与下一步
+
+- 本次仅修改迁移分支的一份前端测试和本记忆文件；未访问服务器或生产 PostgreSQL/Redis，未部署、推送、切流或修改开关。
+- V3 继续复用 `channel_monitor_enabled` 与互斥的 `channel_monitor_mode=v3`；缺失/非法模式保持 `v1`，不会默认启用 V3。
+- 下一步：运行 V3 专项测试并将 V3、学生充值优惠及其余活动候选纳入完整功能裁决矩阵。
+
+### 验证补记
+
+- `pnpm exec vitest run src/features/channel-monitor-v2/__tests__/monitorTimeline.spec.ts src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts`：2 个文件、16 个测试全部通过。
+- 首次 Go 专项运行因系统盘临时空间不足在链接阶段失败，路由包已通过；未删除任何系统文件。改用 `F:\MySub2\.gotmp` 和 `F:\MySub2\.gocache` 后重跑 `internal/service` 与 `internal/server/routes` 成功。
+
+## 2026-09-02（Asia/Shanghai）— Battle Pass 主审财务边界修正
+
+### 发现与修正
+
+- 主审确认 Battle Pass 后端、路由、Wire、默认关闭公开设置和管理员 step-up 已接入，但补发现两个边界问题。
+- `SetEnabled(true)` 在 service 缺少数据库依赖时原先会跳过统计边界快照并写成开启；现改为返回失败，开关保持关闭。
+- 订阅奖励原先用 `LIKE '%battle_pass_reward:<id>%'` 判断幂等标记，奖励 ID 前缀可能碰撞；现改为按订阅 notes 的换行分隔完整行精确匹配，并新增回归测试。
+
+### 验证与安全边界
+
+- 已对四个修改文件执行 `gofmt`。专项测试首次编译被并行中的跑马灯测试文件缺少临时 stub 阻断，属于共享工作区尚未完成状态；待跑马灯代理交付后立即重跑，当前不能标记通过。
+- 本次只修改目标 fork 的 Battle Pass service/测试和本记忆文件；未修改旧项目、服务器、生产数据库、Redis、远端分支或功能开关。
+
+## 2026-09-02（Asia/Shanghai）— 首充礼包管理员配置 UI 交付与主审
+
+### 实现与验证
+
+- 新增独立管理员页面 `frontend/src/views/admin/FirstRechargeGiftView.vue`，并在 `frontend/src/api/admin/payment.ts` 增加独立配置 GET/PUT 类型和调用。
+- 增加 `/admin/first-recharge-gift` 路由、管理员侧栏入口、中英文导航和页面文案；简单模式隐藏并阻断该页面，功能关闭时管理员入口仍可达以便后续显式开启。
+- 页面只接受显式布尔开启值；加载失败不展示保存表单并保持关闭，非法金额不提交，保存失败恢复最近一次服务端确认配置。
+- 代理验证：`pnpm typecheck` 通过；API、页面、路由和侧栏 4 个定向测试文件共 8 个测试通过；新增文件 ESLint 与 `git diff --check` 通过。主审确认该页面不直接改变支付金额、订单或用户资格。
+
+### 风险与下一步
+
+- 当前仅为本地迁移工作区证据，仍需与首充订单创建、回调、取消/过期、退款及学生优惠互斥路径一起运行全仓测试。
+- 未修改旧项目、服务器或生产数据，未部署、推送、切流或开启功能。
+
+## 2026-09-02（Asia/Shanghai）— 跑马灯广播独立迁移
+
+### 审计裁决
+
+- 旧实现把 `activity_broadcasts`、签到和多种已排除的转盘/抽奖活动放在同一 `ActivityService`。目标 fork 只迁移管理员手动广播，不复制旧 `broadcastActivityReward`、奖励阈值/模板、清理任务或任何转盘、红包雨、邀请抽奖、充值转盘联动。
+- 上游 `AnnouncementService`、`AnnouncementHandler`、`announcements`/`announcement_reads` 和既有前端公告弹窗保持不变。新 API 使用 `/marquee/*` 与 `/admin/marquee/*`，两套功能没有表、service、handler 或前端 store 复用。
+- 同库切换继续复用 `activity_broadcasts` 以保留旧手动消息；repository 的列表、更新和删除全部强制 `source='admin'`，创建时 source 也由服务端固定。旧系统奖励广播不删除，供旧版本回滚，但新版本不展示、不编辑。
+
+### 实现
+
+- 新增严格 fail-closed 的 `subnexus_marquee_enabled`。只有数据库原始字符串逐字等于 `true` 才开启；缺失、`TRUE`、`1`、带空格值和读取异常全部关闭。
+- 新增 `MarqueeService`/repository、用户列表 handler、管理员配置和 CRUD handler、Wire provider 与路由。关闭态用户返回 `{enabled:false,items:[]}`，管理员列表返回空数组，所有创建/更新/删除拒绝，且上述路径均不会访问 `activity_broadcasts`。
+- 新增 `9007_subnexus_marquee.sql`，仅幂等创建/复用旧表并添加 `source='admin'` 的部分索引；没有 DML、删除、覆盖或 announcements 变更。TrimSpace SQL checksum 为 `19deec6328c814418b66372c066fd2b439bcbdb5c11659394b5fdf32e509128b`。
+- 新增全局 `BroadcastMarquee.vue` 与管理员 `MarqueeView.vue`。用户组件仅在“认证成功、公共设置已成功加载、开关显式 true”同时成立时请求并建立 30 秒轮询；关闭/失败会清空消息并阻止旧请求回填，浏览器再按 `source='admin'` 二次过滤。
+
+### 验证与剩余门禁
+
+- 通过 `go test ./migrations -run TestSubNexusMarqueeMigration -count=1`。
+- 通过 `go test ./internal/service -run "Test(Marquee|SettingServiceGetPublicSettingsMarquee)" -count=1`、`go test -tags unit ./internal/repository -run TestMarqueeRepository -count=1`，以及 handler/admin/routes 编译检查。
+- 通过 `pnpm vitest run src/api/__tests__/marquee.spec.ts src/components/common/__tests__/BroadcastMarquee.spec.ts src/views/admin/__tests__/MarqueeView.spec.ts`：3 个文件、7 个测试。
+- 通过 `pnpm typecheck`、`pnpm build`、新增前端文件 ESLint 和 `git diff --check`。构建只有既有动态/静态 import、Browserslist 数据和 chunk size 警告；全仓测试及 Wire 生成由并发迁移项完成共享接线后统一执行。
+- 本次只修改 `F:\MySub2\sub2api`；旧项目仅作只读审计。未访问服务器、生产 PostgreSQL/Redis，未部署、推送、切流或修改生产开关。
+
+## 2026-09-02（Asia/Shanghai）— 迁移收拢续作工作区审计
+
+- 核对目标仓库当前分支为 `feature/subnexus-migration`，HEAD 为上游同步合并提交 `23d6e8ec0`；`main`、旧项目 `F:\Sub2Api\SubNexus` 和服务器均未操作。
+- 发现学生充值优惠、邀请活动仍处于共享工作区接线阶段，`cmd/server` 需待 Wire 重新生成；注册 IP 冷却代理因服务限流未交付，后续由主线程实现。
+- 本次仅进行本地状态读取并开始收拢计划，未执行部署、生产数据库/Redis 访问、重启、切流或生产开关修改。
+
+## 2026-09-02（Asia/Shanghai）— 继续收拢：学生优惠与认证安全门禁
+
+- 共享工作区已出现学生充值优惠的用户/管理员 handler、路由、支付接线和 scheduler provider；待主线程核对生命周期并重新生成 Wire。
+- 客服支持/默认语言代理只留下设计结论，需主线程确认实际文件是否写入；邀请活动代理因服务限流未完成，必须以共享工作区实况为准补齐。
+- 注册 IP 冷却尚未迁移；下一步只在目标 fork 增加独立迁移、设置解析和所有新用户创建路径的 reservation/finalize/release，不连接服务器或生产数据库。
+
+## 2026-09-02（Asia/Shanghai）— 学生优惠 Wire 类型修复
+
+- 将 `StudentRechargeBenefitService` 对缓存的依赖收窄为仅含 `InvalidateUserBalance` 的内部接口；原先完整 `BillingCache` 与 `*BillingCacheService` 不兼容，阻止 `cmd/server` 编译。
+- 未改变余额写入、订单履约或开关逻辑；仅修正依赖边界，旧项目、服务器和生产数据均未触碰。
+
+## 2026-09-02（Asia/Shanghai）— Wire 生成前接线收拢
+
+- 为学生优惠 scheduler 增加应用清理阶段的 `Stop`，避免服务退出时遗留后台扫描协程。
+- 已确认生成文件仍缺学生优惠参数；下一步仅在本地重新生成 Wire 并运行 `cmd/server` 编译检查。
+
+## 2026-09-02（Asia/Shanghai）— Wire 生成后测试签名同步
+
+- Wire 生成成功；同步 `wire_gen_test.go` 的 `provideCleanup` 调用，补入 `StudentRechargeBenefitScheduler` 的 nil 测试参数。
+- 这是测试接线同步，不改变运行时行为；仍未访问服务器或生产数据库。
+
+## 2026-09-02（Asia/Shanghai）— 注册 IP 冷却设置模型
+
+- 增加目标 fork 的 `registration_ip_cooldown_enabled` / `registration_ip_cooldown_seconds` 设置键、系统设置字段和管理员 DTO；默认关闭，秒数由服务层限制在 1..86400，默认 300。
+- 更新请求字段使用指针，旧版本或旧前端不发送字段时保留现值，满足同库回滚兼容要求。
+
+## 2026-09-02（Asia/Shanghai）— 注册 IP 冷却核心实现
+
+- 新增 `backend/internal/service/auth_registration_ip_cooldown.go`：使用可信客户端 IP + JWT secret 的 SHA-256 哈希，支持 120 秒 reservation、并发冲突、冷却剩余时间、finalize/release，并尊重 Ent transaction context。
+- 新增迁移 `9010_subnexus_registration_ip_cooldown.sql`，只创建独立表/索引/注释，不修改 users、订单、余额或旧迁移。
+- 尚未把 reservation 接入所有 AuthService 创建入口；下一步逐路径接线并补充 SQL mock/回滚测试。
+
+## 2026-09-02（Asia/Shanghai）— 邀请活动路由、Handler 与公共开关接线
+
+### 本地变更
+
+- 新增独立用户 handler `backend/internal/handler/subnexus_invite_activities_handler.go`，接入邀请抽奖、充值双层转盘、邀请里程碑的 GET 状态和 POST 领奖；里程碑请求严格要求正整数 `invites`。未引入每日消耗转盘、红包雨、运行日历或 Media Studio。
+- 新增管理员 handler `backend/internal/handler/admin/subnexus_invite_activities_handler.go`，提供 `/admin/invite-activities/config` 的 GET/PUT。管理员可在总开关关闭时准备经校验的策略；配置错误通过统一错误响应返回。
+- 更新 Handler/Wire/Provider 与生成文件，仓储使用 `NewSubNexusInviteActivitiesRepository`，服务使用 `ProvideInviteActivitiesService`。用户端路径为 `/activity/invite-lottery`、`/activity/recharge-wheel`、`/activity/invite-milestone`（GET/POST）。
+- 公共设置新增 `subnexus_invite_activities_enabled` 总开关及三个经 JSON 策略验证的子开关字段；缺失、非法、读取失败和非字面 `true` 均 fail-closed。初始化默认总开关为 `false`，配置 JSON 不会被自动开启。
+
+### 验证与安全边界
+
+- `go generate ./cmd/server` 成功；`go test ./cmd/server -run '^$' -count=1`、`go test ./internal/server/routes -count=1` 及 handler/service/repository 编译级测试通过。
+- 新增公共活动开关 fail-closed 单测；邀请活动核心定向测试继续通过。未修改 `main`、旧项目、`frontend/pnpm-lock.yaml`、VERSION，未访问服务器或生产 PostgreSQL/Redis，未部署、推送、重启、切流或开启任何开关。
+
+## 2026-09-02（Asia/Shanghai）— 注册 IP 冷却全注册路径接线
+
+### 实现与回滚边界
+
+- 在目标 fork 的 `AuthService` 六条新用户创建路径接入 reservation：普通邮箱注册、旧 OAuth、TokenPair OAuth、已验证邮箱 OAuth、pending OAuth 邮箱注册和 pending OAuth 已验证注册。
+- 普通/即时 OAuth 在用户写入成功后立即 finalize；创建错误、邮箱唯一性竞态和策略失败自动 release。pending OAuth 将 reservation 绑定到用户，`FinalizeOAuthEmailAccount` 在身份/浏览器会话事务内 finalize。
+- `RollbackOAuthEmailAccountCreation` 无论邀请码恢复或用户删除是否出错都会按用户释放 reservation；补齐 pending OAuth 在数据库客户端为空或事务开启失败时的账户回滚，避免孤儿账户和残留冷却。
+- 管理设置审计 diff 新增 `registration_ip_cooldown_enabled` 与 `registration_ip_cooldown_seconds`；新增 unit/SQL mock 测试覆盖默认值、fail-closed、token/user guard 和回滚释放。
+
+### 验证与安全边界
+
+- 通过 `go test -tags unit ./internal/service` 认证相关测试（含新增冷却测试）、`go test -tags unit ./internal/handler/admin -run TestDiffSettings_DetectsRegistrationIPCooldown`，以及 `go test ./internal/handler ./internal/service -run '^$' -count=0` 编译检查。
+- 仅修改 `F:\MySub2\sub2api` 迁移分支；未修改 `F:\Sub2Api\SubNexus`、`main`、服务器、生产 PostgreSQL/Redis，未部署、推送、重启、切流或开启功能开关。
+
+## 2026-09-02（Asia/Shanghai）— 注册 IP 冷却迁移契约补充
+
+- 对照旧项目全部认证调用点完成只读审计：普通注册、各 OAuth 直达/完成/待定流程和 OIDC 已验证邮箱快速路径均已注入可信客户端 IP；未发现遗漏入口。
+- 新增 `backend/migrations/subnexus_registration_ip_cooldown_contract_test.go`，静态验证 `9010_subnexus_registration_ip_cooldown.sql` 的独立表、字段、索引和无 DML/无开关写入约束；目标与旧 `159_registration_ip_cooldown.sql` 的 SQL SHA256 保持一致。
+- 验证：注册冷却/认证专项 Go 测试、相关包编译检查和迁移契约测试通过；未访问旧项目以外的可写路径、服务器或生产 PostgreSQL/Redis，未部署、推送、重启、切流或开启任何开关。
+
+## 2026-09-02（Asia/Shanghai）— 发票写事务独立开关复核
+
+- 审计发现发票 service 层检查 `subnexus_invoice_enabled` 后到 repository 写事务之间存在关闭竞态，且部分管理员写事务没有事务内开关复核；这会让 legacy `INVOICE_CONFIG.enabled=true` 在独立开关关闭后仍可能触发写入。
+- 在目标 fork 的 `backend/internal/repository/invoice_repo.go` 为提交、取消、重提、管理员接单/释放/驳回、开票、替换文件和作废事务统一增加 `ensureInvoiceEnabledInTx`；该 helper 在同一事务内以 `FOR SHARE` 读取 legacy 配置和 namespaced gate，缺失、非字面 `true` 或 legacy 配置关闭均 fail-closed，并在任何业务写入前返回。
+- 新增 `backend/internal/repository/invoice_rollout_gate_test.go` sqlmock 回归测试，覆盖 gate 缺失、`false`、非规范 `TRUE` 和双开场景。通过 `go test ./internal/repository -run TestEnsureInvoiceEnabledInTxRequiresIndependentGate -count=1`。
+- 本次只修改目标 fork；未修改旧项目、服务器、生产数据库/Redis、`main`、`frontend/pnpm-lock.yaml` 或 `VERSION`，未部署、重启、切流或开启功能。
+
+## 2026-09-02（Asia/Shanghai）— 首充预约并发保护
+
+- 审计发现首充礼包在替换已过期/取消预约时，多个并发订单可同时读取同一旧行并依次覆盖 `order_id`；先创建但后覆盖的订单一旦付款，会因预约归属不一致而无法履约，形成资金悬挂风险。
+- 在 `backend/internal/service/subnexus_first_recharge.go` 的 `ReserveTx` 中，PostgreSQL 事务现在对预约行执行 `FOR UPDATE OF p`（仅锁预约表行，兼容左连接），并在替换更新中加入旧 `order_id` compare-and-swap；旧订单为空时使用 `order_id IS NULL`。竞争事务得到确定的 pending 错误并回滚其订单。
+- 新增 `backend/internal/service/subnexus_first_recharge_sql_test.go`，用 PostgreSQL sqlmock 固化行锁与 `$11` 旧订单 CAS 条件；首充专项测试（含既有 SQLite 状态测试）通过。
+- 本次未修改旧项目、服务器、生产数据库/Redis、`main`、`frontend/pnpm-lock.yaml` 或 `VERSION`，未部署、切流或开启功能。
+
+## 2026-09-02（Asia/Shanghai）— 邀请活动与明确排除项静态审计
+
+### 审计范围与裁决
+
+- 只读对照 `F:\Sub2Api\SubNexus` 与目标 fork 的 handler、service、repository、迁移、用户/管理员路由、前端 API、路由 meta、侧栏和页面；旧项目保持只读，目标 `main`、服务器和生产数据均未触碰。
+- 本次保留的邀请活动切片是邀请抽奖、充值奖励转盘和邀请里程碑。目标实现使用独立 `InviteActivitiesService`/repository、`/activity/invite-lottery`、`/activity/recharge-wheel`、`/activity/invite-milestone` 及管理员 `/admin/invite-activities/config`，并复用 `activity_reward_logs` 的 source/period 幂等身份。
+- `RechargeWheelView.vue` 是“累计充值达到门槛后的充值奖励转盘”，不是用户明确排除的“每日消耗转盘”；该差异已记录，不能按名称误删或误迁。
+- 在目标 fork 的当前提交和迁移工作树中，未发现 SubNexus 版本的每日消耗转盘、红包雨、运行日历或 Media Studio/Creative Workshop 的新增文件、目标路由、后端 handler/service 或目标迁移。文档和契约测试中的排除项文字仅用于审计，不能视为运行入口；今后若上游提供同名功能，严格以上游实现为准，不复制旧项目实现。
+- 活动中心 repository/service 和前端再次限定 `activity_type='custom'`；旧库中的排除活动行不被新版本列表、编辑或删除，保留以支持旧版本回滚。邀请活动开关缺失、非法 JSON、非字面量 `true` 或子开关未同时开启时均 fail-closed，关闭态不访问活动数据表。
+
+### 本地专项验证
+
+- `go test -tags unit ./internal/service -run 'Invite|SubNexusInvite|Setting.*Invite' -count=1`：通过。
+- `go test -tags unit ./internal/repository -run 'SubNexusInvite|InviteActivities|AffiliateSignup' -count=1`：通过。
+- `go test ./migrations -run 'SubNexusInvite|Invite' -count=1`：通过。
+- `pnpm exec vitest run src/api/__tests__/inviteActivities.spec.ts src/utils/__tests__/inviteActivities.spec.ts src/router/__tests__/invite-activities-routes.spec.ts src/components/layout/__tests__/AppSidebar.inviteActivities.spec.ts src/views/user/__tests__/InviteActivitiesViews.spec.ts`：5 个文件、22 个测试通过。
+- 本轮仅有本地代码/文档验证；尚未连接线上 PostgreSQL/Redis，未执行迁移、部署、重启、切流或开启任何功能开关。
+
+### 未完成门禁与回滚点
+
+- 邀请活动仍属于本地迁移中的高风险余额功能，需与 Batch 2 其余支付/Affiliate 生命周期、全仓测试、隔离 PostgreSQL/Redis 和旧版本回归一起验收后才能标记通过。
+- 回滚优先使用本批次提交前的代码 SHA，数据库不做恢复；新增索引和活动表均保持可被旧版本忽略。生产发布前仍需由维护者完成 Release Gate，当前不得执行服务器命令。
+
+## 2026-09-03（Asia/Shanghai）— 发票事务退款闭集与释放原因校验
+
+- 对照支付服务的退款状态闭集审计发票资格判断，确认 `REFUND_PENDING` 也必须视为不可开票状态；同步补入 `ListEligibleOrders` 的不可开票原因统计，避免展示统计与实际资格判断不一致。
+- `invoiceRepository.Release` 现在先 Trim 原因并限制为最多 1000 个 rune，与 `Reject`、替换文件和作废操作及数据库 `admin_note VARCHAR(1000)` 的约束一致；空值或超长值在开启事务前稳定返回 `INVALID_INVOICE_STATUS_TRANSITION`。
+- 新增 repository 回归测试：六种退款状态（含 `REFUND_PENDING`）均被拒绝；超长 Unicode 释放原因不会触发数据库访问。已通过 `go test ./internal/repository -run 'Test(ValidateInvoiceOrders|InvoiceRelease|EnsureInvoiceEnabledInTx)' -count=1 -p=1` 与 `go vet ./internal/repository`。
+- 本轮仅修改目标 fork 的发票 repository/测试和本记忆文档；未修改旧项目、`main`、服务器、生产 PostgreSQL/Redis，未部署、重启、切流或开启发票开关。Release 仍按已批准规划允许其他管理员释放，不新增接单人限制。
+- 后续边界修复：`adminTransition` 对 `Note` 优先、`Reason` 兜底后的最终 `admin_note` 统一 Trim 并限制最多 1000 个 rune，避免管理员提交超长 Note 绕过 Release/Accept 的字段校验而触发数据库长度错误；新增 Note 优先与 Reason 兜底两条前置拒绝测试。`go test ./internal/repository -run 'Invoice|invoice' -count=1 -p=1` 通过。
+
+## 2026-09-03（Asia/Shanghai）— 本地收尾：奖励冲突目标与签到事务门禁
+
+- 将 `backend/internal/repository/subnexus_invite_activities_repo.go` 两处奖励幂等写入从宽泛 `ON CONFLICT DO NOTHING` 收紧为 `ON CONFLICT (source, period, user_id) DO NOTHING`，并同步 sqlmock 断言；该目标由 `9002/9013` 的唯一索引契约提供，避免吞掉非预期唯一约束错误。
+- 在 `backend/internal/service/subnexus_checkin.go` 的独立冻结结算事务中再次锁定并校验 `subnexus_checkin_enabled`；关闭、缺失、非法或读取失败均在余额写入前返回，避免关闭竞态。新增/更新 `subnexus_checkin_test.go` 覆盖关闭态无写入。
+- Affiliate gate 修复（同一事务 `FOR UPDATE`、缺失/非字面 `true` fail-closed）及签到专项测试均通过；当前正在运行后端全量默认构建测试。前端全量 Vitest 279 文件/1946 测试和 typecheck 已通过。
+- 本轮只修改目标 fork 工作树；旧项目、fork `main`、服务器、生产 PostgreSQL/Redis、远端分支和所有生产开关均未触碰。Release Gate 仍未通过，不能部署或推送。
+
+## 2026-09-03（Asia/Shanghai）— 本地候选收尾、文档校准与前端开关加固
+
+### 本轮目的
+
+- 按维护者“先在本地完成全部迁移，再上传/部署”的顺序收敛五份精简文档，消除旧的 Batch 进行中、25 组 alias 和未开始状态描述。
+- 固化当前事实：目标 fork 迁移分支 `feature/subnexus-migration`，HEAD=`23d6e8ec0e773e74146976a39f6573b3da68660a`；fork `main`=`d596d0844f274c3e7933c966231851f9f20b0d47` 未修改；`upstream/main`=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3` 已同步。
+
+### 文档与代码变更
+
+- 更新 `SUBNEXUS_FEATURE_MATRIX.md`：登记 F01-F13（签到、排行榜、活动中心 custom、跑马灯、首充、邀请活动/注册奖励、发票、Battle Pass、学生优惠、注册 IP 冷却、Channel Monitor V3、默认语言、客服弹窗），并统一标记为“本地实现完成，待最终证据/维护者验收”；明确每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop 不迁移。
+- 更新 `SUBNEXUS_MIGRATION_LEDGER.md`、`SUBNEXUS_PROJECT_CONTEXT.md`、`SUBNEXUS_MIGRATION_PLAN.md`：Batch 1-4 本地代码完成，Batch 5 的 Docker、隔离 PostgreSQL/Redis、候选启动和旧版本回归待执行；登记 `9001`-`9013` 及 `SHA256(TrimSpace(SQL))`；alias 从历史 25 组扩展为当前 27 组（23 内容映射、2 语义接管、学生优惠/注册冷却各 1 组）。
+- `frontend/src/utils/featureFlags.ts` 在 `publicSettingsLoaded` 非 true 时强制 fail-closed，防止请求失败后 stale cache 放行；补齐 invite activities、marquee、first recharge、student benefit 的 registry 项，并新增 `frontend/src/utils/__tests__/featureFlags.spec.ts`。
+
+### 验证
+
+- 后端：`go test -tags unit ./... -count=1 -p=1 -timeout=30m`、`go test ./... -count=1 -p=1 -timeout=45m`、重点 `go vet` 通过。
+- 前端：Vitest 280 个文件/1950 个测试、`pnpm typecheck`、`pnpm build` 和 feature flag 定向测试通过；构建仅有既有 Browserslist、动态/静态 import 与 chunk size 警告。
+- 迁移契约、关闭态、并发、事务 gate 和 SQL checksum 已在本地验证；当前未执行 Docker 候选、隔离 Redis 恢复和旧版本回归。
+- 本机 `docker compose version` 可用，但 Docker daemon 连接 `npipe:////./pipe/dockerDesktopLinuxEngine` 失败（daemon 未运行）；未尝试启动 daemon、创建容器或连接任何外部服务，因此 Batch 5 运行时证据仍为待办。
+
+### 安全边界与下一步
+
+- 本轮只读/写 `F:\MySub2\sub2api` 迁移工作树；`F:\Sub2Api\SubNexus` 仍只读。未修改 fork `main`，未推送当前改动，未访问服务器、线上 PostgreSQL/Redis，未执行 SQL、备份、部署、重启、切流或生产开关修改。
+- 所有迁移功能及新增 rollout gate 默认关闭；Release Gate 尚未通过，当前候选不得上传或让服务器拉取。
+- 下一步仅在本地执行 Batch 5 运行时验证并等待维护者验收；验收后才按规划生成新的发布 SHA 和线上命令。
+
+## 2026-09-03（Asia/Shanghai）— 本地候选最终代码复核与 Docker 运行时门禁
+
+### 本地操作与结果
+
+- 重新执行 `go generate ./cmd/server`，Wire 生成文件与当前 provider 接线一致。
+- 通过 `go test -tags unit ./... -count=1 -p=1 -timeout=30m`、`go test ./... -count=1 -p=1 -timeout=45m`、`go vet ./...` 和迁移契约测试；后端退出码均为 0。
+- 通过 `pnpm typecheck`、`pnpm vitest run`（280 个文件/1950 个测试）和 `pnpm build`。首次全量 `pnpm lint:check` 发现新增 `InvoicesView.vue` 三处多余分号，已做最小修复；修复后完整 `pnpm lint:check` 和该文件 ESLint 均通过。
+- 通过 `git diff --check`、gofmt、迁移 `9001`–`9013` checksum（13/13）和敏感文件扫描；未生成二进制、数据库、日志、`.env` 或构建产物。
+
+### Docker 门禁与安全边界
+
+- 根目录没有 compose 文件；使用 `deploy/docker-compose.local.yml` 和 `deploy/docker-compose.yml` 配合 `.env.example` 做静态 `docker compose config --quiet`，两者均通过。
+- 为完成本地验证仅启动了本机 Docker Desktop，未创建容器、未挂载项目数据、未执行 PostgreSQL/Redis、未连接任何外部服务。Docker Desktop 因本机 Inference manager 路径错误（日志中的 `<HOME>\\AppData\\Local\\Docker\\run\\dockerInference`）未提供可用 daemon；运行时候选、隔离 PostgreSQL/Redis 和旧版本回归仍为 Batch 5 待办。
+- 本轮只写入 `F:\MySub2\sub2api`；旧项目 `F:\Sub2Api\SubNexus`、fork `main`、服务器、生产 PostgreSQL/Redis、生产开关和远端分支均未触碰。未推送、未部署、未执行服务器命令。
+
+### 未完成项与回滚点
+
+- 当前代码候选可提交但不能宣称 Release Gate 通过；维护者验收前继续保持所有功能关闭。
+- 若本地 Docker 恢复，优先运行隔离 compose 健康检查和旧版本回滚克隆；失败不影响旧线上版本。应用回滚仍使用提交前代码 SHA，数据库不自动恢复。

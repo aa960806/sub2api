@@ -41,6 +41,9 @@ const (
 const (
 	OrderTypeBalance      = "balance"
 	OrderTypeSubscription = "subscription"
+	// OrderTypeFirstRechargeGift is reserved for the optional SubNexus first
+	// recharge workflow. It is inert until that feature is explicitly enabled.
+	OrderTypeFirstRechargeGift = "first_recharge_gift"
 )
 
 // Entity statuses shared across users, groups, etc.

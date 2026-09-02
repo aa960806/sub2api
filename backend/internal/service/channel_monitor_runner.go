@@ -59,6 +59,12 @@ type ChannelMonitorRunner struct {
 	started bool
 	stopped bool
 
+	// refreshMu serializes settings-triggered reloads. A settings update is
+	// delivered synchronously by SettingService, so rapid updates must not
+	// race a repository load or schedule stale monitor snapshots.
+	refreshMu    sync.Mutex
+	runtimeUnsub func()
+
 	// inFlight 跟踪正在执行的 monitor.ID。fire 调度前会检查避免重复提交，
 	// 防止单次检测耗时 > interval 时同一 monitor 被并发执行。
 	inFlight   map[int64]struct{}
@@ -90,7 +96,7 @@ func (t *scheduledMonitor) nextDelay() time.Duration {
 }
 
 // NewChannelMonitorRunner 构造调度器。Start 在 wire 中调用一次。
-// settingService 用于在每次 fire 前读取功能开关；传 nil 时视为总是启用（兼容测试）。
+// settingService 用于在启动和每次 fire 前读取功能开关；缺失时 fail-closed。
 //
 // pool 在构造时即建好：避免 Start 在 mu 内赋值、fire/Stop 在 mu 外读取的竞态隐患，
 // 且 pond.NewPool 创建本身近似零开销，提前建池不会浪费资源。
@@ -118,6 +124,11 @@ func (r *ChannelMonitorRunner) Start() {
 	if r == nil || r.svc == nil {
 		return
 	}
+	// A missing settings dependency cannot be refreshed later, so leave the
+	// runner inert rather than allowing CRUD callbacks to create idle tasks.
+	if r.settingService == nil {
+		return
+	}
 	r.mu.Lock()
 	if r.started || r.stopped {
 		r.mu.Unlock()
@@ -126,17 +137,23 @@ func (r *ChannelMonitorRunner) Start() {
 	r.started = true
 	r.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), monitorStartupLoadTimeout)
-	defer cancel()
-	enabled, err := r.svc.ListEnabledMonitors(ctx)
-	if err != nil {
-		slog.Error("channel_monitor: load enabled monitors failed at startup", "error", err)
+	// Keep the scheduler synchronized with future explicit setting changes. The
+	// callback only reloads after a successful runtime gate check, and turns all
+	// existing tasks off when the gate closes.
+	unsub := r.settingService.SubscribeChannelMonitorRuntime(func() {
+		r.refreshFromSettings()
+	})
+	r.mu.Lock()
+	stopped := r.stopped
+	if !stopped {
+		r.runtimeUnsub = unsub
+	}
+	r.mu.Unlock()
+	if stopped {
+		unsub()
 		return
 	}
-	for _, m := range enabled {
-		r.Schedule(m)
-	}
-	slog.Info("channel_monitor: runner started", "scheduled_tasks", len(enabled))
+	r.refreshFromSettings()
 }
 
 // Schedule 为指定监控创建（或重置）独立定时任务。
@@ -162,6 +179,17 @@ func (r *ChannelMonitorRunner) Schedule(m *ChannelMonitor) {
 	jitter := time.Duration(m.JitterSeconds) * time.Second
 	if jitter < 0 {
 		jitter = 0
+	}
+	// CRUD callbacks can arrive while the global gate is disabled (or while
+	// settings are unavailable). Remove any stale task and refuse to create a
+	// new idle goroutine in that state; the runtime listener will reload rows
+	// when an operator explicitly enables V1 again.
+	gateCtx, gateCancel := context.WithTimeout(context.Background(), monitorStartupLoadTimeout)
+	allowed := r.activeProbesAllowed(gateCtx)
+	gateCancel()
+	if !allowed {
+		r.Unschedule(m.ID)
+		return
 	}
 
 	r.mu.Lock()
@@ -219,15 +247,26 @@ func (r *ChannelMonitorRunner) Stop() {
 	if r == nil {
 		return
 	}
+	// Serialize with a settings-triggered refresh before marking the runner
+	// stopped. This prevents a refresh that already passed its lifecycle check
+	// from querying the repository after shutdown begins.
+	r.refreshMu.Lock()
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
+		r.refreshMu.Unlock()
 		return
 	}
 	r.stopped = true
 	r.parentCancel()
 	r.tasks = nil
+	unsub := r.runtimeUnsub
+	r.runtimeUnsub = nil
 	r.mu.Unlock()
+	r.refreshMu.Unlock()
+	if unsub != nil {
+		unsub()
+	}
 
 	r.wg.Wait()
 	r.pool.StopAndWait()
@@ -257,11 +296,8 @@ func (r *ChannelMonitorRunner) runScheduled(ctx context.Context, task *scheduled
 // fire 提交一次检测到 worker 池。功能开关关闭时跳过本次（不取消任务，
 // 重新启用时立即恢复）；池满或重复在飞时也跳过。
 func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor) {
-	if r.settingService != nil {
-		rt := r.settingService.GetChannelMonitorRuntime(ctx)
-		if !rt.ActiveProbesAllowed() {
-			return
-		}
+	if r == nil || task == nil || !r.activeProbesAllowed(ctx) {
+		return
 	}
 	if !r.tryAcquireInFlight(task.id) {
 		slog.Debug("channel_monitor: skip already in-flight",
@@ -275,6 +311,75 @@ func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor)
 		r.releaseInFlight(task.id)
 		slog.Warn("channel_monitor: worker pool full, skip submission",
 			"monitor_id", task.id, "name", task.name)
+	}
+}
+
+// activeProbesAllowed is a single fail-closed gate for all paths that could
+// submit an active provider probe. A nil settings dependency is treated as an
+// unavailable gate, never as an implicit opt-in.
+func (r *ChannelMonitorRunner) activeProbesAllowed(ctx context.Context) bool {
+	if r == nil || r.settingService == nil {
+		return false
+	}
+	return r.settingService.GetChannelMonitorRuntime(ctx).ActiveProbesAllowed()
+}
+
+// refreshFromSettings reconciles the runner with the current channel-monitor
+// runtime gate. It deliberately checks the gate before querying monitor rows,
+// so a disabled or unavailable setting never causes a monitor-table read.
+func (r *ChannelMonitorRunner) refreshFromSettings() {
+	if r == nil {
+		return
+	}
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+
+	r.mu.Lock()
+	started := r.started
+	stopped := r.stopped
+	r.mu.Unlock()
+	if !started || stopped {
+		return
+	}
+
+	gateCtx, gateCancel := context.WithTimeout(context.Background(), monitorStartupLoadTimeout)
+	allowed := r.activeProbesAllowed(gateCtx)
+	gateCancel()
+	if !allowed {
+		r.unscheduleAll()
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), monitorStartupLoadTimeout)
+	defer cancel()
+	enabled, err := r.svc.ListEnabledMonitors(ctx)
+	if err != nil {
+		slog.Error("channel_monitor: load enabled monitors failed", "error", err)
+		return
+	}
+	for _, m := range enabled {
+		r.Schedule(m)
+	}
+	slog.Info("channel_monitor: runner refreshed", "scheduled_tasks", len(enabled))
+}
+
+// unscheduleAll cancels every currently registered task. Cancellation happens
+// outside the mutex so a task callback cannot block lifecycle operations.
+func (r *ChannelMonitorRunner) unscheduleAll() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	tasks := make([]*scheduledMonitor, 0, len(r.tasks))
+	for id, task := range r.tasks {
+		delete(r.tasks, id)
+		tasks = append(tasks, task)
+	}
+	r.mu.Unlock()
+	for _, task := range tasks {
+		if task != nil && task.cancel != nil {
+			task.cancel()
+		}
 	}
 }
 

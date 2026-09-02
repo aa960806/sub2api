@@ -501,3 +501,29 @@ func (h *PaymentHandler) UpdateConfig(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"message": "updated"})
 }
+
+// GetFirstRechargeGiftConfig returns the isolated first-recharge offer
+// policy. It is intentionally separate from the legacy activity settings so
+// an older binary cannot accidentally enable the feature.
+// GET /api/v1/admin/payment/first-recharge-gift/config
+func (h *PaymentHandler) GetFirstRechargeGiftConfig(c *gin.Context) {
+	cfg := h.paymentService.GetFirstRechargeGiftConfig(c.Request.Context())
+	response.Success(c, cfg)
+}
+
+// UpdateFirstRechargeGiftConfig updates the isolated first-recharge offer
+// policy and rollout switch in one settings transaction.
+// PUT /api/v1/admin/payment/first-recharge-gift/config
+func (h *PaymentHandler) UpdateFirstRechargeGiftConfig(c *gin.Context) {
+	var req service.FirstRechargeGiftConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	cfg, err := h.paymentService.UpdateFirstRechargeGiftConfig(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, cfg)
+}

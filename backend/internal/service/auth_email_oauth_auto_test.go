@@ -86,3 +86,35 @@ func TestEmailOAuthAuto_SnapshotsPlatformQuotaDefaults(t *testing.T) {
 	require.NotNil(t, geminiRecord.MonthlyLimitUSD)
 	require.InDelta(t, 100.0, *geminiRecord.MonthlyLimitUSD, 0.0001)
 }
+
+func TestCreateEmailOAuthUserWithStatus_CreateRaceDoesNotMarkExistingUserAsCreated(t *testing.T) {
+	existing := &User{
+		ID:     91,
+		Email:  "race@example.com",
+		Role:   RoleUser,
+		Status: StatusActive,
+	}
+	userRepo := &userRepoStub{
+		user:      existing,
+		createErr: ErrEmailExists,
+	}
+	svc := newEmailOAuthAutoAuthService(
+		userRepo,
+		map[string]string{SettingKeyRegistrationEnabled: "true"},
+		nil,
+	)
+
+	user, created, err := svc.createEmailOAuthUserWithStatus(
+		context.Background(),
+		"race@example.com",
+		"race-user",
+		"github",
+		"",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.Same(t, existing, user)
+	require.False(t, created, "a uniqueness conflict means this request did not create the user")
+	require.Empty(t, userRepo.deletedIDs, "the existing account must never be deleted during race handling")
+}

@@ -145,6 +145,19 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 		return nil, nil, err
 	}
 
+	registrationClaim, err := s.claimRegistrationIPCooldown(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Keep a pending reservation attached to the account until the browser
+	// session binding is committed by FinalizeOAuthEmailAccount.
+	registrationClaimAttached := false
+	defer func() {
+		if registrationClaim != nil && !registrationClaimAttached {
+			s.releaseRegistrationIPCooldownClaimBestEffort(ctx, registrationClaim, "pending email registration")
+		}
+	}()
+
 	hashedPassword, err := s.HashPassword(password)
 	if err != nil {
 		return nil, nil, fmt.Errorf("hash password: %w", err)
@@ -174,11 +187,18 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 			return nil, nil, ErrServiceUnavailable
 		}
 	}
+	if err := s.attachRegistrationIPCooldownClaim(ctx, registrationClaim, user.ID); err != nil {
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, "", registrationClaim, false, wrapRegistrationCleanupError("attach registration IP cooldown claim", err))
+		registrationClaim = nil
+		return nil, nil, cleanupErr
+	}
+	registrationClaimAttached = registrationClaim != nil
 
 	tokenPair, err := s.GenerateTokenPair(ctx, user, "")
 	if err != nil {
-		_ = s.RollbackOAuthEmailAccountCreation(ctx, user.ID, "")
-		return nil, nil, fmt.Errorf("generate token pair: %w", err)
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, "", registrationClaim, registrationClaimAttached, fmt.Errorf("generate token pair: %w", err))
+		registrationClaim = nil
+		return nil, nil, cleanupErr
 	}
 	return tokenPair, user, nil
 }
@@ -228,6 +248,17 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 		return nil, nil, err
 	}
 
+	registrationClaim, err := s.claimRegistrationIPCooldown(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	registrationClaimAttached := false
+	defer func() {
+		if registrationClaim != nil && !registrationClaimAttached {
+			s.releaseRegistrationIPCooldownClaimBestEffort(ctx, registrationClaim, "pending verified OAuth registration")
+		}
+	}()
+
 	hashedPassword, err := s.HashPassword(password)
 	if err != nil {
 		return nil, nil, fmt.Errorf("hash password: %w", err)
@@ -260,11 +291,18 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 			return nil, nil, ErrServiceUnavailable
 		}
 	}
+	if err := s.attachRegistrationIPCooldownClaim(ctx, registrationClaim, user.ID); err != nil {
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, "", registrationClaim, false, wrapRegistrationCleanupError("attach registration IP cooldown claim", err))
+		registrationClaim = nil
+		return nil, nil, cleanupErr
+	}
+	registrationClaimAttached = registrationClaim != nil
 
 	tokenPair, err := s.GenerateTokenPair(ctx, user, "")
 	if err != nil {
-		_ = s.RollbackOAuthEmailAccountCreation(ctx, user.ID, "")
-		return nil, nil, fmt.Errorf("generate token pair: %w", err)
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, "", registrationClaim, registrationClaimAttached, fmt.Errorf("generate token pair: %w", err))
+		registrationClaim = nil
+		return nil, nil, cleanupErr
 	}
 	return tokenPair, user, nil
 }
@@ -299,22 +337,79 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
 	s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+	// Pending OAuth reservations are finalized in the same transaction as the
+	// identity/session binding. The guarded update is a no-op for users without
+	// an active registration reservation.
+	if s.registrationIPCooldownEnabled(ctx) {
+		if err := s.finalizeRegistrationIPCooldownForUser(ctx, user.ID); err != nil {
+			return wrapRegistrationCleanupError("finalize registration IP cooldown for user", err)
+		}
+	}
 	return nil
 }
 
 // RollbackOAuthEmailAccountCreation removes a partially-created local account
 // and restores any invitation code already consumed by that account.
 func (s *AuthService) RollbackOAuthEmailAccountCreation(ctx context.Context, userID int64, invitationCode string) error {
+	return s.rollbackOAuthEmailAccountCreation(ctx, userID, invitationCode, true)
+}
+
+// rollbackOAuthEmailAccountCreation performs the compensating writes for a
+// partially-created account. When the claim was attached, release the
+// user-scoped reservation before deleting the user: the migration deliberately
+// uses ON DELETE SET NULL, so doing this in the opposite order loses the link
+// needed by the compensating update. A caller with an unattached claim releases
+// it separately with the token guard.
+func (s *AuthService) rollbackOAuthEmailAccountCreation(
+	ctx context.Context,
+	userID int64,
+	invitationCode string,
+	releaseReservation bool,
+) error {
 	if s == nil || s.userRepo == nil || userID <= 0 {
 		return ErrServiceUnavailable
 	}
+	var cleanupErrs []error
 	if err := s.restoreOAuthRegistrationInvitation(ctx, invitationCode, userID); err != nil {
-		return err
+		cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("restore invitation code", err))
+	}
+	// The feature is optional during a rolling upgrade. A caller that knows it
+	// attached a claim passes releaseReservation=true; old/no-gate callers do
+	// not need to query a table that may not exist yet.
+	if releaseReservation && s.registrationIPCooldownEnabled(ctx) {
+		if err := s.releaseRegistrationIPCooldownForUser(ctx, userID); err != nil {
+			cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("release registration IP cooldown for user", err))
+		}
 	}
 	if err := s.userRepo.Delete(ctx, userID); err != nil {
-		return fmt.Errorf("delete created oauth user: %w", err)
+		cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("delete created oauth user", err))
 	}
-	return nil
+	return joinRegistrationCleanupErrors(nil, cleanupErrs...)
+}
+
+// rollbackRegistrationAccountCreation combines the original failure with all
+// compensating-action failures. It is used by immediate registration paths so
+// a failed attach/finalize can never be reported as a successful signup.
+func (s *AuthService) rollbackRegistrationAccountCreation(
+	ctx context.Context,
+	userID int64,
+	invitationCode string,
+	claim *registrationIPCooldownClaim,
+	claimAttached bool,
+	originalErr error,
+) error {
+	var cleanupErrs []error
+	if userID > 0 {
+		if err := s.rollbackOAuthEmailAccountCreation(ctx, userID, invitationCode, claimAttached); err != nil {
+			cleanupErrs = append(cleanupErrs, err)
+		}
+	}
+	if claim != nil && !claimAttached {
+		if err := s.releaseRegistrationIPCooldownClaim(ctx, claim); err != nil {
+			cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("release unattached registration IP cooldown claim", err))
+		}
+	}
+	return joinRegistrationCleanupErrors(originalErr, cleanupErrs...)
 }
 
 func (s *AuthService) restoreOAuthRegistrationInvitation(ctx context.Context, invitationCode string, userID int64) error {

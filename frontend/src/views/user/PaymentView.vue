@@ -41,6 +41,34 @@
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
               <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
             </div>
+            <div v-if="showFirstRechargeGift" class="card border-emerald-200 p-5 dark:border-emerald-500/30">
+              <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex min-w-0 items-start gap-3">
+                  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-emerald-600 text-white">
+                    <Icon name="gift" size="md" />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('payment.firstRecharge.title') }}</p>
+                    <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                      {{ t('payment.firstRecharge.offer', {
+                        price: formatSelectedPaymentAmount(firstRechargeGift.price),
+                        credit: firstRechargeGift.credited_amount.toFixed(2),
+                      }) }}
+                    </p>
+                    <p v-if="firstRechargeGift.ratio > 0" class="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                      {{ t('payment.firstRecharge.ratio', { ratio: firstRechargeGift.ratio.toFixed(2) }) }}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  class="btn btn-primary shrink-0 px-5"
+                  :disabled="!canSubmitFirstRechargeGift || submitting"
+                  @click="handleFirstRechargeGift"
+                >
+                  {{ firstRechargeGift.pending ? t('payment.firstRecharge.pending') : t('payment.firstRecharge.purchase') }}
+                </button>
+              </div>
+            </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
@@ -53,6 +81,36 @@
                 :max="globalMaxAmount"
               />
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
+            </div>
+            <div v-if="showStudentBenefit" class="card p-6" data-testid="student-recharge-selector">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('payment.studentRecharge.modeTitle') }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('payment.studentRecharge.eligible') }}</p>
+                </div>
+                <Icon name="badge" size="lg" class="text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div class="mt-4 grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-800">
+                <button
+                  type="button"
+                  data-testid="student-mode-standard"
+                  class="rounded-md px-3 py-2 text-sm font-medium transition-colors"
+                  :class="studentRechargeMode === 'standard' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 dark:text-dark-300'"
+                  @click="studentRechargeMode = 'standard'"
+                >
+                  {{ t('payment.studentRecharge.standard') }}
+                </button>
+                <button
+                  type="button"
+                  data-testid="student-mode-benefit"
+                  class="rounded-md px-3 py-2 text-sm font-medium transition-colors"
+                  :class="studentRechargeMode === 'student' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-500 dark:text-dark-300'"
+                  @click="studentRechargeMode = 'student'"
+                >
+                  {{ t('payment.studentRecharge.student') }}
+                </button>
+              </div>
+              <p v-if="studentAmountError" class="mt-3 text-xs text-amber-600 dark:text-amber-300">{{ studentAmountError }}</p>
             </div>
             <div v-if="enabledMethods.length >= 1" class="card p-6">
               <PaymentMethodSelector
@@ -75,16 +133,24 @@
                   <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
                   <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                 </div>
-                <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
+                <div v-if="balanceRechargeMultiplier !== 1 || studentBenefitSelected" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                   <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
                 </div>
-                <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
+                <div v-if="studentBenefitSelected" class="flex justify-between text-emerald-700 dark:text-emerald-300">
+                  <span>{{ t('payment.studentRecharge.bonus') }}</span>
+                  <span data-testid="student-bonus-amount">{{ studentQuoteLoading ? t('payment.studentRecharge.calculating') : `$${studentBonusAmount.toFixed(2)}` }}</span>
+                </div>
+                <div v-if="studentBenefitSelected" class="flex justify-between border-t border-gray-200 pt-2 font-medium dark:border-dark-600">
+                  <span class="text-gray-700 dark:text-gray-300">{{ t('payment.studentRecharge.totalCredited') }}</span>
+                  <span class="text-lg font-bold text-emerald-600 dark:text-emerald-400" data-testid="student-total-amount">${{ studentTotalAmount.toFixed(2) }}</span>
+                </div>
+                <p v-if="balanceRechargeMultiplier !== 1 && !studentBenefitSelected" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
                   {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
                 </p>
               </div>
             </div>
-            <button :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
+            <button data-testid="recharge-submit" :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
               <span v-if="submitting" class="flex items-center justify-center gap-2">
                 <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
                 {{ t('common.processing') }}
@@ -264,10 +330,16 @@ import { usePaymentStore } from '@/stores/payment'
 import { useSubscriptionStore } from '@/stores/subscriptions'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
+import {
+  getStudentRechargeBenefitStatus,
+  quoteStudentRechargeBenefit,
+  type StudentRechargeBenefitQuote,
+  type StudentRechargeBenefitStatus,
+} from '@/api/studentRechargeBenefit'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, FirstRechargeGiftStatus, OrderType } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -305,6 +377,19 @@ const appStore = useAppStore()
 const user = computed(() => authStore.user)
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
 
+// These optional payment enhancements are opt-in independently from the core
+// payment page. Require a successfully loaded public-settings response and an
+// exact `true` value so a stale/partial startup payload cannot trigger feature
+// API calls or attach a special marker to a new order.
+const firstRechargeFeatureEnabled = computed(() =>
+  appStore.publicSettingsLoaded === true
+    && appStore.cachedPublicSettings?.subnexus_first_recharge_enabled === true,
+)
+const studentRechargeFeatureEnabled = computed(() =>
+  appStore.publicSettingsLoaded === true
+    && appStore.cachedPublicSettings?.subnexus_student_recharge_benefit_enabled === true,
+)
+
 function getDaysRemaining(expiresAt: string): number {
   const diff = new Date(expiresAt).getTime() - Date.now()
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
@@ -327,6 +412,26 @@ const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
+const firstRechargeGift = ref<FirstRechargeGiftStatus>({
+  enabled: false,
+  purchased: false,
+  pending: false,
+  price: 0,
+  credited_amount: 0,
+  ratio: 0,
+})
+const studentBenefitStatus = ref<StudentRechargeBenefitStatus>({
+  enabled: false,
+  is_student: false,
+  can_use: false,
+  bonus_rate: 0,
+  min_recharge_amount: 0,
+  per_order_cap: 0,
+})
+const studentRechargeMode = ref<'standard' | 'student'>('standard')
+const studentBenefitQuote = ref<StudentRechargeBenefitQuote | null>(null)
+const studentQuoteLoading = ref(false)
+let studentQuoteSequence = 0
 
 const paymentPhase = ref<'select' | 'paying'>('select')
 
@@ -336,6 +441,7 @@ interface CreateOrderOptions {
   paymentType?: string
   isResume?: boolean
   mobileQrFallbackAttempted?: boolean
+  studentBenefit?: boolean
 }
 
 interface WeixinJSBridgeLike {
@@ -441,7 +547,7 @@ async function redirectToPaymentResult(state: PaymentRecoverySnapshot): Promise<
 
 function buildWechatOAuthAuthorizeUrl(
   authorizeUrl: string,
-  context: { paymentType: string; orderType: OrderType; planId?: number; orderAmount: number },
+  context: { paymentType: string; orderType: OrderType; planId?: number; orderAmount: number; studentBenefit?: boolean },
 ): string {
   const normalizedUrl = authorizeUrl.trim()
   if (!normalizedUrl || typeof window === 'undefined') {
@@ -469,6 +575,17 @@ function buildWechatOAuthAuthorizeUrl(
       redirectUrl.searchParams.delete('amount')
     }
 
+    // Student benefits are valid only for ordinary balance recharge. Keep the
+    // marker in both the OAuth callback redirect and the outer authorize URL
+    // so the server can rebuild the same order after authentication.
+    if (context.orderType === 'balance' && context.studentBenefit === true) {
+      redirectUrl.searchParams.set('student_benefit', 'true')
+      targetUrl.searchParams.set('student_benefit', 'true')
+    } else {
+      redirectUrl.searchParams.delete('student_benefit')
+      targetUrl.searchParams.delete('student_benefit')
+    }
+
     targetUrl.searchParams.set('redirect', `${redirectUrl.pathname}${redirectUrl.search}`)
     return targetUrl.toString()
   } catch {
@@ -478,10 +595,14 @@ function buildWechatOAuthAuthorizeUrl(
 
 function onPaymentDone() {
   const wasSubscription = paymentState.value.orderType === 'subscription'
+  const wasFirstRecharge = paymentState.value.orderType === 'first_recharge_gift'
   resetPayment()
   selectedPlan.value = null
   if (wasSubscription) {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
+  }
+  if (wasFirstRecharge) {
+    loadFirstRechargeGift().catch(() => {})
   }
 }
 
@@ -491,6 +612,9 @@ async function onPaymentSuccess() {
   authStore.refreshUser()
   if (paymentState.value.orderType === 'subscription') {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
+  }
+  if (paymentState.value.orderType === 'first_recharge_gift') {
+    loadFirstRechargeGift().catch(() => {})
   }
   await redirectToPaymentResult(completedPayment)
 }
@@ -525,6 +649,41 @@ const subscriptionUsdToCnyRate = computed(() => {
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
 const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+
+// The server is authoritative for eligibility. A missing, malformed, or
+// failed response leaves the selector hidden and the ordinary flow unchanged.
+const showStudentBenefit = computed(() =>
+  studentRechargeFeatureEnabled.value
+    && studentBenefitStatus.value.enabled
+    && studentBenefitStatus.value.is_student
+    && studentBenefitStatus.value.can_use,
+)
+const studentBenefitSelected = computed(() =>
+  showStudentBenefit.value && studentRechargeMode.value === 'student',
+)
+const studentBonusAmount = computed(() => studentBenefitQuote.value?.bonus_amount ?? 0)
+const studentTotalAmount = computed(() => studentBenefitQuote.value?.total_amount ?? creditedAmount.value)
+const studentQuoteReady = computed(() =>
+  !studentBenefitSelected.value
+    || (
+      !studentQuoteLoading.value
+      && studentBenefitQuote.value?.can_use === true
+      && studentBenefitQuote.value.bonus_amount > 0
+      && studentBenefitQuote.value.total_amount > 0
+    ),
+)
+const studentAmountError = computed(() => {
+  if (!studentBenefitSelected.value || validAmount.value <= 0) return ''
+  if (validAmount.value < studentBenefitStatus.value.min_recharge_amount) {
+    return t('payment.studentRecharge.minimum', {
+      amount: formatSelectedPaymentAmount(studentBenefitStatus.value.min_recharge_amount),
+    })
+  }
+  if (!studentQuoteLoading.value && !studentQuoteReady.value) {
+    return t('payment.studentRecharge.unavailable')
+  }
+  return ''
+})
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -649,6 +808,22 @@ const canSubmit = computed(() =>
   validAmount.value > 0
     && amountFitsMethod(validAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
+    && studentQuoteReady.value
+)
+
+const showFirstRechargeGift = computed(() =>
+  activeTab.value === 'recharge'
+    && firstRechargeGift.value.enabled
+    && !firstRechargeGift.value.purchased
+    && firstRechargeGift.value.price > 0
+    && firstRechargeGift.value.credited_amount > 0
+)
+
+const canSubmitFirstRechargeGift = computed(() =>
+  showFirstRechargeGift.value
+    && !firstRechargeGift.value.pending
+    && amountFitsMethod(firstRechargeGift.value.price, selectedMethod.value)
+    && selectedLimit.value?.available !== false
 )
 
 const subPaymentAmount = computed(() => {
@@ -700,6 +875,18 @@ watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) 
   const available = enabledMethods.value.find((m) => amountFitsMethod(amt, m))
   if (available) selectedMethod.value = available
 })
+
+watch(showStudentBenefit, (visible) => {
+  if (!visible) {
+    studentRechargeMode.value = 'standard'
+    studentBenefitQuote.value = null
+  }
+})
+
+watch(
+  () => [validAmount.value, creditedAmount.value, studentRechargeMode.value, showStudentBenefit.value] as const,
+  () => { void loadStudentBenefitQuote() },
+)
 
 // Payment button class: follows selected payment method color
 const paymentButtonClass = computed(() => {
@@ -756,7 +943,14 @@ function closeRenewalModal() {
 
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
-  await createOrder(validAmount.value, 'balance')
+  await createOrder(validAmount.value, 'balance', undefined, {
+    studentBenefit: studentBenefitSelected.value,
+  })
+}
+
+async function handleFirstRechargeGift() {
+  if (!canSubmitFirstRechargeGift.value || submitting.value) return
+  await createOrder(firstRechargeGift.value.price, 'first_recharge_gift')
 }
 
 async function confirmSubscribe() {
@@ -765,10 +959,19 @@ async function confirmSubscribe() {
 }
 
 async function createOrder(orderAmount: number, orderType: OrderType, planId?: number, options: CreateOrderOptions = {}) {
+  const useStudentBenefit = orderType === 'balance'
+    && (options.studentBenefit ?? studentBenefitSelected.value) === true
+  // Re-check independent rollout gates immediately before every write. The
+  // backend remains authoritative, but this closes the stale-page request
+  // window when an administrator disables a feature while checkout is open.
+  if (orderType === 'first_recharge_gift' && !firstRechargeFeatureEnabled.value) return
+  if (useStudentBenefit && !studentRechargeFeatureEnabled.value) return
   submitting.value = true
   errorMessage.value = ''
   errorHintMessage.value = ''
   const requestType = normalizeVisibleMethod(options.paymentType || selectedMethod.value) || options.paymentType || selectedMethod.value
+  // Never allow a resume or caller to attach the marker to subscriptions or
+  // first-recharge gifts. The backend enforces the same invariant.
   try {
     const payload = buildCreateOrderPayload({
       amount: orderAmount,
@@ -780,6 +983,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
       forceQRCode: !!(checkout.value.alipay_force_qrcode && normalizeVisibleMethod(requestType) === 'alipay'),
       mobilePrecreateDeepLink: checkout.value.alipay_mobile_precreate_deep_link === true,
+      studentBenefit: useStudentBenefit,
     })
     if (options.openid) {
       payload.openid = options.openid
@@ -840,6 +1044,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
         orderType,
         planId,
         orderAmount,
+        studentBenefit: useStudentBenefit,
       })
       return
     }
@@ -882,6 +1087,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
               planId,
               paymentType: visibleMethod,
               attempted: options.mobileQrFallbackAttempted === true,
+              studentBenefit: useStudentBenefit,
             },
           )
           if (!fallbackApplied) {
@@ -900,6 +1106,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           planId,
           paymentType: visibleMethod,
           attempted: options.mobileQrFallbackAttempted === true,
+          studentBenefit: useStudentBenefit,
         })
         if (!fallbackApplied) {
           throw err
@@ -929,6 +1136,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       planId,
       paymentType: requestType,
       attempted: options.mobileQrFallbackAttempted === true,
+      studentBenefit: useStudentBenefit,
     })) {
       return
     } else {
@@ -956,6 +1164,7 @@ interface MobileQrFallbackContext {
   planId?: number
   paymentType: string
   attempted: boolean
+  studentBenefit: boolean
 }
 
 function shouldFallbackToDesktopQr(err: unknown, paymentMethod: string, attempted: boolean): boolean {
@@ -1006,6 +1215,7 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: false,
       isWechatBrowser: false,
+      studentBenefit: context.studentBenefit,
     })
     const result = await paymentStore.createOrder(payload) as CreateOrderResult & { resume_token?: string }
     const stripeMethod = visibleMethod === 'wxpay' ? 'wechat_pay' : 'alipay'
@@ -1069,7 +1279,10 @@ async function resumeWechatPaymentFromQuery() {
   }
 
   selectedMethod.value = resume.paymentType
-  if (resume.orderType === 'balance' && resume.orderAmount > 0) {
+  if (resume.studentBenefit) {
+    studentRechargeMode.value = 'student'
+  }
+  if ((resume.orderType === 'balance' || resume.orderType === 'first_recharge_gift') && resume.orderAmount > 0) {
     amount.value = resume.orderAmount
   }
   if (resume.orderType === 'subscription' && resume.planId) {
@@ -1083,6 +1296,7 @@ async function resumeWechatPaymentFromQuery() {
       wechatResumeToken: resume.wechatResumeToken,
       paymentType: resume.paymentType,
       isResume: true,
+      studentBenefit: resume.studentBenefit,
     })
     return
   }
@@ -1092,7 +1306,97 @@ async function resumeWechatPaymentFromQuery() {
       openid: resume.openid,
       paymentType: resume.paymentType,
       isResume: true,
+      studentBenefit: resume.studentBenefit,
     })
+  }
+}
+
+async function loadFirstRechargeGift() {
+  if (!firstRechargeFeatureEnabled.value) {
+    firstRechargeGift.value = {
+      enabled: false,
+      purchased: false,
+      pending: false,
+      price: 0,
+      credited_amount: 0,
+      ratio: 0,
+    }
+    return
+  }
+  try {
+    const response = await paymentAPI.getFirstRechargeGift()
+    firstRechargeGift.value = response.data
+  } catch {
+    firstRechargeGift.value = {
+      enabled: false,
+      purchased: false,
+      pending: false,
+      price: 0,
+      credited_amount: 0,
+      ratio: 0,
+    }
+  }
+}
+
+async function loadStudentBenefitStatus() {
+  if (!studentRechargeFeatureEnabled.value) {
+    studentBenefitStatus.value = {
+      enabled: false,
+      is_student: false,
+      can_use: false,
+      bonus_rate: 0,
+      min_recharge_amount: 0,
+      per_order_cap: 0,
+    }
+    studentRechargeMode.value = 'standard'
+    studentBenefitQuote.value = null
+    return
+  }
+  try {
+    studentBenefitStatus.value = await getStudentRechargeBenefitStatus()
+  } catch {
+    // Fail closed: an unavailable status endpoint must never expose the
+    // student selector or attach a student marker to a payment order.
+    studentBenefitStatus.value = {
+      enabled: false,
+      is_student: false,
+      can_use: false,
+      bonus_rate: 0,
+      min_recharge_amount: 0,
+      per_order_cap: 0,
+    }
+    studentRechargeMode.value = 'standard'
+    studentBenefitQuote.value = null
+  }
+}
+
+async function loadStudentBenefitQuote() {
+  const sequence = ++studentQuoteSequence
+  studentBenefitQuote.value = null
+  if (
+    !studentBenefitSelected.value
+    || validAmount.value <= 0
+    || creditedAmount.value <= 0
+    || validAmount.value < studentBenefitStatus.value.min_recharge_amount
+  ) {
+    studentQuoteLoading.value = false
+    return
+  }
+
+  studentQuoteLoading.value = true
+  try {
+    const quote = await quoteStudentRechargeBenefit(validAmount.value)
+    if (sequence === studentQuoteSequence) {
+      studentBenefitQuote.value = quote
+    }
+  } catch {
+    if (sequence === studentQuoteSequence) {
+      studentBenefitQuote.value = null
+    }
+  } finally {
+    if (sequence === studentQuoteSequence) {
+      studentQuoteLoading.value = false
+    }
   }
 }
 
@@ -1109,6 +1413,12 @@ onMounted(async () => {
       })
       selectedMethod.value = sorted[0]
     }
+    // Student eligibility is an optional enhancement. Do not hold the core
+    // checkout screen in a loading state when an older backend does not expose
+    // the endpoint; loadFirstRechargeGift remains part of the initial payload,
+    // while the student status fails closed in the background.
+    await loadFirstRechargeGift()
+    void loadStudentBenefitStatus()
     if (typeof window !== 'undefined') {
       if (hasWechatResumeQuery(route.query)) {
         removeRecoverySnapshot()

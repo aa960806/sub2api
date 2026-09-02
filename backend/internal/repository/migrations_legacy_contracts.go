@@ -25,10 +25,11 @@ type migrationAliasContract struct {
 }
 
 type migrationColumnContract struct {
-	table    string
-	column   string
-	dataType string // PostgreSQL format_type output, e.g. numeric(20,8).
-	notNull  bool
+	table           string
+	column          string
+	dataType        string // PostgreSQL format_type output, e.g. numeric(20,8).
+	notNull         bool
+	defaultContains string // Optional normalized fragment of pg_get_expr(adbin, adrelid).
 }
 
 type migrationIndexContract struct {
@@ -528,6 +529,85 @@ SELECT EXISTS (
 			},
 		},
 	},
+	"9008_subnexus_student_recharge_benefit.sql": {
+		// The legacy 199 migration created the same isolated tables.  Keep the
+		// full runtime column set here: IF NOT EXISTS alone would otherwise
+		// adopt a partial table and let a later balance worker fail at runtime.
+		tables: []string{
+			"student_account_status",
+			"student_account_audit_logs",
+			"student_recharge_bonus_logs",
+		},
+		columns: []migrationColumnContract{
+			{table: "student_account_status", column: "user_id", dataType: "bigint", notNull: true},
+			{table: "student_account_status", column: "is_student", dataType: "boolean", notNull: true, defaultContains: "true"},
+			{table: "student_account_status", column: "granted_by", dataType: "bigint", notNull: true},
+			{table: "student_account_status", column: "granted_at", dataType: "timestamp with time zone", notNull: true},
+			{table: "student_account_status", column: "revoked_by", dataType: "bigint"},
+			{table: "student_account_status", column: "revoked_at", dataType: "timestamp with time zone"},
+			{table: "student_account_status", column: "revoke_reason", dataType: "text", notNull: true, defaultContains: "''"},
+			{table: "student_account_status", column: "created_at", dataType: "timestamp with time zone", notNull: true},
+			{table: "student_account_status", column: "updated_at", dataType: "timestamp with time zone", notNull: true},
+
+			{table: "student_account_audit_logs", column: "id", dataType: "bigint", notNull: true},
+			{table: "student_account_audit_logs", column: "user_id", dataType: "bigint", notNull: true},
+			{table: "student_account_audit_logs", column: "admin_user_id", dataType: "bigint", notNull: true},
+			{table: "student_account_audit_logs", column: "action", dataType: "character varying(24)", notNull: true},
+			{table: "student_account_audit_logs", column: "previous_is_student", dataType: "boolean", notNull: true},
+			{table: "student_account_audit_logs", column: "current_is_student", dataType: "boolean", notNull: true},
+			{table: "student_account_audit_logs", column: "reason", dataType: "text", notNull: true, defaultContains: "''"},
+			{table: "student_account_audit_logs", column: "client_ip", dataType: "character varying(45)", notNull: true, defaultContains: "''"},
+			{table: "student_account_audit_logs", column: "created_at", dataType: "timestamp with time zone", notNull: true},
+
+			{table: "student_recharge_bonus_logs", column: "id", dataType: "bigint", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "payment_order_id", dataType: "bigint", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "user_id", dataType: "bigint", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "base_amount", dataType: "numeric(20,8)", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "bonus_rate", dataType: "numeric(10,6)", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "bonus_amount", dataType: "numeric(20,8)", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "config_snapshot", dataType: "jsonb", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "status", dataType: "character varying(16)", notNull: true, defaultContains: "'pending'"},
+			{table: "student_recharge_bonus_logs", column: "granted_at", dataType: "timestamp with time zone"},
+			{table: "student_recharge_bonus_logs", column: "reversed_amount", dataType: "numeric(20,8)", notNull: true, defaultContains: "0"},
+			{table: "student_recharge_bonus_logs", column: "reversed_at", dataType: "timestamp with time zone"},
+			{table: "student_recharge_bonus_logs", column: "last_error", dataType: "text", notNull: true, defaultContains: "''"},
+			{table: "student_recharge_bonus_logs", column: "created_at", dataType: "timestamp with time zone", notNull: true},
+			{table: "student_recharge_bonus_logs", column: "updated_at", dataType: "timestamp with time zone", notNull: true},
+		},
+		indexes: []migrationIndexContract{
+			{table: "student_account_status", name: "idx_student_account_status_active", fragments: []string{"student_account_status", "is_student", "updated_at DESC"}},
+			{table: "student_account_audit_logs", name: "idx_student_account_audit_user", fragments: []string{"student_account_audit_logs", "user_id", "created_at DESC"}},
+			{table: "student_account_audit_logs", name: "idx_student_account_audit_admin", fragments: []string{"student_account_audit_logs", "admin_user_id", "created_at DESC"}},
+			{table: "student_recharge_bonus_logs", name: "idx_student_recharge_bonus_pending", fragments: []string{"student_recharge_bonus_logs", "status", "created_at", "pending", "failed"}},
+			{table: "student_recharge_bonus_logs", name: "idx_student_recharge_bonus_user", fragments: []string{"student_recharge_bonus_logs", "user_id", "created_at DESC"}},
+		},
+		constraints: []migrationConstraintContract{
+			{table: "student_account_status", name: "student_account_status_revocation_check", fragments: []string{"is_student", "revoked_at", "revoked_by"}, requireValid: true},
+			{table: "student_account_audit_logs", name: "student_account_audit_action_check", fragments: []string{"action", "grant", "revoke"}, requireValid: true},
+			{table: "student_recharge_bonus_logs", name: "student_recharge_bonus_status_check", fragments: []string{"status", "pending", "granted", "reversed", "failed"}, requireValid: true},
+			{table: "student_recharge_bonus_logs", name: "student_recharge_bonus_amount_check", fragments: []string{"base_amount", "bonus_rate", "bonus_amount", "reversed_amount"}, requireValid: true},
+		},
+	},
+	"9010_subnexus_registration_ip_cooldown.sql": {
+		tables: []string{"registration_ip_cooldowns"},
+		columns: []migrationColumnContract{
+			{table: "registration_ip_cooldowns", column: "ip_hash", dataType: "character(64)", notNull: true},
+			{table: "registration_ip_cooldowns", column: "last_registered_at", dataType: "timestamp with time zone"},
+			{table: "registration_ip_cooldowns", column: "last_user_id", dataType: "bigint"},
+			{table: "registration_ip_cooldowns", column: "reservation_token", dataType: "character(64)"},
+			{table: "registration_ip_cooldowns", column: "reserved_until", dataType: "timestamp with time zone"},
+			{table: "registration_ip_cooldowns", column: "created_at", dataType: "timestamp with time zone", notNull: true},
+			{table: "registration_ip_cooldowns", column: "updated_at", dataType: "timestamp with time zone", notNull: true},
+		},
+		indexes: []migrationIndexContract{
+			{table: "registration_ip_cooldowns", name: "idx_registration_ip_cooldowns_last_registered_at", fragments: []string{"registration_ip_cooldowns", "last_registered_at DESC", "last_registered_at IS NOT NULL"}},
+			{table: "registration_ip_cooldowns", name: "idx_registration_ip_cooldowns_reserved_until", fragments: []string{"registration_ip_cooldowns", "reserved_until", "reserved_until IS NOT NULL"}},
+		},
+		constraints: []migrationConstraintContract{
+			{table: "registration_ip_cooldowns", name: "registration_ip_cooldowns_pkey", fragments: []string{"primary key", "ip_hash"}, requireValid: true},
+			{table: "registration_ip_cooldowns", name: "registration_ip_cooldowns_last_user_id_fkey", fragments: []string{"foreign key", "last_user_id", "users", "id", "on delete set null"}, requireValid: true},
+		},
+	},
 }
 
 var migrationChecksumPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -584,6 +664,15 @@ func validateMigrationAliasContract(ctx context.Context, db migrationQueryConnec
 	if !ok {
 		return fmt.Errorf("no schema contract registered for legacy migration alias %s", migrationName)
 	}
+	return validateMigrationSchemaContract(ctx, db, migrationName, contract)
+}
+
+// validateMigrationSchemaContract validates a declarative schema contract
+// against PostgreSQL.  It is shared by legacy adoption checks and new
+// compatibility migrations whose SQL intentionally uses IF NOT EXISTS: that
+// clause makes a migration idempotent, but it does not prove an existing object
+// has the shape the runtime expects.
+func validateMigrationSchemaContract(ctx context.Context, db migrationQueryConnection, migrationName string, contract migrationAliasContract) error {
 
 	for _, table := range contract.tables {
 		exists, err := migrationTableExists(ctx, db, table)
@@ -607,6 +696,18 @@ func validateMigrationAliasContract(ctx context.Context, db migrationQueryConnec
 				"schema contract %s column %s.%s mismatch (type=%s not_null=%t expected type=%s not_null=%t)",
 				migrationName, column.table, column.column, actualType, actualNotNull, column.dataType, column.notNull,
 			)
+		}
+		if column.defaultContains != "" {
+			defaultExpr, err := lookupMigrationColumnDefault(ctx, db, column)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("schema contract %s column %s.%s default is missing", migrationName, column.table, column.column)
+				}
+				return fmt.Errorf("schema contract %s column %s.%s default query: %w", migrationName, column.table, column.column, err)
+			}
+			if !migrationContractTextContains(defaultExpr, column.defaultContains) {
+				return fmt.Errorf("schema contract %s column %s.%s default missing %q (actual=%s)", migrationName, column.table, column.column, column.defaultContains, defaultExpr)
+			}
 		}
 	}
 	for _, index := range contract.indexes {
@@ -721,6 +822,28 @@ WHERE n.nspname = 'public'
   AND NOT a.attisdropped
 `, contract.table, contract.column).Scan(&dataType, &notNull)
 	return dataType, notNull, err
+}
+
+func lookupMigrationColumnDefault(ctx context.Context, db migrationQueryConnection, contract migrationColumnContract) (string, error) {
+	var defaultExpr sql.NullString
+	err := db.QueryRowContext(ctx, `
+SELECT pg_get_expr(d.adbin, d.adrelid)
+FROM pg_attribute a
+JOIN pg_class c ON c.oid = a.attrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+WHERE n.nspname = 'public'
+  AND c.relname = $1
+  AND a.attname = $2
+  AND NOT a.attisdropped
+`, contract.table, contract.column).Scan(&defaultExpr)
+	if err != nil {
+		return "", err
+	}
+	if !defaultExpr.Valid {
+		return "", sql.ErrNoRows
+	}
+	return defaultExpr.String, nil
 }
 
 func migrationTableExists(ctx context.Context, db migrationQueryConnection, tableName string) (bool, error) {

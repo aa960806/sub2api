@@ -28,6 +28,8 @@ type CustomEndpoint struct {
 // SystemSettings represents the admin settings API response payload.
 type SystemSettings struct {
 	RegistrationEnabled                 bool                     `json:"registration_enabled"`
+	RegistrationIPCooldownEnabled       bool                     `json:"registration_ip_cooldown_enabled"`
+	RegistrationIPCooldownSeconds       int                      `json:"registration_ip_cooldown_seconds"`
 	EmailVerifyEnabled                  bool                     `json:"email_verify_enabled"`
 	RegistrationEmailSuffixWhitelist    []string                 `json:"registration_email_suffix_whitelist"`
 	RegistrationEmailDomainQuotaEnabled bool                     `json:"registration_email_domain_quota_enabled"`
@@ -154,6 +156,9 @@ type SystemSettings struct {
 	APIBaseURL                  string           `json:"api_base_url"`
 	ContactInfo                 string           `json:"contact_info"`
 	DocURL                      string           `json:"doc_url"`
+	DefaultLanguage             string           `json:"default_language"`
+	CustomerSupportEnabled      bool             `json:"customer_support_enabled"`
+	CustomerSupportContent      string           `json:"customer_support_content"`
 	HomeContent                 string           `json:"home_content"`
 	CompactHomeEnabled          bool             `json:"compact_home_enabled"`
 	HideCcsImportButton         bool             `json:"hide_ccs_import_button"`
@@ -164,15 +169,20 @@ type SystemSettings struct {
 	CustomMenuItems             []CustomMenuItem `json:"custom_menu_items"`
 	CustomEndpoints             []CustomEndpoint `json:"custom_endpoints"`
 
-	DefaultConcurrency           int                          `json:"default_concurrency"`
-	DefaultBalance               float64                      `json:"default_balance"`
-	AffiliateRebateRate          float64                      `json:"affiliate_rebate_rate"`
-	AffiliateRebateFreezeHours   int                          `json:"affiliate_rebate_freeze_hours"`
-	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
-	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
-	AdminRechargeRebateEnabled   bool                         `json:"affiliate_admin_recharge_enabled"`
-	DefaultUserRPMLimit          int                          `json:"default_user_rpm_limit"`
-	DefaultSubscriptions         []DefaultSubscriptionSetting `json:"default_subscriptions"`
+	DefaultConcurrency                 int                          `json:"default_concurrency"`
+	DefaultBalance                     float64                      `json:"default_balance"`
+	AffiliateRebateRate                float64                      `json:"affiliate_rebate_rate"`
+	AffiliateRebateFreezeHours         int                          `json:"affiliate_rebate_freeze_hours"`
+	AffiliateRebateDurationDays        int                          `json:"affiliate_rebate_duration_days"`
+	AffiliateRebatePerInviteeCap       float64                      `json:"affiliate_rebate_per_invitee_cap"`
+	AdminRechargeRebateEnabled         bool                         `json:"affiliate_admin_recharge_enabled"`
+	SubNexusInviteRewardsEnabled       bool                         `json:"subnexus_invite_rewards_enabled"`
+	SubNexusInviteRewardInviterAmount  float64                      `json:"subnexus_invite_reward_inviter_amount"`
+	SubNexusInviteRewardInviteeAmount  float64                      `json:"subnexus_invite_reward_invitee_amount"`
+	SubNexusInviteRewardIPLimitEnabled bool                         `json:"subnexus_invite_reward_ip_limit_enabled"`
+	SubNexusInviteRewardIPDailyLimit   int                          `json:"subnexus_invite_reward_ip_daily_limit"`
+	DefaultUserRPMLimit                int                          `json:"default_user_rpm_limit"`
+	DefaultSubscriptions               []DefaultSubscriptionSetting `json:"default_subscriptions"`
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -381,6 +391,9 @@ type PublicSettings struct {
 	APIBaseURL                          string                   `json:"api_base_url"`
 	ContactInfo                         string                   `json:"contact_info"`
 	DocURL                              string                   `json:"doc_url"`
+	DefaultLanguage                     string                   `json:"default_language"`
+	CustomerSupportEnabled              bool                     `json:"customer_support_enabled"`
+	CustomerSupportContent              string                   `json:"customer_support_content"`
 	HomeContent                         string                   `json:"home_content"`
 	CompactHomeEnabled                  bool                     `json:"compact_home_enabled"`
 	HideCcsImportButton                 bool                     `json:"hide_ccs_import_button"`
@@ -412,11 +425,23 @@ type PublicSettings struct {
 	BalanceLowNotifyThreshold   float64 `json:"balance_low_notify_threshold"`
 	BalanceLowNotifyRechargeURL string  `json:"balance_low_notify_recharge_url"`
 
-	ChannelMonitorEnabled                bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorEnabled                 bool   `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                    string `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds  int    `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorHideThroughput          bool   `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota               bool   `json:"channel_monitor_show_quota"`
+	SubNexusActivityCenterEnabled         bool   `json:"subnexus_activity_center_enabled"`
+	SubNexusMarqueeEnabled                bool   `json:"subnexus_marquee_enabled"`
+	SubNexusCheckInEnabled                bool   `json:"subnexus_checkin_enabled"`
+	SubNexusLeaderboardEnabled            bool   `json:"subnexus_leaderboard_enabled"`
+	SubNexusInviteActivitiesEnabled       bool   `json:"subnexus_invite_activities_enabled"`
+	SubNexusInviteLotteryEnabled          bool   `json:"subnexus_invite_lottery_enabled"`
+	SubNexusRechargeWheelEnabled          bool   `json:"subnexus_recharge_wheel_enabled"`
+	SubNexusInviteMilestoneEnabled        bool   `json:"subnexus_invite_milestone_enabled"`
+	SubNexusFirstRechargeEnabled          bool   `json:"subnexus_first_recharge_enabled"`
+	SubNexusStudentRechargeBenefitEnabled bool   `json:"subnexus_student_recharge_benefit_enabled"`
+	BattlePassEnabled                     bool   `json:"battle_pass_enabled"`
+	InvoiceEnabled                        bool   `json:"invoice_enabled"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 

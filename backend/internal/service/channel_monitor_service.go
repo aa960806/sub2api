@@ -98,7 +98,8 @@ func NewChannelMonitorService(repo ChannelMonitorRepository, encryptor SecretEnc
 }
 
 // SetRuntimeReader injects the settings reader used to gate active probes.
-// Optional: when unset, active probes are treated as mode=v2 (retired).
+// When unset, the runtime is closed so a missing dependency cannot trigger
+// provider traffic.
 func (s *ChannelMonitorService) SetRuntimeReader(r channelMonitorRuntimeReader) {
 	if s == nil {
 		return
@@ -108,7 +109,7 @@ func (s *ChannelMonitorService) SetRuntimeReader(r channelMonitorRuntimeReader) 
 
 func (s *ChannelMonitorService) probeRuntime(ctx context.Context) ChannelMonitorRuntime {
 	if s == nil || s.settings == nil {
-		return ChannelMonitorRuntime{Enabled: true, Mode: ChannelMonitorModeV2}
+		return ChannelMonitorRuntime{Enabled: false, Mode: ChannelMonitorModeV1}
 	}
 	return s.settings.GetChannelMonitorRuntime(ctx)
 }
@@ -780,6 +781,12 @@ func (s *ChannelMonitorService) cleanupOldHistory(ctx context.Context) error {
 // 每一步失败都只记 slog.Warn，整体函数始终返回 nil 让后续步骤能继续跑
 // （与 OpsCleanupService.runCleanupOnce 风格一致）。
 func (s *ChannelMonitorService) RunDailyMaintenance(ctx context.Context) error {
+	// Maintenance reads and writes channel-monitor history/rollup tables. Keep
+	// the whole operation behind the same runtime gate as active probes so a
+	// missing settings dependency or a disabled feature remains a true no-op.
+	if s == nil || s.repo == nil || s.settings == nil || !s.probeRuntime(ctx).Enabled {
+		return nil
+	}
 	now := time.Now().UTC()
 	today := now.Truncate(24 * time.Hour)
 

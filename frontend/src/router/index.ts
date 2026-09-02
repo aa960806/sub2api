@@ -13,6 +13,10 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { isActivityCenterSettingsEnabled } from '@/utils/activityCenter'
+import { isLeaderboardSettingsEnabled } from '@/utils/leaderboard'
+import { isInviteActivitySettingsEnabled } from '@/utils/inviteActivities'
+import { invoicesAPI, shouldShowInvoiceMenu } from '@/api/invoices'
 
 /**
  * Route definitions with lazy loading
@@ -253,6 +257,84 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/activities',
+    name: 'ActivityCenter',
+    component: () => import('@/views/user/ActivityCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresActivityCenter: true,
+      title: 'Activity Center',
+      titleKey: 'nav.activities',
+      descriptionKey: 'activityCenter.description'
+    }
+  },
+  {
+    path: '/leaderboard',
+    name: 'Leaderboard',
+    component: () => import('@/views/user/LeaderboardView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresLeaderboard: true,
+      title: 'Leaderboard',
+      titleKey: 'leaderboard.title',
+      descriptionKey: 'leaderboard.description',
+    },
+  },
+  {
+    path: '/invite-lottery',
+    name: 'InviteLottery',
+    component: () => import('@/views/user/InviteLotteryView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresInviteActivity: 'subnexus_invite_lottery_enabled',
+      title: 'Invite Lottery',
+      titleKey: 'inviteActivities.inviteLottery.title',
+      descriptionKey: 'inviteActivities.inviteLottery.description',
+    },
+  },
+  {
+    path: '/recharge-wheel',
+    name: 'RechargeWheel',
+    component: () => import('@/views/user/RechargeWheelView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresInviteActivity: 'subnexus_recharge_wheel_enabled',
+      title: 'Recharge Reward Wheel',
+      titleKey: 'inviteActivities.rechargeWheel.title',
+      descriptionKey: 'inviteActivities.rechargeWheel.description',
+    },
+  },
+  {
+    path: '/invite-milestone',
+    name: 'InviteMilestone',
+    component: () => import('@/views/user/InviteMilestoneView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresInviteActivity: 'subnexus_invite_milestone_enabled',
+      title: 'Invite Milestones',
+      titleKey: 'inviteActivities.inviteMilestone.title',
+      descriptionKey: 'inviteActivities.inviteMilestone.description',
+    },
+  },
+  {
+    path: '/battle-pass',
+    name: 'BattlePass',
+    component: () => import('@/views/user/BattlePassView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresBattlePass: true,
+      title: 'Battle Pass',
+      titleKey: 'battlePass.title',
+      descriptionKey: 'battlePass.description',
+    },
+  },
+  {
     path: '/affiliate',
     name: 'Affiliate',
     component: () => import('@/views/user/AffiliateView.vue'),
@@ -324,6 +406,18 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'nav.myOrders',
       requiresPayment: true
     }
+  },
+  {
+    path: '/invoices',
+    name: 'Invoices',
+    component: () => import('@/views/user/InvoicesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresInvoice: true,
+      title: 'Invoice Management',
+      titleKey: 'invoice.user.title',
+    },
   },
   {
     path: '/payment/qrcode',
@@ -549,6 +643,90 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/marquee',
+    name: 'AdminMarquee',
+    component: () => import('@/views/admin/MarqueeView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Marquee Broadcasts',
+      titleKey: 'admin.marquee.title',
+      descriptionKey: 'admin.marquee.description'
+    }
+  },
+  {
+    path: '/admin/activity-center',
+    name: 'AdminActivityCenter',
+    component: () => import('@/views/admin/ActivityCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Activity Entries',
+      titleKey: 'nav.activityEntries',
+      descriptionKey: 'admin.activityCenter.description'
+    }
+  },
+  {
+    path: '/admin/leaderboard',
+    name: 'AdminLeaderboard',
+    component: () => import('@/views/admin/LeaderboardSettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Leaderboard Settings',
+      titleKey: 'admin.leaderboard.title',
+      descriptionKey: 'admin.leaderboard.description',
+    },
+  },
+  {
+    path: '/admin/invite-activities',
+    name: 'AdminInviteActivities',
+    component: () => import('@/views/admin/InviteActivitiesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Invite Activity Settings',
+      titleKey: 'inviteActivities.admin.title',
+      descriptionKey: 'inviteActivities.admin.description',
+    },
+  },
+  {
+    path: '/admin/battle-pass',
+    name: 'AdminBattlePass',
+    component: () => import('@/views/admin/BattlePassView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Battle Pass',
+      titleKey: 'battlePass.adminTitle',
+      descriptionKey: 'battlePass.adminDescription',
+    },
+  },
+  {
+    path: '/admin/first-recharge-gift',
+    name: 'AdminFirstRechargeGift',
+    component: () => import('@/views/admin/FirstRechargeGiftView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'First Recharge Gift',
+      titleKey: 'admin.firstRechargeGift.title',
+      descriptionKey: 'admin.firstRechargeGift.description',
+    },
+  },
+  {
+    path: '/admin/student-recharge',
+    name: 'AdminStudentRechargeBenefit',
+    component: () => import('@/views/admin/StudentRechargeBenefitView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Student Recharge Benefit',
+      titleKey: 'admin.studentRecharge.title',
+      descriptionKey: 'admin.studentRecharge.description',
+    },
+  },
+  {
     path: '/admin/proxies',
     name: 'AdminProxies',
     component: () => import('@/views/admin/ProxiesView.vue'),
@@ -633,6 +811,17 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'admin.usage.title',
       descriptionKey: 'admin.usage.description'
     }
+  },
+  {
+    path: '/admin/invoices',
+    name: 'AdminInvoices',
+    component: () => import('@/views/admin/InvoicesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Invoice Management',
+      titleKey: 'invoice.admin.title',
+    },
   },
   {
     path: '/admin/affiliates',
@@ -903,6 +1092,125 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  // Activity center is an opt-in migration slice. Only a successfully loaded
+  // public-settings payload with an explicit `true` may enter the user page;
+  // missing fields, failed loads, and all other values fail closed. The admin
+  // management route has no `requiresActivityCenter` meta and remains usable
+  // so an administrator can turn the switch on.
+  if (to.meta.requiresActivityCenter) {
+    if (!appStore.publicSettingsLoaded) {
+      try {
+        await appStore.fetchPublicSettings()
+      } catch (error) {
+        console.warn('Failed to load activity-center public settings', error)
+      }
+    }
+    if (
+      !isActivityCenterSettingsEnabled(
+        appStore.publicSettingsLoaded,
+        appStore.cachedPublicSettings,
+      )
+    ) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
+  // Leaderboard is an independent read-only migration slice. Require a
+  // successfully loaded public-settings payload with an explicit true value;
+  // failed/missing settings and stale embedded values fail closed.
+  if (to.meta.requiresLeaderboard) {
+    if (!appStore.publicSettingsLoaded) {
+      try {
+        await appStore.fetchPublicSettings()
+      } catch (error) {
+        console.warn('Failed to load leaderboard public settings', error)
+      }
+    }
+    if (
+      !isLeaderboardSettingsEnabled(
+        appStore.publicSettingsLoaded,
+        appStore.cachedPublicSettings,
+      )
+    ) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
+  // Each migrated invite activity is independently opt-in and also obeys an
+  // aggregate emergency stop. Unknown, missing, or unavailable settings fail
+  // closed before the lazy-loaded view is allowed to query an activity API.
+  if (to.meta.requiresInviteActivity) {
+    if (!appStore.publicSettingsLoaded) {
+      try {
+        await appStore.fetchPublicSettings()
+      } catch (error) {
+        console.warn('Failed to load invite-activity public settings', error)
+      }
+    }
+    if (
+      !isInviteActivitySettingsEnabled(
+        appStore.publicSettingsLoaded,
+        appStore.cachedPublicSettings,
+        to.meta.requiresInviteActivity,
+      )
+    ) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
+  // Battle Pass is an independent opt-in feature. Missing, malformed, or
+  // unavailable public settings must never expose its user route; the view
+  // performs a second authoritative check against the Battle Pass endpoint.
+  if (to.meta.requiresBattlePass) {
+    if (!appStore.publicSettingsLoaded) {
+      try {
+        await appStore.fetchPublicSettings()
+      } catch (error) {
+        console.warn('Failed to load Battle Pass public settings', error)
+      }
+    }
+    if (
+      !appStore.publicSettingsLoaded ||
+      appStore.cachedPublicSettings?.battle_pass_enabled !== true
+    ) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
+  // Invoice access is deliberately fail-closed. A user may still open the
+  // page when the backend reports existing history, even if new applications
+  // are disabled. New applications additionally require the explicit public
+  // `invoice_enabled` flag; a missing/failed settings request never enables it.
+  if (to.meta.requiresInvoice) {
+    if (!appStore.publicSettingsLoaded) {
+      try {
+        await appStore.fetchPublicSettings()
+      } catch (error) {
+        console.warn('Failed to load invoice public settings', error)
+      }
+    }
+
+    try {
+      const invoiceConfig = await invoicesAPI.getConfig()
+      const hasHistory = invoiceConfig?.has_history === true
+      const enabled = invoiceConfig?.enabled === true
+      const publicEnabled =
+        appStore.publicSettingsLoaded && appStore.cachedPublicSettings?.invoice_enabled === true
+      if (!shouldShowInvoiceMenu(invoiceConfig) || (!hasHistory && !(enabled && publicEnabled))) {
+        next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+        return
+      }
+    } catch (error) {
+      console.warn('Failed to load invoice config in route guard', error)
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
 
   // 公共设置可能尚未加载（App.vue 的 onMounted 异步拉取晚于首次导航，且纯静态部署
   // 无 __APP_CONFIG__ 注入）。此时 cachedPublicSettings 为空会把 payment/risk_control
@@ -942,7 +1250,18 @@ router.beforeEach(async (to, _from, next) => {
       '/admin/subscriptions',
       '/admin/redeem',
       '/subscriptions',
-      '/redeem'
+      '/redeem',
+      '/activities',
+      '/leaderboard',
+      '/invite-lottery',
+      '/recharge-wheel',
+      '/invite-milestone',
+      '/battle-pass',
+      '/admin/battle-pass',
+      '/admin/invite-activities',
+      '/admin/first-recharge-gift',
+      '/admin/marquee',
+      '/admin/student-recharge'
     ]
 
     if (restrictedPaths.some((path) => to.path.startsWith(path))) {

@@ -36,6 +36,15 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if !cfg.Enabled {
 		return nil, infraerrors.Forbidden("PAYMENT_DISABLED", "payment system is disabled")
 	}
+	var firstRechargeCfg *FirstRechargeGiftConfig
+	if req.OrderType == payment.OrderTypeFirstRechargeGift {
+		giftCfg, giftErr := s.prepareFirstRechargeGiftOrder(ctx, req.UserID)
+		if giftErr != nil {
+			return nil, giftErr
+		}
+		firstRechargeCfg = &giftCfg
+		req.Amount = giftCfg.Price
+	}
 	plan, err := s.validateOrderInput(ctx, req, cfg)
 	if err != nil {
 		return nil, err
@@ -58,8 +67,25 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if plan != nil {
 		orderAmount = plan.Price
 		limitAmount = plan.Price
+	} else if firstRechargeCfg != nil {
+		orderAmount = firstRechargeCfg.CreditedAmount
+		limitAmount = firstRechargeCfg.Price
 	} else if req.OrderType == payment.OrderTypeBalance {
 		orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+	}
+	var studentBenefit *StudentRechargeBenefitSnapshot
+	if req.StudentBenefit {
+		if s.studentBenefitService == nil {
+			return nil, infraerrors.ServiceUnavailable("STUDENT_BENEFIT_UNAVAILABLE", "student recharge benefit is unavailable")
+		}
+		// PrepareStudentRechargeBenefit rejects subscriptions, first-recharge
+		// gifts, and every other special order before any order is persisted.
+		studentBenefit, err = s.studentBenefitService.PrepareStudentRechargeBenefit(
+			ctx, req.UserID, req.OrderType, limitAmount, orderAmount,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 	feeRate := cfg.RechargeFeeRate
 	methodCurrency := payment.DefaultPaymentCurrency
@@ -100,7 +126,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if oauthResp != nil {
 		return oauthResp, nil
 	}
-	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
+	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel, studentBenefit)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +135,16 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		_, _ = s.entClient.PaymentOrder.UpdateOneID(order.ID).
 			SetStatus(OrderStatusFailed).
 			Save(ctx)
+		if order.OrderType == payment.OrderTypeFirstRechargeGift {
+			if cleanupErr := s.releaseFirstRechargeGiftReservation(ctx, int64(order.ID), OrderStatusFailed); cleanupErr != nil {
+				s.recordFirstRechargeReservationCleanupFailure(ctx, int64(order.ID), OrderStatusFailed, cleanupErr)
+			}
+		}
 		return nil, err
+	}
+	if studentBenefit != nil {
+		resp.StudentBenefit = true
+		resp.StudentBonusAmount = studentBenefit.BonusAmount
 	}
 	return resp, nil
 }
@@ -120,6 +155,9 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
 		return s.validateSubOrder(ctx, req)
+	}
+	if req.OrderType == payment.OrderTypeFirstRechargeGift {
+		return nil, nil
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
@@ -149,7 +187,11 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	return plan, nil
 }
 
-func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
+func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection, studentBenefits ...*StudentRechargeBenefitSnapshot) (*dbent.PaymentOrder, error) {
+	var studentBenefit *StudentRechargeBenefitSnapshot
+	if len(studentBenefits) > 0 {
+		studentBenefit = studentBenefits[0]
+	}
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -217,6 +259,28 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	order, err = tx.PaymentOrder.UpdateOneID(order.ID).SetRechargeCode(code).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("set recharge code: %w", err)
+	}
+	if req.OrderType == payment.OrderTypeFirstRechargeGift {
+		giftService := s.firstRechargeGiftService()
+		if giftService == nil {
+			return nil, infraerrors.ServiceUnavailable("FIRST_RECHARGE_UNAVAILABLE", "first recharge gift is unavailable")
+		}
+		if err := giftService.ReserveTx(ctx, tx, req.UserID, int64(order.ID), limitAmount, orderAmount); err != nil {
+			return nil, err
+		}
+	}
+	if studentBenefit != nil {
+		if s.studentBenefitService == nil {
+			return nil, infraerrors.ServiceUnavailable("STUDENT_BENEFIT_UNAVAILABLE", "student recharge benefit is unavailable")
+		}
+		// Revalidate against the just-created order and the transaction's
+		// snapshot of settings/identity. Any mismatch rolls back the order;
+		// it must never silently degrade to a normal recharge.
+		if err := s.studentBenefitService.AttachStudentRechargeBenefitOrder(
+			ctx, tx.Client(), order.ID, req.UserID, studentBenefit,
+		); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit order transaction: %w", err)
@@ -333,7 +397,7 @@ func (s *PaymentService) checkDailyLimit(ctx context.Context, tx *dbent.Tx, user
 	}
 	var used float64
 	for _, o := range orders {
-		if o.OrderType == payment.OrderTypeBalance {
+		if o.OrderType == payment.OrderTypeBalance || o.OrderType == payment.OrderTypeFirstRechargeGift {
 			used += o.PayAmount
 			continue
 		}
@@ -769,6 +833,9 @@ func buildWeChatPaymentOAuthStartURL(req CreateOrderRequest, scope string) (stri
 	}
 	if req.PlanID > 0 {
 		q.Set("plan_id", strconv.FormatInt(req.PlanID, 10))
+	}
+	if req.StudentBenefit && req.OrderType == payment.OrderTypeBalance {
+		q.Set("student_benefit", "true")
 	}
 	if scope = strings.TrimSpace(scope); scope != "" {
 		q.Set("scope", scope)

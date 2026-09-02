@@ -104,6 +104,14 @@ type Config struct {
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
 	Plugins                 PluginConfig                  `mapstructure:"plugins"`
+	// Invoice files use deployment-owned storage; business settings remain in
+	// the database-backed settings table.
+	Invoice InvoiceStorageConfig `mapstructure:"invoice"`
+}
+
+type InvoiceStorageConfig struct {
+	StorageDir       string `mapstructure:"storage_dir"`
+	StorageMinFreeMB int64  `mapstructure:"storage_min_free_mb"`
 }
 
 // PluginConfig 控制管理员手动上传的本地进程插件。
@@ -2297,6 +2305,11 @@ func setDefaults() {
 	viper.SetDefault("plugins.max_upload_bytes", int64(128*1024*1024))
 	viper.SetDefault("plugins.max_uncompressed_bytes", int64(256*1024*1024))
 	viper.SetDefault("plugins.start_timeout_seconds", 15)
+
+	// Invoice files remain dormant until the database-backed feature switch is
+	// explicitly enabled by an administrator.
+	viper.SetDefault("invoice.storage_dir", "/app/data/invoices")
+	viper.SetDefault("invoice.storage_min_free_mb", int64(512))
 
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")

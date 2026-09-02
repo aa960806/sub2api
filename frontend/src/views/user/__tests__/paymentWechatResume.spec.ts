@@ -35,6 +35,19 @@ describe('parseWechatResumeRoute', () => {
       planId: undefined,
     })
   })
+
+  it('preserves the first-recharge order type across WeChat resume', () => {
+    expect(parseWechatResumeRoute({
+      wechat_resume: '1',
+      wechat_resume_token: 'first-recharge-token',
+      payment_type: 'wxpay',
+      order_type: 'first_recharge_gift',
+    }, [], 88)).toMatchObject({
+      wechatResumeToken: 'first-recharge-token',
+      orderType: 'first_recharge_gift',
+      orderAmount: 0,
+    })
+  })
 })
 
 describe('stripWechatResumeQuery', () => {

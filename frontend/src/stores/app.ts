@@ -301,6 +301,25 @@ export const useAppStore = defineStore('app', () => {
     apiBaseUrl.value = config.api_base_url || ''
     docUrl.value = config.doc_url || ''
     publicSettingsLoaded.value = true
+
+    // The server value is only a default. Keep this asynchronous so settings
+    // application remains synchronous for injected startup configuration.
+    if (config.default_language) {
+      import('@/i18n').then(({ applyServerDefaultLocale }) => {
+        void applyServerDefaultLocale(config.default_language)
+      }).catch(() => {})
+    }
+  }
+
+  // A failed refresh must never leave feature flags from a previously enabled
+  // response active. Remove the startup injection as well; otherwise the next
+  // non-forced call would silently restore the same stale flags.
+  function clearPublicSettingsAfterFailure(): void {
+    publicSettingsLoaded.value = false
+    cachedPublicSettings.value = null
+    if (typeof window !== 'undefined') {
+      delete window.__APP_CONFIG__
+    }
   }
 
   /**
@@ -377,6 +396,18 @@ export const useAppStore = defineStore('app', () => {
         risk_control_enabled: false,
         service_quota_enabled: false,
         affiliate_enabled: false,
+        invoice_enabled: false,
+        subnexus_activity_center_enabled: false,
+        subnexus_marquee_enabled: false,
+        subnexus_checkin_enabled: false,
+        subnexus_leaderboard_enabled: false,
+        subnexus_invite_activities_enabled: false,
+        subnexus_invite_lottery_enabled: false,
+        subnexus_recharge_wheel_enabled: false,
+        subnexus_invite_milestone_enabled: false,
+        battle_pass_enabled: false,
+        subnexus_first_recharge_enabled: false,
+        subnexus_student_recharge_benefit_enabled: false,
         allow_user_view_error_requests: false,
       })
     }
@@ -387,6 +418,7 @@ export const useAppStore = defineStore('app', () => {
       apiRequest = fetchPublicSettingsAPI()
     } catch (error) {
       console.error('Failed to fetch public settings:', error)
+      clearPublicSettingsAfterFailure()
       publicSettingsLoading.value = false
       return Promise.resolve(null)
     }
@@ -398,6 +430,7 @@ export const useAppStore = defineStore('app', () => {
       })
       .catch((error) => {
         console.error('Failed to fetch public settings:', error)
+        clearPublicSettingsAfterFailure()
         return null
       })
       .finally(() => {

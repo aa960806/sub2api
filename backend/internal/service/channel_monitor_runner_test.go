@@ -13,6 +13,7 @@ import (
 // stubMonitorSvc 实现 monitorRunnerSvc，用于隔离 runner 与真实 service/repo。
 type stubMonitorSvc struct {
 	enabled    []*ChannelMonitor
+	listCount  atomic.Int64
 	runCount   atomic.Int64
 	runCalled  chan int64 // 每次 RunCheck 触发时 push 一次（缓冲足够大避免阻塞）
 	runErr     error
@@ -20,7 +21,56 @@ type stubMonitorSvc struct {
 	runHoldFor time.Duration // RunCheck 内额外阻塞的时长，用来测试 Stop 等待行为
 }
 
+// mutableChannelMonitorSettingRepo lets lifecycle tests flip the runtime gate
+// and then invoke SettingService.NotifySettingsUpdated synchronously.
+type mutableChannelMonitorSettingRepo struct {
+	SettingRepository
+	mu     sync.RWMutex
+	values map[string]string
+}
+
+func (r *mutableChannelMonitorSettingRepo) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := r.values[key]; ok {
+			out[key] = value
+		}
+	}
+	return out, nil
+}
+
+func (r *mutableChannelMonitorSettingRepo) setEnabled(enabled bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if enabled {
+		r.values[SettingKeyChannelMonitorEnabled] = "true"
+		return
+	}
+	r.values[SettingKeyChannelMonitorEnabled] = "false"
+}
+
+func (r *mutableChannelMonitorSettingRepo) setMode(mode string) {
+	r.mu.Lock()
+	r.values[SettingKeyChannelMonitorMode] = mode
+	r.mu.Unlock()
+}
+
+func newMutableChannelMonitorSettingService(enabled bool) (*SettingService, *mutableChannelMonitorSettingRepo) {
+	rawEnabled := "false"
+	if enabled {
+		rawEnabled = "true"
+	}
+	repo := &mutableChannelMonitorSettingRepo{values: map[string]string{
+		SettingKeyChannelMonitorEnabled: rawEnabled,
+		SettingKeyChannelMonitorMode:    ChannelMonitorModeV1,
+	}}
+	return &SettingService{settingRepo: repo}, repo
+}
+
 func (s *stubMonitorSvc) ListEnabledMonitors(_ context.Context) ([]*ChannelMonitor, error) {
+	s.listCount.Add(1)
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
@@ -45,7 +95,22 @@ func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult
 }
 
 func newRunnerForTest(svc monitorRunnerSvc) *ChannelMonitorRunner {
-	return newChannelMonitorRunner(svc, nil)
+	return newRunnerForTestWithSetting(svc, newChannelMonitorRunnerTestSettings(true))
+}
+
+func newRunnerForTestWithSetting(svc monitorRunnerSvc, settings *SettingService) *ChannelMonitorRunner {
+	return newChannelMonitorRunner(svc, settings)
+}
+
+func newChannelMonitorRunnerTestSettings(enabled bool) *SettingService {
+	rawEnabled := "false"
+	if enabled {
+		rawEnabled = "true"
+	}
+	return &SettingService{settingRepo: &settingPublicRepoStub{values: map[string]string{
+		SettingKeyChannelMonitorEnabled: rawEnabled,
+		SettingKeyChannelMonitorMode:    ChannelMonitorModeV1,
+	}}}
 }
 
 // 等待 condition 在 timeout 内变 true，否则 t.Fatalf。轮询 5ms 一次。
@@ -263,6 +328,161 @@ func TestStart_LoadsAllEnabledMonitors(t *testing.T) {
 	waitFor(t, 2*time.Second, "all 3 tasks scheduled", func() bool { return runnerTaskCount(r) == 3 })
 
 	stoppedWithin(t, r, 3*time.Second)
+}
+
+func TestStart_DisabledGateSkipsRepositoryAndScheduling(t *testing.T) {
+	svc := &stubMonitorSvc{
+		enabled: []*ChannelMonitor{{ID: 21, Enabled: true, IntervalSeconds: 60}},
+	}
+	r := newRunnerForTestWithSetting(svc, newChannelMonitorRunnerTestSettings(false))
+	r.Start()
+
+	if got := svc.listCount.Load(); got != 0 {
+		t.Fatalf("disabled runner must not load monitors, got %d ListEnabledMonitors calls", got)
+	}
+	if got := runnerTaskCount(r); got != 0 {
+		t.Fatalf("disabled runner must not schedule tasks, got %d", got)
+	}
+
+	r.Stop()
+}
+
+func TestStart_NilSettingsSkipsRepositoryAndScheduling(t *testing.T) {
+	svc := &stubMonitorSvc{
+		enabled: []*ChannelMonitor{{ID: 22, Enabled: true, IntervalSeconds: 60}},
+	}
+	r := newChannelMonitorRunner(svc, nil)
+	r.Start()
+
+	if got := svc.listCount.Load(); got != 0 {
+		t.Fatalf("runner without settings must not load monitors, got %d ListEnabledMonitors calls", got)
+	}
+	if got := runnerTaskCount(r); got != 0 {
+		t.Fatalf("runner without settings must not schedule tasks, got %d", got)
+	}
+
+	r.Stop()
+}
+
+func TestFire_NilSettingsFailsClosed(t *testing.T) {
+	svc := &stubMonitorSvc{runCalled: make(chan int64, 1)}
+	r := newChannelMonitorRunner(svc, nil)
+	task := &scheduledMonitor{id: 23, name: "missing-settings", interval: time.Minute}
+
+	r.fire(context.Background(), task)
+	if got := svc.runCount.Load(); got != 0 {
+		t.Fatalf("runner without settings must not submit probes, got %d RunCheck calls", got)
+	}
+
+	r.Stop()
+}
+
+func TestRunner_EnablingAfterDisabledStartReloadsMonitors(t *testing.T) {
+	svc := &stubMonitorSvc{
+		enabled:   []*ChannelMonitor{{ID: 24, Enabled: true, IntervalSeconds: 60}},
+		runCalled: make(chan int64, 1),
+	}
+	settings, repo := newMutableChannelMonitorSettingService(false)
+	r := newChannelMonitorRunner(svc, settings)
+	r.Start()
+
+	if got := svc.listCount.Load(); got != 0 {
+		t.Fatalf("disabled startup must not load monitors, got %d calls", got)
+	}
+	repo.setEnabled(true)
+	settings.NotifySettingsUpdated()
+
+	waitFor(t, 2*time.Second, "monitor loaded after enabling", func() bool {
+		return svc.listCount.Load() == 1 && runnerTaskCount(r) == 1
+	})
+	select {
+	case id := <-svc.runCalled:
+		if id != 24 {
+			t.Fatalf("expected monitor id=24 to fire after enabling, got %d", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("enabled monitor did not fire after runtime refresh")
+	}
+
+	r.Stop()
+}
+
+func TestRunner_DisablingRuntimeUnschedulesAndStopUnsubscribes(t *testing.T) {
+	svc := &stubMonitorSvc{
+		enabled:   []*ChannelMonitor{{ID: 25, Enabled: true, IntervalSeconds: 60}},
+		runCalled: make(chan int64, 1),
+	}
+	settings, repo := newMutableChannelMonitorSettingService(true)
+	r := newChannelMonitorRunner(svc, settings)
+	r.Start()
+	select {
+	case <-svc.runCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("enabled monitor did not fire at startup")
+	}
+	waitFor(t, time.Second, "monitor loaded at startup", func() bool { return runnerTaskCount(r) == 1 })
+
+	repo.setEnabled(false)
+	settings.NotifySettingsUpdated()
+	waitFor(t, time.Second, "tasks removed after disabling", func() bool { return runnerTaskCount(r) == 0 })
+	listCallsBeforeStop := svc.listCount.Load()
+	r.Stop()
+
+	// Stop must detach the listener; a later settings notification cannot load
+	// rows or recreate tasks on a stopped runner.
+	repo.setEnabled(true)
+	settings.NotifySettingsUpdated()
+	time.Sleep(25 * time.Millisecond)
+	if got := svc.listCount.Load(); got != listCallsBeforeStop {
+		t.Fatalf("stopped runner reloaded monitors after notification: before=%d after=%d", listCallsBeforeStop, got)
+	}
+}
+
+func TestSchedule_GateClosedUnschedulesExistingTask(t *testing.T) {
+	svc := &stubMonitorSvc{enabled: []*ChannelMonitor{{ID: 26, Enabled: true, IntervalSeconds: 60}}}
+	settings, repo := newMutableChannelMonitorSettingService(true)
+	r := newChannelMonitorRunner(svc, settings)
+	r.Start()
+	waitFor(t, 2*time.Second, "monitor loaded at startup", func() bool { return runnerTaskCount(r) == 1 })
+
+	repo.setEnabled(false)
+	r.Schedule(&ChannelMonitor{ID: 26, Enabled: true, IntervalSeconds: 60})
+	if got := runnerTaskCount(r); got != 0 {
+		t.Fatalf("closed gate must unschedule existing task, got %d", got)
+	}
+	r.Stop()
+}
+
+func TestSchedule_NonV1OrNilSettingsFailsClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		settings *SettingService
+	}{
+		{name: "nil settings"},
+		{name: "v2 mode", settings: func() *SettingService {
+			return &SettingService{settingRepo: &settingPublicRepoStub{values: map[string]string{
+				SettingKeyChannelMonitorEnabled: "true",
+				SettingKeyChannelMonitorMode:    ChannelMonitorModeV2,
+			}}}
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &stubMonitorSvc{}
+			r := newChannelMonitorRunner(svc, tc.settings)
+			// Seed a task directly to prove Schedule removes it under a closed gate.
+			r.mu.Lock()
+			_, cancel := context.WithCancel(r.parentCtx)
+			r.started = true
+			r.tasks[27] = &scheduledMonitor{id: 27, cancel: cancel}
+			r.mu.Unlock()
+
+			r.Schedule(&ChannelMonitor{ID: 27, Enabled: true, IntervalSeconds: 60})
+			if got := runnerTaskCount(r); got != 0 {
+				t.Fatalf("%s gate must leave no task, got %d", tc.name, got)
+			}
+			r.Stop()
+		})
+	}
 }
 
 func TestStart_SkipsDecryptFailedMonitor(t *testing.T) {

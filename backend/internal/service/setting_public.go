@@ -186,6 +186,15 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyAPIBaseURL,
 		SettingKeyContactInfo,
 		SettingKeyDocURL,
+		// SubNexus site presentation settings support a namespaced key with a
+		// legacy alias fallback. Both are public only after the normal parser
+		// applies the fail-closed/default rules.
+		SettingKeySubNexusDefaultLanguage,
+		SettingKeyDefaultLanguage,
+		SettingKeySubNexusCustomerSupportEnabled,
+		SettingKeyCustomerSupportEnabled,
+		SettingKeySubNexusCustomerSupportContent,
+		SettingKeyCustomerSupportContent,
 		SettingKeyHomeContent,
 		SettingKeyCompactHomeEnabled,
 		SettingKeyHideCcsImportButton,
@@ -232,6 +241,19 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyChannelMonitorHideThroughput,
 		SettingKeyChannelMonitorShowQuota,
+		SettingKeySubNexusActivityCenterEnabled,
+		SettingKeySubNexusMarqueeEnabled,
+		SettingKeySubNexusCheckInEnabled,
+		SettingKeySubNexusLeaderboardEnabled,
+		SettingKeySubNexusInviteActivitiesEnabled,
+		SettingKeySubNexusInviteActivitiesConfig,
+		SettingKeySubNexusFirstRechargeEnabled,
+		SettingKeySubNexusFirstRechargeConfig,
+		SettingKeySubNexusStudentRechargeBenefitEnabled,
+		SettingKeyStudentRechargeBenefitConfig,
+		SettingKeyBattlePassEnabled,
+		SettingKeyInvoiceConfig,
+		SettingKeySubNexusInvoiceEnabled,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
@@ -296,6 +318,19 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		balanceLowNotifyThreshold = v
 	}
 
+	inviteActivitiesEnabled, inviteLotteryEnabled, rechargeWheelEnabled, inviteMilestoneEnabled := publicInviteActivitiesFlags(
+		settings[SettingKeySubNexusInviteActivitiesEnabled],
+		settings[SettingKeySubNexusInviteActivitiesConfig],
+	)
+	firstRechargeEnabled := publicFirstRechargeEnabled(
+		settings[SettingKeySubNexusFirstRechargeEnabled],
+		settings[SettingKeySubNexusFirstRechargeConfig],
+	)
+	studentRechargeBenefitEnabled := publicStudentRechargeBenefitEnabled(
+		settings[SettingKeySubNexusStudentRechargeBenefitEnabled],
+		settings[SettingKeyStudentRechargeBenefitConfig],
+	)
+
 	return &PublicSettings{
 		RegistrationEnabled:                 settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:                  emailVerifyEnabled,
@@ -327,6 +362,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		APIBaseURL:                          settings[SettingKeyAPIBaseURL],
 		ContactInfo:                         settings[SettingKeyContactInfo],
 		DocURL:                              settings[SettingKeyDocURL],
+		DefaultLanguage:                     NormalizeSubNexusDefaultLanguage(subNexusSiteSetting(settings, SettingKeySubNexusDefaultLanguage, SettingKeyDefaultLanguage)),
+		CustomerSupportEnabled:              subNexusSiteBool(settings, SettingKeySubNexusCustomerSupportEnabled, SettingKeyCustomerSupportEnabled),
+		CustomerSupportContent:              subNexusSiteSetting(settings, SettingKeySubNexusCustomerSupportContent, SettingKeyCustomerSupportContent),
 		HomeContent:                         settings[SettingKeyHomeContent],
 		CompactHomeEnabled:                  settings[SettingKeyCompactHomeEnabled] == "true",
 		HideCcsImportButton:                 settings[SettingKeyHideCcsImportButton] == "true",
@@ -353,11 +391,23 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		BalanceLowNotifyThreshold:           balanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:         settings[SettingKeyBalanceLowNotifyRechargeURL],
 
-		ChannelMonitorEnabled:                !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled]),
-		ChannelMonitorMode:                   normalizeChannelMonitorMode(settings[SettingKeyChannelMonitorMode]),
-		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
-		ChannelMonitorHideThroughput:         !isFalseSettingValue(settings[SettingKeyChannelMonitorHideThroughput]),
-		ChannelMonitorShowQuota:              settings[SettingKeyChannelMonitorShowQuota] == "true",
+		ChannelMonitorEnabled:                 settings[SettingKeyChannelMonitorEnabled] == "true",
+		ChannelMonitorMode:                    normalizeChannelMonitorMode(settings[SettingKeyChannelMonitorMode]),
+		ChannelMonitorDefaultIntervalSeconds:  parseChannelMonitorInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
+		ChannelMonitorHideThroughput:          !isFalseSettingValue(settings[SettingKeyChannelMonitorHideThroughput]),
+		ChannelMonitorShowQuota:               settings[SettingKeyChannelMonitorShowQuota] == "true",
+		SubNexusActivityCenterEnabled:         settings[SettingKeySubNexusActivityCenterEnabled] == "true",
+		SubNexusMarqueeEnabled:                settings[SettingKeySubNexusMarqueeEnabled] == "true",
+		SubNexusCheckInEnabled:                settings[SettingKeySubNexusCheckInEnabled] == "true",
+		SubNexusLeaderboardEnabled:            settings[SettingKeySubNexusLeaderboardEnabled] == "true",
+		SubNexusInviteActivitiesEnabled:       inviteActivitiesEnabled,
+		SubNexusInviteLotteryEnabled:          inviteLotteryEnabled,
+		SubNexusRechargeWheelEnabled:          rechargeWheelEnabled,
+		SubNexusInviteMilestoneEnabled:        inviteMilestoneEnabled,
+		SubNexusFirstRechargeEnabled:          firstRechargeEnabled,
+		SubNexusStudentRechargeBenefitEnabled: studentRechargeBenefitEnabled,
+		BattlePassEnabled:                     settings[SettingKeyBattlePassEnabled] == "true",
+		InvoiceEnabled:                        publicInvoiceConfigEnabled(settings[SettingKeyInvoiceConfig], settings[SettingKeySubNexusInvoiceEnabled]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
 
@@ -382,13 +432,15 @@ const (
 	defaultChannelMonitorMode      = ChannelMonitorModeV1
 )
 
-// normalizeChannelMonitorMode accepts only v1/v2; empty/invalid → v1 (safe default).
+// normalizeChannelMonitorMode accepts v1/v2/v3; empty/invalid -> v1 (safe default).
 func normalizeChannelMonitorMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case ChannelMonitorModeV1, "":
 		return ChannelMonitorModeV1
 	case ChannelMonitorModeV2:
 		return ChannelMonitorModeV2
+	case ChannelMonitorModeV3:
+		return ChannelMonitorModeV3
 	default:
 		return defaultChannelMonitorMode
 	}
@@ -422,7 +474,7 @@ func clampChannelMonitorInterval(v int) int {
 // consumed by the runner, V2 aggregator, and user-facing handlers.
 type ChannelMonitorRuntime struct {
 	Enabled                bool
-	Mode                   string // ChannelMonitorModeV1 or ChannelMonitorModeV2
+	Mode                   string // ChannelMonitorModeV1, ChannelMonitorModeV2, or ChannelMonitorModeV3
 	DefaultIntervalSeconds int
 	// HideThroughput: when true, user-facing V2 APIs omit RPM/TPM scale signals.
 	HideThroughput bool
@@ -437,21 +489,23 @@ func (r ChannelMonitorRuntime) ActiveProbesAllowed() bool {
 	return r.Enabled && r.Mode == ChannelMonitorModeV1
 }
 
-// PassiveAggregationAllowed reports whether V2 passive aggregation may run.
+// PassiveAggregationAllowed reports whether passive aggregation may run for V2/V3.
 func (r ChannelMonitorRuntime) PassiveAggregationAllowed() bool {
-	return r.Enabled && r.Mode == ChannelMonitorModeV2
+	return r.Enabled && (r.Mode == ChannelMonitorModeV2 || r.Mode == ChannelMonitorModeV3)
 }
 
 // GetChannelMonitorRuntime reads the channel monitor feature flags directly from
-// the settings store. Fail-open: on error returns Enabled=true, Mode=v1, default interval.
+// the settings store. Missing, malformed, or unreadable enablement state is
+// fail-closed so a partial migration or settings outage cannot start probes.
 func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
+	closed := ChannelMonitorRuntime{
+		Enabled:                false,
+		Mode:                   defaultChannelMonitorMode,
+		DefaultIntervalSeconds: channelMonitorIntervalFallback,
+		HideThroughput:         true,
+	}
 	if s == nil || s.settingRepo == nil {
-		return ChannelMonitorRuntime{
-			Enabled:                true,
-			Mode:                   defaultChannelMonitorMode,
-			DefaultIntervalSeconds: channelMonitorIntervalFallback,
-			HideThroughput:         true,
-		}
+		return closed
 	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{
 		SettingKeyChannelMonitorEnabled,
@@ -461,15 +515,18 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		SettingKeyChannelMonitorShowQuota,
 	})
 	if err != nil {
-		return ChannelMonitorRuntime{
-			Enabled:                true,
-			Mode:                   defaultChannelMonitorMode,
-			DefaultIntervalSeconds: channelMonitorIntervalFallback,
-			HideThroughput:         true,
-		}
+		return closed
+	}
+	rawEnabled, enabledPresent := vals[SettingKeyChannelMonitorEnabled]
+	if !enabledPresent || rawEnabled != "true" {
+		return closed
+	}
+	rawMode := strings.ToLower(strings.TrimSpace(vals[SettingKeyChannelMonitorMode]))
+	if rawMode != "" && rawMode != ChannelMonitorModeV1 && rawMode != ChannelMonitorModeV2 && rawMode != ChannelMonitorModeV3 {
+		return closed
 	}
 	return ChannelMonitorRuntime{
-		Enabled:                !isFalseSettingValue(vals[SettingKeyChannelMonitorEnabled]),
+		Enabled:                true,
 		Mode:                   normalizeChannelMonitorMode(vals[SettingKeyChannelMonitorMode]),
 		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		HideThroughput:         !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
@@ -577,6 +634,9 @@ type PublicSettingsInjectionPayload struct {
 	APIBaseURL                          string                   `json:"api_base_url"`
 	ContactInfo                         string                   `json:"contact_info"`
 	DocURL                              string                   `json:"doc_url"`
+	DefaultLanguage                     string                   `json:"default_language"`
+	CustomerSupportEnabled              bool                     `json:"customer_support_enabled"`
+	CustomerSupportContent              string                   `json:"customer_support_content"`
 	HomeContent                         string                   `json:"home_content"`
 	CompactHomeEnabled                  bool                     `json:"compact_home_enabled"`
 	HideCcsImportButton                 bool                     `json:"hide_ccs_import_button"`
@@ -618,14 +678,26 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorHideThroughput bool `json:"channel_monitor_hide_throughput"`
 	// ChannelMonitorShowQuota gates the user-facing quota/balance display on
 	// monitors; fail-closed (absent/false = hidden). Admin UI always shows it.
-	ChannelMonitorShowQuota    bool `json:"channel_monitor_show_quota"`
-	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
-	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
-	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
-	AffiliateEnabled           bool `json:"affiliate_enabled"`
-	RiskControlEnabled         bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
+	ChannelMonitorShowQuota               bool `json:"channel_monitor_show_quota"`
+	SubNexusActivityCenterEnabled         bool `json:"subnexus_activity_center_enabled"`
+	SubNexusMarqueeEnabled                bool `json:"subnexus_marquee_enabled"`
+	SubNexusCheckInEnabled                bool `json:"subnexus_checkin_enabled"`
+	SubNexusLeaderboardEnabled            bool `json:"subnexus_leaderboard_enabled"`
+	SubNexusInviteActivitiesEnabled       bool `json:"subnexus_invite_activities_enabled"`
+	SubNexusInviteLotteryEnabled          bool `json:"subnexus_invite_lottery_enabled"`
+	SubNexusRechargeWheelEnabled          bool `json:"subnexus_recharge_wheel_enabled"`
+	SubNexusInviteMilestoneEnabled        bool `json:"subnexus_invite_milestone_enabled"`
+	SubNexusFirstRechargeEnabled          bool `json:"subnexus_first_recharge_enabled"`
+	SubNexusStudentRechargeBenefitEnabled bool `json:"subnexus_student_recharge_benefit_enabled"`
+	BattlePassEnabled                     bool `json:"battle_pass_enabled"`
+	InvoiceEnabled                        bool `json:"invoice_enabled"`
+	AvailableChannelsEnabled              bool `json:"available_channels_enabled"`
+	ModelPlazaEnabled                     bool `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth                 bool `json:"model_plaza_require_auth"`
+	PluginManagementEnabled               bool `json:"plugin_management_enabled"`
+	AffiliateEnabled                      bool `json:"affiliate_enabled"`
+	RiskControlEnabled                    bool `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests            bool `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -666,6 +738,9 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		APIBaseURL:                          settings.APIBaseURL,
 		ContactInfo:                         settings.ContactInfo,
 		DocURL:                              settings.DocURL,
+		DefaultLanguage:                     settings.DefaultLanguage,
+		CustomerSupportEnabled:              settings.CustomerSupportEnabled,
+		CustomerSupportContent:              settings.CustomerSupportContent,
 		HomeContent:                         settings.HomeContent,
 		CompactHomeEnabled:                  settings.CompactHomeEnabled,
 		HideCcsImportButton:                 settings.HideCcsImportButton,
@@ -695,18 +770,30 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		BalanceLowNotifyThreshold:           settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:         settings.BalanceLowNotifyRechargeURL,
 
-		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
-		ChannelMonitorMode:                   settings.ChannelMonitorMode,
-		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
-		ChannelMonitorHideThroughput:         settings.ChannelMonitorHideThroughput,
-		ChannelMonitorShowQuota:              settings.ChannelMonitorShowQuota,
-		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
-		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
-		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
-		PluginManagementEnabled:              settings.PluginManagementEnabled,
-		AffiliateEnabled:                     settings.AffiliateEnabled,
-		RiskControlEnabled:                   settings.RiskControlEnabled,
-		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
+		ChannelMonitorEnabled:                 settings.ChannelMonitorEnabled,
+		ChannelMonitorMode:                    settings.ChannelMonitorMode,
+		ChannelMonitorDefaultIntervalSeconds:  settings.ChannelMonitorDefaultIntervalSeconds,
+		ChannelMonitorHideThroughput:          settings.ChannelMonitorHideThroughput,
+		ChannelMonitorShowQuota:               settings.ChannelMonitorShowQuota,
+		SubNexusActivityCenterEnabled:         settings.SubNexusActivityCenterEnabled,
+		SubNexusMarqueeEnabled:                settings.SubNexusMarqueeEnabled,
+		SubNexusCheckInEnabled:                settings.SubNexusCheckInEnabled,
+		SubNexusLeaderboardEnabled:            settings.SubNexusLeaderboardEnabled,
+		SubNexusInviteActivitiesEnabled:       settings.SubNexusInviteActivitiesEnabled,
+		SubNexusInviteLotteryEnabled:          settings.SubNexusInviteLotteryEnabled,
+		SubNexusRechargeWheelEnabled:          settings.SubNexusRechargeWheelEnabled,
+		SubNexusInviteMilestoneEnabled:        settings.SubNexusInviteMilestoneEnabled,
+		SubNexusFirstRechargeEnabled:          settings.SubNexusFirstRechargeEnabled,
+		SubNexusStudentRechargeBenefitEnabled: settings.SubNexusStudentRechargeBenefitEnabled,
+		BattlePassEnabled:                     settings.BattlePassEnabled,
+		InvoiceEnabled:                        settings.InvoiceEnabled,
+		AvailableChannelsEnabled:              settings.AvailableChannelsEnabled,
+		ModelPlazaEnabled:                     settings.ModelPlazaEnabled,
+		ModelPlazaRequireAuth:                 settings.ModelPlazaRequireAuth,
+		PluginManagementEnabled:               settings.PluginManagementEnabled,
+		AffiliateEnabled:                      settings.AffiliateEnabled,
+		RiskControlEnabled:                    settings.RiskControlEnabled,
+		AllowUserViewErrorRequests:            settings.AllowUserViewErrorRequests,
 	}, nil
 }
 
@@ -756,6 +843,84 @@ func safeRawJSONArray(raw string) json.RawMessage {
 		return json.RawMessage(raw)
 	}
 	return json.RawMessage("[]")
+}
+
+// publicInvoiceConfigEnabled exposes only the validated enabled bit.  Public
+// settings must fail closed when the JSON is malformed or contains invalid
+// limits; callers can then keep the user menu and route hidden until an
+// administrator saves a valid configuration through the invoice endpoint.
+func publicInvoiceConfigEnabled(raw, rolloutRaw string) bool {
+	// The rollout switch is intentionally exact-match and independent from the
+	// legacy JSON payload. Missing or malformed values fail closed.
+	if rolloutRaw != "true" {
+		return false
+	}
+	if strings.TrimSpace(raw) == "" {
+		return false
+	}
+	cfg := DefaultInvoiceConfig()
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return false
+	}
+	cfg = normalizeInvoiceConfig(cfg)
+	if err := validateInvoiceConfig(cfg); err != nil {
+		return false
+	}
+	return cfg.Enabled
+}
+
+// publicInviteActivitiesFlags validates the shared invite-activity policy
+// before exposing any public feature flag. A malformed/missing policy or a
+// non-literal aggregate switch must never make a user-facing entry appear.
+func publicInviteActivitiesFlags(rawEnabled, rawConfig string) (aggregate, lottery, wheel, milestone bool) {
+	if rawEnabled != "true" || strings.TrimSpace(rawConfig) == "" || strings.TrimSpace(rawConfig) == "null" {
+		return false, false, false, false
+	}
+	var cfg InviteActivitiesConfig
+	if err := json.Unmarshal([]byte(rawConfig), &cfg); err != nil {
+		return false, false, false, false
+	}
+	cfg = normalizeInviteActivitiesConfig(cfg)
+	if err := validateInviteActivitiesConfig(cfg); err != nil {
+		return false, false, false, false
+	}
+	return true, cfg.InviteLotteryEnabled, cfg.RechargeWheelEnabled, cfg.InviteMilestoneEnabled
+}
+
+// publicFirstRechargeEnabled exposes the effective first-recharge switch only
+// when both the independent rollout key and the validated policy explicitly
+// enable it. This prevents a stale/partial same-database migration from
+// causing the checkout page to query the feature while it is closed.
+func publicFirstRechargeEnabled(rawEnabled, rawConfig string) bool {
+	if rawEnabled != "true" || strings.TrimSpace(rawConfig) == "" || strings.TrimSpace(rawConfig) == "null" {
+		return false
+	}
+	var cfg FirstRechargeGiftConfig
+	if err := json.Unmarshal([]byte(rawConfig), &cfg); err != nil {
+		return false
+	}
+	cfg = normalizeFirstRechargeGiftConfig(cfg)
+	if err := validateFirstRechargeGiftConfig(cfg); err != nil {
+		return false
+	}
+	return cfg.Enabled
+}
+
+// publicStudentRechargeBenefitEnabled follows the same fail-closed contract as
+// LoadStudentRechargeBenefitConfig, while avoiding a repository round trip.
+func publicStudentRechargeBenefitEnabled(rawEnabled, rawConfig string) bool {
+	if rawEnabled != "true" || strings.TrimSpace(rawConfig) == "" || strings.TrimSpace(rawConfig) == "null" {
+		return false
+	}
+	var cfg StudentRechargeBenefitConfig
+	if err := json.Unmarshal([]byte(rawConfig), &cfg); err != nil {
+		return false
+	}
+	cfg = normalizeStudentRechargeBenefitConfig(cfg)
+	if err := validateStudentRechargeBenefitConfig(cfg); err != nil {
+		return false
+	}
+	return cfg.Enabled
 }
 
 // GetFrameSrcOrigins returns deduplicated http(s) origins from home_content URL,

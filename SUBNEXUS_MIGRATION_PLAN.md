@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
-> 版本：v1.5（2026-09-02，本地优先完成全部二开功能，生产门禁后移）
-> 状态：Batch 0 本地控制与 adoption 门禁已完成；同步最新上游后进入 Batch 1，本地完成 Batch 1-5 前不再推送或操作服务器
+> 版本：v1.7（2026-09-03，已同步最新上游，本地优先完成全部二开功能，生产门禁后移）
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4 本地实现和代码测试完成，Batch 5 运行时证据待执行。本地候选完成并经维护者验收前不推送、不让服务器拉取、不执行任何生产命令
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -25,14 +25,16 @@
 | 项目 | 旧二开 `SubNexus` | 新 fork `sub2api` |
 | --- | --- | --- |
 | 分支 | `alignment/v0.1.181-local` | `main`（本规划从此创建迁移分支） |
-| HEAD | `ccffee6c6` | `d596d0844` |
-| 应用版本 | `0.1.135` | `0.1.185` |
+| HEAD | `ccffee6c6` | fork `main`=`d596d0844`；最新上游=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`；迁移分支=`23d6e8ec0e773e74146976a39f6573b3da68660a` |
+| 应用版本 | `0.1.135` | `0.2.0`（最新上游） |
 | Go 版本 | `1.26.6` | `1.27.0` |
 | Git merge-base | 无 | 无 |
-| 迁移文件数量 | 268（含测试文件） | 273（含测试文件） |
+| 迁移文件数量 | 268（含测试文件） | 新增 13 个 SubNexus SQL（`9001`–`9013`）及对应契约测试；总文件数随上游和工作树变化，以 Git 为准 |
 | 差异 | 两仓库共有 3131 个路径，其中 1335 个内容不同 | 不能整体覆盖或直接 cherry-pick 旧仓库 |
 
 新 fork 当前迁移文件存在历史编号重复（例如多个 `231_*.sql`）；runner 按文件名排序并以“文件名 + SHA256”记录，因此“下一个数字”不能单独作为唯一性依据。本地实施时先从同步后的目标分支实际文件列表选择全局唯一名称并冻结 checksum；最终发布前再用线上 `schema_migrations` 只读证据验证不会冲突，证据不再阻塞本地业务实现。
+
+本轮上游同步证据：`git fetch --prune upstream` 后确认 `upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`，其版本为 `0.2.0`；在 `feature/subnexus-migration` 生成 merge commit `23d6e8ec0`。fork 的 `main`、旧项目和线上服务器均未修改。后续所有代码以该 merge 后分支为基线，发现上游新提交时必须重新审计后再同步。
 
 维护者已确认：Creative Workshop/创意工坊与 Media Studio 等同并排除；线上旧版本长期保留；先在本地完成全部功能和测试，维护者验收后才推送并让服务器拉取，最终只在切换阶段短暂关闭线上流量。本地开发使用空库和旧迁移构造的隔离夹具；生产备份恢复出的隔离副本只用于本地候选完成后的最终发布验证，任何阶段都不得让本地候选直接连接生产库。
 
@@ -44,12 +46,17 @@
 | --- | --- | --- | --- |
 | 签到/签到奖励 | 保留二开业务规则和管理配置；接入目标项目的设置、用户和活动模型 | `subnexus_checkin_enabled=false` | 中 |
 | 排行榜 | 保留排行计算、展示和权限边界；重新接入目标项目的用量读取 | `subnexus_leaderboard_enabled=false` | 中 |
-| 活动中心 | 保留仍不被上游覆盖的活动聚合与入口；上游已有活动以其实现为准 | `subnexus_activity_center_enabled=false` | 中 |
+| 活动中心 | 仅迁移 `custom` 活动卡片、管理 CRUD 和用户入口；旧库中的转盘、红包、邀请、充值、Battle Pass 等非 `custom` 卡片保留但新用户端永不读取；上游已有活动以上游为准 | `subnexus_activity_center_enabled=false` | 中 |
 | 广播/滚动公告扩展 | 保留二开字段、展示和发送策略；不覆盖上游公告实现 | `subnexus_marquee_enabled=false` | 低/中 |
 | 首充礼包 | 保留资格、订单确认、幂等发放和管理端配置 | `subnexus_first_recharge_enabled=false` | 高（余额/订单） |
-| 邀请活动与奖励 | 只迁移二开活动奖励层；基础 Affiliate/邀请能力以上游为准，奖励必须幂等 | `subnexus_invite_rewards_enabled=false` | 高（余额/返利） |
-| 发票事务系统 | 迁移用户申请、管理员处理、文件存储、对账和审计闭环 | `invoice_enabled=false`（若目标已存在则复用） | 高 |
-| Battle Pass | 迁移赛季、任务进度、经验发放和活动中心联动；保持独立表 | `battle_pass_enabled=false`（若目标已存在则复用） | 高（用量/奖励） |
+| 邀请活动与奖励 | 只迁移二开活动奖励层、注册奖励重试队列；基础 Affiliate/邀请能力以上游为准，奖励必须幂等 | `subnexus_invite_rewards_enabled=false`；`subnexus_invite_activities_enabled=false`（子开关默认关闭） | 高（余额/返利） |
+| 发票事务系统 | 迁移用户申请、管理员处理、文件存储、对账和审计闭环 | `subnexus_invoice_enabled=false`（public 映射为 `invoice_enabled`） | 高 |
+| Battle Pass | 迁移赛季、任务进度、经验发放和活动中心联动；保持独立表 | `battle_pass_enabled=false` | 高（用量/奖励） |
+| 学生充值优惠 | 迁移资格、奖励日志、退款反向和 scheduler；基础支付以上游为准 | `subnexus_student_recharge_benefit_enabled=false` | 高（余额/退款） |
+| 注册 IP 冷却 | 迁移可信客户端 IP 哈希、reservation/finalize/release 和 OAuth 全路径接线 | `registration_ip_cooldown_enabled=false` | 中（注册/反滥用） |
+| Channel Monitor V3 | 迁移 V3 展示、时间线和模式边界；探测协议以上游为准 | `channel_monitor_enabled=false`；`channel_monitor_mode=v1` | 中（后台探测） |
+| 默认语言 | 迁移服务器默认 locale 和 namespaced/legacy 双键兼容 | 无独立开关；空/非法值不生效 | 低 |
+| 客服按钮/Markdown 弹窗 | 迁移公共设置、管理员配置和用户端安全 Markdown 展示 | `customer_support_enabled=false` | 低 |
 
 ### 3.2 明确不迁移的旧功能
 
@@ -88,7 +95,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 关闭后不新增活动进度、奖励、返利、发票状态变更或其他业务写入；
 - 管理员仍能查看必要历史和执行安全的关闭态维护，但不能借此绕过原有权限或合规校验。
 
-开关命名、错误码和 public-settings 字段必须先搜索目标项目，避免与已有 `affiliate_enabled`、支付开关、插件开关或上游同名设置冲突。
+当前所有迁移功能均以字面量 `true` 才视为开启；public settings 未成功加载时前端 feature flag 强制为关闭，即使内存中存在旧缓存也不放行。开关命名、错误码和 public-settings 字段必须先搜索目标项目，避免与已有 `affiliate_enabled`、支付开关、插件开关或上游同名设置冲突。
 
 ## 5. 分批实施顺序
 
@@ -100,35 +107,37 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 在本地空库、目标上游完整迁移和旧项目已知迁移组合上验证 runner、alias/adoption、重复启动及对象契约。
 - 生产 `schema_migrations`、真实对象和生产备份恢复验证移到全部本地批次完成后的 Release Gate；缺少这些证据只阻止发布，不阻止 Batch 1-5 的本地实现。
 
-### Batch 1：活动基础能力
+### Batch 1：活动基础能力（本地实现完成，待最终证据/维护者验收）
 
 范围：签到、活动中心基础聚合、排行榜、广播扩展。先迁移数据读取和管理配置，再迁移奖励写入与前端入口。
 
+活动中心首个切片严格限定为 `activity_type='custom'`：复用旧 `activity_center_items` 表结构但使用目标侧唯一迁移文件；不迁移旧活动 badges、奖励联动、store 状态或 Daily Spin、Invite Lottery、Recharge Wheel、Invite Milestone、Red Packet Rain、Battle Pass 等类型 gate。旧行不删除、不改名，供旧版本回滚继续使用。新开关不继承读取旧 `ACTIVITY_CENTER_CONFIG`，缺失、非法或读取失败均为关闭；管理员显式更新时以同一批设置写入同步旧 JSON 键，保证回滚旧版本后的开关状态一致。用户和管理列表关闭时不查询活动表，管理写操作关闭时拒绝。站内路径及外链由服务端 allowlist 校验。
+
 门禁：关闭开关时旧上游用户请求响应和数据库写入与基线一致；开启后重复签到、重复排行刷新、重复公告发送均幂等；用量查询不得改变网关计费结果。
 
-### Batch 2：首充与邀请奖励
+### Batch 2：首充、邀请、学生优惠与注册保护（本地实现完成，待最终证据/维护者验收）
 
-范围：首充礼包资格和发放、二开邀请活动奖励。复用目标项目 payment、affiliate、balance、subscription 服务，不复制旧支付结算实现。
+范围：首充礼包资格和发放、二开邀请活动奖励/注册奖励重试、学生充值优惠和注册 IP 冷却。复用目标项目 payment、affiliate、balance、subscription、Auth 服务，不复制旧支付结算实现。
 
 门禁：订单状态变化、退款/部分退款、并发回调、重复 webhook、重复邀请确认都不能重复发放；奖励流水与余额变动可审计；开关关闭时不改变订单结算和 Affiliate 基础行为。
 
-### Batch 3：发票事务系统
+### Batch 3：发票事务系统（本地实现完成，待最终证据/维护者验收）
 
 范围：独立发票表、用户申请/撤销/重提/历史/下载、管理员接单/释放/驳回/开票/替换/作废/重发邮件、文件存储和对账。
 
-门禁：不修改 `payment_orders` 既有语义；文件目录位于持久化 volume/bind 且权限最小化；上传服务端独立校验类型、大小和 SHA256；状态机、接单抢占、重复回调、邮件重发和下载鉴权有集成测试；`invoice_enabled=false` 时普通用户入口、写 API 和后台任务均关闭，历史数据按既定兼容策略可读。
+门禁：不修改 `payment_orders` 既有语义；文件目录位于持久化 volume/bind 且权限最小化；上传服务端独立校验类型、大小和 SHA256；状态机、接单抢占、重复回调、邮件重发和下载鉴权有集成测试；`subnexus_invoice_enabled=false` 或 public 映射 `invoice_enabled=false` 时普通用户入口、写 API 和后台任务均关闭，历史数据按既定兼容策略可读。
 
-### Batch 4：Battle Pass
+### Batch 4：Battle Pass、Channel Monitor V3 与站点体验（本地实现完成，待最终证据/维护者验收）
 
-范围：独立赛季、任务、进度、奖励和活动中心联动。旧项目记录显示 `254_battle_pass.sql` 曾在本地验证，线上是否执行必须以真实数据库查询为准。
+范围：独立赛季、任务、进度、奖励和活动中心联动；Channel Monitor V3 展示/时间线与安全模式归一化；默认语言和客服按钮/Markdown 弹窗的双键兼容。旧项目记录显示 `254_battle_pass.sql` 曾在本地验证，线上是否执行必须以真实数据库查询为准。
 
 门禁：扫描器在关闭时不读取/写入 `usage_logs`；充值任务只计算允许的订单状态和净额；邀请任务复用现有 Affiliate 关系但不写返利账；进度重算、退款减少进度、重复发奖、赛季草稿/发布/归档和未来赛季可见性均有测试。
 
-### Batch 5：集成验收和文档收敛
+### Batch 5：集成验收和文档收敛（代码测试完成，运行时证据受本机 Docker daemon 阻塞）
 
-- 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、后端全量/重点包测试、前端 typecheck/Vitest/build、Docker 候选镜像启动和健康检查。
+- 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、Docker 候选镜像启动和健康检查；后端全量/重点包测试、前端 typecheck/Vitest/build 已完成。当前本机 Docker Desktop 启动失败（Inference manager 路径错误），因此容器运行、隔离 Redis 和候选健康检查保持待办；不得为此连接线上服务或执行生产命令。
 - 运行上游核心回归矩阵：认证、API Key、余额、订阅、订单、退款、用量计费、模型列表、Gateway 各协议、插件、Model Plaza、Grok、批量生图和安全设置。
-- 形成精简上下文、功能矩阵、迁移台账、切换手册和回滚手册，删除/归档只属于旧项目的长篇历史规划，不把历史记忆误当作当前实现状态。
+- 形成并持续维护精简上下文、功能矩阵、迁移台账、切换手册和回滚手册；当前文档已同步本地候选状态，不把历史记忆误当作当前实现状态。
 
 ### Release Gate：维护者本地验收后的上传与生产验证
 
@@ -136,7 +145,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 验收后推送迁移分支并固定不可变候选 SHA，再执行生产只读 preflight、可恢复 PostgreSQL/Redis 备份和线上备份隔离恢复。
 - 在隔离恢复库验证 adoption、候选启动和旧版本回归全部通过后，才允许服务器拉取固定 release SHA 并进入受控切换。
 
-每个 Batch 使用独立提交；提交信息包含功能名、开关、迁移文件、测试命令和回滚提交。未通过门禁的批次不得依赖后续批次继续开发或开启。
+每个 Batch 使用独立提交；提交信息包含功能名、开关、迁移文件、测试命令和回滚提交。当前先完成 Batch 1 的签到、排行榜、活动中心和公告扩展，再按顺序进入 Batch 2-4；未通过门禁的批次不得依赖后续批次继续开发或开启。维护者验收前只允许本地代码/测试/文档操作，禁止向 `origin` 推送、禁止服务器拉取和任何线上数据库或开关操作。
 
 上述顺序就是“先低风险、后高风险”：活动基础能力主要读用量和写独立活动数据；首充/邀请会触及余额和奖励幂等；发票涉及文件、订单快照和管理员状态机；Battle Pass 同时扫描用量、充值和邀请进度，风险最高。每批完成后可以停在当前版本，不要求一次性开启全部功能。
 
@@ -152,7 +161,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 #### 6.1.1 同内容改名迁移的采用门禁
 
-2026-09-01 的静态审计发现，旧项目与目标 fork 有 23 组“SQL（按 runner 的 `TrimSpace` 规则）内容相同、文件名不同”的迁移。随后又确认 2 组文件名不同但 SQL 语义不完全相同、可通过独立后置契约安全接管的迁移（共 25 组显式 alias）。目标 runner 只按完整文件名查询 `schema_migrations`，因此同库启动时会把这些目标文件误判为未执行。下面表格列出 23 组精确内容映射（左侧为旧项目，右侧为目标 fork）：
+2026-09-01 的静态审计发现，旧项目与目标 fork 有 23 组“SQL（按 runner 的 `TrimSpace` 规则）内容相同、文件名不同”的迁移。随后确认 2 组文件名不同但 SQL 语义不完全相同、可通过独立后置契约安全接管；本地又为学生充值优惠和注册 IP 冷却加入 2 组独立表 alias，因此当前共 27 组显式 alias。目标 runner 只按完整文件名查询 `schema_migrations`，因此同库启动时会把这些目标文件误判为未执行。下面表格列出 23 组精确内容映射（左侧为旧项目，右侧为目标 fork）：
 
 | 旧文件 | 目标文件 | 重跑分类 |
 | --- | --- | --- |
@@ -195,11 +204,29 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 目标分支已将上述规则固化到 `backend/internal/repository/migrations_runner.go` 和显式 alias/contract 清单中：
 
-- 仅对 25 组审核过的旧文件名→目标文件名进行 adoption：23 组精确内容映射只补写元数据，2 组语义接管按显式 replay 规则执行；先查目标记录，目标缺失时才查精确旧文件名。
+- 仅对 27 组审核过的旧文件名→目标文件名进行 adoption：23 组精确内容映射只补写元数据，`189/226` 两组语义接管按显式 replay 规则执行，学生优惠/注册冷却两组只在独立表契约通过时接管；先查目标记录，目标缺失时才查精确旧文件名。
 - 同时验证旧记录 checksum、目标文件 checksum，以及表/列/索引有效性与定义、约束、函数、触发器和关键数据契约；任一不符立即 fail-closed。
 - 23 组精确映射在同一 PostgreSQL advisory lock 下只补写目标 `schema_migrations` 元数据，不重新执行旧 SQL；`*_notx` 索引也不会重放 `CREATE INDEX CONCURRENTLY`。`189` 与 `226` 使用各自审计过的目标 SQL/后置契约，失败即回滚并拒绝启动。
 - Grok 图片开关和 long-context 定价开关属于可被管理员修改的运行时设置，adoption 只核对字段契约并记录当前观察值，不把当前关闭状态误判为迁移失败；Codex seed 和 rollup 单例等不可变数据契约仍严格校验。
 - alias 清单、PostgreSQL 规范化触发器事件顺序和完整目标迁移后的契约校验均有单测/integration-only 测试覆盖。线上数据库尚未执行 adoption；实时记录和生产备份隔离恢复是 Release Gate，不是本地 Batch 1-5 的启动条件。
+
+当前新增 SQL 的固定登记（checksum = `SHA256(TrimSpace(SQL))`）如下；任何 SQL 改动都必须重新计算并同步台账，已执行后不得原地修改：
+
+```text
+9001_subnexus_activity_center.sql              71a83d4789e33b8d99150f4ad7e48d9195a762c408c6186d1fcb5e2b98016972
+9002_subnexus_checkin.sql                      5bdf1548a58ac9e9b3d6304200aa44447562be2916a5a207cc869066c638157c
+9003_subnexus_invoice_transactions.sql         49f7d6cadf50ea4959bcfd5d7a2dc52a79b55b38aa372269c70cdf6756ae8b53
+9004_subnexus_invite_rewards.sql               435b11b3c2721a06914d6fd593068b1f2e9cf5c0013491009f6ee33079e65e12
+9005_subnexus_first_recharge.sql               600d682ee7b80ab27f8f3f064dfbadf71ab4c321f91d10abab2c9a491a2ce867
+9006_subnexus_battle_pass.sql                  14152499f8e656d76691b6432e8583de9a3546c288e8a02ad25ef4032173d28d
+9007_subnexus_marquee.sql                      19deec6328c814418b66372c066fd2b439bcbdb5c11659394b5fdf32e509128b
+9008_subnexus_student_recharge_benefit.sql     f7e2caaf7d0587a5e40cc0f9938166797145fbd6538499355b635ea9ed3e6d24
+9009_subnexus_invite_activities_notx.sql       05be0f1771b60af886867b1214d5f3c8e7e6d424e59471a9c7a2fe2a4e003d73
+9010_subnexus_registration_ip_cooldown.sql     d84e20270be20d7fe06175c480dea2b99f905b56079a0670ca6f757dfb429683
+9011_subnexus_rollout_gates.sql                dc95bd29b26a3807ae0c3457958a673161609adc35318641aa0677b5e11fd03c
+9012_subnexus_invite_signup_reward_jobs.sql   7a1bd27748aebf63362045ec171680b5465021fbc756f97a4c2a240385491e0f
+9013_subnexus_leaderboard_rewards.sql         856f2fb34f2ff77a24bafa63e49af177d1d6f12c06b549afe0c21a5c6ec759ae
+```
 
 ### 6.2 本地全部验收后的同库发布预检
 

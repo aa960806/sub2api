@@ -93,6 +93,21 @@ func TestDiffSettings_DetectsCompactHomeChange(t *testing.T) {
 	require.Contains(t, changed, service.SettingKeyCompactHomeEnabled)
 }
 
+func TestDiffSettings_DetectsRegistrationIPCooldownChanges(t *testing.T) {
+	before := &service.SystemSettings{
+		RegistrationIPCooldownEnabled: false,
+		RegistrationIPCooldownSeconds: 300,
+	}
+	after := &service.SystemSettings{
+		RegistrationIPCooldownEnabled: true,
+		RegistrationIPCooldownSeconds: 600,
+	}
+
+	changed := diffSettings(before, after, nil, nil, UpdateSettingsRequest{})
+	require.Contains(t, changed, "registration_ip_cooldown_enabled")
+	require.Contains(t, changed, "registration_ip_cooldown_seconds")
+}
+
 func TestEqualNullableFloat(t *testing.T) {
 	five := 5.0
 	five2 := 5.0

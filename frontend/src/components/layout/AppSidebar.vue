@@ -197,7 +197,9 @@ import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
+import { isInviteActivitySettingsEnabled } from '@/utils/inviteActivities'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { invoicesAPI, shouldShowInvoiceMenu } from '@/api/invoices'
 
 interface NavItem {
   path: string
@@ -691,9 +693,53 @@ const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagPluginManagement = makeSidebarFlag(FeatureFlags.pluginManagement)
+const flagActivityCenter = makeSidebarFlag(FeatureFlags.activityCenter)
+const flagLeaderboard = makeSidebarFlag(FeatureFlags.leaderboard)
+const flagBattlePass = makeSidebarFlag(FeatureFlags.battlePass)
+const flagInviteLottery = () => isInviteActivitySettingsEnabled(
+  appStore.publicSettingsLoaded,
+  appStore.cachedPublicSettings,
+  'subnexus_invite_lottery_enabled',
+)
+const flagRechargeWheel = () => isInviteActivitySettingsEnabled(
+  appStore.publicSettingsLoaded,
+  appStore.cachedPublicSettings,
+  'subnexus_recharge_wheel_enabled',
+)
+const flagInviteMilestone = () => isInviteActivitySettingsEnabled(
+  appStore.publicSettingsLoaded,
+  appStore.cachedPublicSettings,
+  'subnexus_invite_milestone_enabled',
+)
+// Existing invoice history remains reachable while new applications are
+// disabled. The public flag gates new applications and fails closed when it
+// is absent or malformed.
+const invoiceMenuVisible = ref(false)
+const invoiceHasHistory = ref(false)
+const flagInvoice = () => {
+  if (!invoiceMenuVisible.value) return false
+  return invoiceHasHistory.value || appStore.cachedPublicSettings?.invoice_enabled === true
+}
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
 const flagBatchImageAccess = () => canUseBatchImage.value
+
+async function refreshInvoiceFlag() {
+  try {
+    const result = await invoicesAPI.getConfig()
+    invoiceMenuVisible.value = shouldShowInvoiceMenu(result)
+    invoiceHasHistory.value = result.has_history === true
+  } catch {
+    // A missing endpoint or transient auth/settings failure must never expose
+    // a new feature entry.
+    invoiceMenuVisible.value = false
+    invoiceHasHistory.value = false
+  }
+}
+
+function handleInvoiceConfigChanged() {
+  void refreshInvoiceFlag()
+}
 
 // buildSelfNavItems 构造用户自己的导航项（用户端主菜单和管理员的"我的账户"子菜单共享这组声明）。
 // withDashboard=true 时包含仪表盘（用户端），false 时不含（管理员的个人区已经有独立仪表盘入口）。
@@ -714,7 +760,14 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
+    { path: '/invoices', label: t('nav.invoices'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagInvoice },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
+    { path: '/activities', label: t('nav.activities'), icon: GiftIcon, hideInSimpleMode: true, featureFlag: flagActivityCenter },
+    { path: '/invite-lottery', label: t('inviteActivities.inviteLottery.title'), icon: GiftIcon, hideInSimpleMode: true, featureFlag: flagInviteLottery },
+    { path: '/recharge-wheel', label: t('inviteActivities.rechargeWheel.title'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagRechargeWheel },
+    { path: '/invite-milestone', label: t('inviteActivities.inviteMilestone.title'), icon: ChartIcon, hideInSimpleMode: true, featureFlag: flagInviteMilestone },
+    { path: '/battle-pass', label: t('battlePass.title'), icon: TicketIcon, hideInSimpleMode: true, featureFlag: flagBattlePass },
+    { path: '/leaderboard', label: t('nav.leaderboard'), icon: ChartIcon, hideInSimpleMode: true, featureFlag: flagLeaderboard },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
@@ -777,6 +830,17 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
+    { path: '/admin/marquee', label: t('nav.marquee'), icon: BellIcon, hideInSimpleMode: true },
+    // Keep this management entry visible while the user-facing switch is off
+    // so an administrator can enable the migration slice.
+    { path: '/admin/activity-center', label: t('nav.activityEntries'), icon: GiftIcon },
+    { path: '/admin/invite-activities', label: t('inviteActivities.admin.title'), icon: GiftIcon, hideInSimpleMode: true },
+    { path: '/admin/battle-pass', label: t('battlePass.adminTitle'), icon: TicketIcon, hideInSimpleMode: true },
+    // This entry stays available while the offer is disabled so administrators
+    // can opt in without exposing anything to users first.
+    { path: '/admin/first-recharge-gift', label: t('nav.firstRechargeGift'), icon: GiftIcon, hideInSimpleMode: true },
+    { path: '/admin/student-recharge', label: t('admin.studentRecharge.title'), icon: GiftIcon, hideInSimpleMode: true },
+    { path: '/admin/leaderboard', label: t('nav.leaderboard'), icon: ChartIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     {
       path: '/admin/security-audit',
@@ -818,6 +882,9 @@ const adminNavItems = computed((): NavItem[] => {
       ],
     },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
+    // Keep the administrator entry visible while the user-facing switch is
+    // off so stored requests can still be reviewed or downloaded.
+    { path: '/admin/invoices', label: t('nav.invoiceManagement'), icon: OrderListIcon, hideInSimpleMode: true },
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true }
   ]
 
@@ -941,6 +1008,8 @@ watch(
 
 onMounted(() => {
   void refreshBatchImageAccess()
+  void refreshInvoiceFlag()
+  window.addEventListener('invoice-config-changed', handleInvoiceConfigChanged)
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }
@@ -955,6 +1024,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('invoice-config-changed', handleInvoiceConfigChanged)
   if (sidebarNavRef.value) {
     appStore.sidebarScrollTop = sidebarNavRef.value.scrollTop
   }

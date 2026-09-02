@@ -13,6 +13,8 @@ func firstNonEmpty(values ...string) string {
 
 type SystemSettings struct {
 	RegistrationEnabled                 bool
+	RegistrationIPCooldownEnabled       bool
+	RegistrationIPCooldownSeconds       int
 	EmailVerifyEnabled                  bool
 	RegistrationEmailSuffixWhitelist    []string
 	RegistrationEmailDomainQuotaEnabled bool // 白名单非空时放行非白名单域名限量注册（默认关闭）
@@ -155,6 +157,9 @@ type SystemSettings struct {
 	APIBaseURL                  string
 	ContactInfo                 string
 	DocURL                      string
+	DefaultLanguage             string
+	CustomerSupportEnabled      bool
+	CustomerSupportContent      string
 	HomeContent                 string
 	CompactHomeEnabled          bool
 	HideCcsImportButton         bool
@@ -165,19 +170,24 @@ type SystemSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	DefaultConcurrency           int
-	DefaultBalance               float64
-	RiskControlEnabled           bool
-	CyberSessionBlockEnabled     bool
-	CyberSessionBlockTTLSeconds  int
-	AffiliateEnabled             bool
-	AffiliateRebateRate          float64
-	AffiliateRebateFreezeHours   int
-	AffiliateRebateDurationDays  int
-	AffiliateRebatePerInviteeCap float64
-	AdminRechargeRebateEnabled   bool
-	DefaultUserRPMLimit          int
-	DefaultSubscriptions         []DefaultSubscriptionSetting
+	DefaultConcurrency                 int
+	DefaultBalance                     float64
+	RiskControlEnabled                 bool
+	CyberSessionBlockEnabled           bool
+	CyberSessionBlockTTLSeconds        int
+	AffiliateEnabled                   bool
+	AffiliateRebateRate                float64
+	AffiliateRebateFreezeHours         int
+	AffiliateRebateDurationDays        int
+	AffiliateRebatePerInviteeCap       float64
+	AdminRechargeRebateEnabled         bool
+	SubNexusInviteRewardsEnabled       bool
+	SubNexusInviteRewardInviterAmount  float64
+	SubNexusInviteRewardInviteeAmount  float64
+	SubNexusInviteRewardIPLimitEnabled bool
+	SubNexusInviteRewardIPDailyLimit   int
+	DefaultUserRPMLimit                int
+	DefaultSubscriptions               []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -346,6 +356,9 @@ type PublicSettings struct {
 	APIBaseURL                          string
 	ContactInfo                         string
 	DocURL                              string
+	DefaultLanguage                     string
+	CustomerSupportEnabled              bool
+	CustomerSupportContent              string
 	HomeContent                         string
 	CompactHomeEnabled                  bool
 	HideCcsImportButton                 bool
@@ -377,11 +390,23 @@ type PublicSettings struct {
 	BalanceLowNotifyRechargeURL string
 
 	// Channel Monitor feature
-	ChannelMonitorEnabled                bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorEnabled                 bool   `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                    string `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds  int    `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorHideThroughput          bool   `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota               bool   `json:"channel_monitor_show_quota"`
+	SubNexusActivityCenterEnabled         bool   `json:"subnexus_activity_center_enabled"`
+	SubNexusMarqueeEnabled                bool   `json:"subnexus_marquee_enabled"`
+	SubNexusCheckInEnabled                bool   `json:"subnexus_checkin_enabled"`
+	SubNexusLeaderboardEnabled            bool   `json:"subnexus_leaderboard_enabled"`
+	SubNexusInviteActivitiesEnabled       bool   `json:"subnexus_invite_activities_enabled"`
+	SubNexusInviteLotteryEnabled          bool   `json:"subnexus_invite_lottery_enabled"`
+	SubNexusRechargeWheelEnabled          bool   `json:"subnexus_recharge_wheel_enabled"`
+	SubNexusInviteMilestoneEnabled        bool   `json:"subnexus_invite_milestone_enabled"`
+	SubNexusFirstRechargeEnabled          bool   `json:"subnexus_first_recharge_enabled"`
+	SubNexusStudentRechargeBenefitEnabled bool   `json:"subnexus_student_recharge_benefit_enabled"`
+	BattlePassEnabled                     bool   `json:"battle_pass_enabled"`
+	InvoiceEnabled                        bool   `json:"invoice_enabled"`
 
 	// Grok model mapping policy (admin settings).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`

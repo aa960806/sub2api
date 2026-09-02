@@ -1450,6 +1450,50 @@
                 <Toggle v-model="form.registration_enabled" />
               </div>
 
+              <!-- Registration IP Cooldown -->
+              <div
+                class="border-t border-gray-100 pt-4 dark:border-dark-700"
+              >
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">
+                      {{ t("admin.settings.registration.ipCooldown") }}
+                    </label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.registration.ipCooldownHint") }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.registration_ip_cooldown_enabled"
+                    data-testid="registration-ip-cooldown-toggle"
+                  />
+                </div>
+                <div
+                  v-if="form.registration_ip_cooldown_enabled"
+                  class="mt-4 max-w-xs"
+                >
+                  <label
+                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    for="registration-ip-cooldown-seconds"
+                  >
+                    {{ t("admin.settings.registration.ipCooldownSeconds") }}
+                  </label>
+                  <input
+                    id="registration-ip-cooldown-seconds"
+                    v-model.number="form.registration_ip_cooldown_seconds"
+                    data-testid="registration-ip-cooldown-seconds"
+                    type="number"
+                    min="1"
+                    max="86400"
+                    step="1"
+                    class="input"
+                  />
+                  <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.registration.ipCooldownSecondsHint") }}
+                  </p>
+                </div>
+              </div>
+
               <!-- Email Verification -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
@@ -6528,6 +6572,46 @@
                 </p>
               </div>
 
+              <!-- Server default locale and customer support -->
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300" for="settings-default-language">
+                      {{ t("admin.settings.site.defaultLanguage") }}
+                    </label>
+                    <select id="settings-default-language" v-model="form.default_language" class="input">
+                      <option value="">{{ t("admin.settings.site.defaultLanguageBrowser") }}</option>
+                      <option value="zh">{{ t("admin.settings.site.defaultLanguageZh") }}</option>
+                      <option value="en">{{ t("admin.settings.site.defaultLanguageEn") }}</option>
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.site.defaultLanguageHint") }}</p>
+                  </div>
+                  <div class="flex items-start justify-between gap-4 rounded-lg border border-gray-200 p-4 dark:border-dark-700">
+                    <div>
+                      <label class="font-medium text-gray-900 dark:text-white" for="settings-customer-support">
+                        {{ t("admin.settings.site.customerSupport") }}
+                      </label>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.site.customerSupportHint") }}</p>
+                    </div>
+                    <Toggle id="settings-customer-support" v-model="form.customer_support_enabled" data-testid="customer-support-enabled" />
+                  </div>
+                </div>
+                <div class="mt-6">
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300" for="settings-customer-support-content">
+                    {{ t("admin.settings.site.customerSupportContent") }}
+                  </label>
+                  <textarea
+                    id="settings-customer-support-content"
+                    v-model="form.customer_support_content"
+                    rows="6"
+                    class="input font-mono text-sm"
+                    :placeholder="t('admin.settings.site.customerSupportContentPlaceholder')"
+                    data-testid="customer-support-content"
+                  ></textarea>
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.site.customerSupportContentHint") }}</p>
+                </div>
+              </div>
+
               <!-- Doc URL -->
               <div>
                 <label
@@ -7074,12 +7158,26 @@
                   >
                     {{ t('admin.settings.features.channelMonitor.modeV1') }}
                   </button>
+                  <button
+                    type="button"
+                    class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
+                    :class="
+                      form.channel_monitor_mode === 'v3'
+                        ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
+                        : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
+                    "
+                    @click="form.channel_monitor_mode = 'v3'"
+                  >
+                    {{ t('admin.settings.features.channelMonitor.modeV3') }}
+                  </button>
                 </div>
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                   {{
                     form.channel_monitor_mode === 'v1'
                       ? t('admin.settings.features.channelMonitor.modeV1Hint')
-                      : t('admin.settings.features.channelMonitor.modeV2Hint')
+                      : form.channel_monitor_mode === 'v3'
+                        ? t('admin.settings.features.channelMonitor.modeV3Hint')
+                        : t('admin.settings.features.channelMonitor.modeV2Hint')
                   }}
                 </p>
                 <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
@@ -7104,7 +7202,7 @@
                 </p>
               </div>
 
-              <div v-if="form.channel_monitor_mode === 'v2'" class="flex items-start justify-between gap-4">
+              <div v-if="form.channel_monitor_mode === 'v2' || form.channel_monitor_mode === 'v3'" class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-gray-900 dark:text-white">
                     {{ t('admin.settings.features.channelMonitor.hideThroughput') }}
@@ -7317,6 +7415,85 @@
                 </p>
               </div>
               <Toggle v-model="form.affiliate_enabled" />
+            </div>
+
+            <!-- SubNexus invite-signup rewards: independent from the legacy rebate switch. -->
+            <div class="border-t border-gray-100 pt-5 dark:border-dark-700">
+              <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.features.affiliate.signupRewards.enabled') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.features.affiliate.signupRewards.enabledHint') }}
+                  </p>
+                </div>
+                <Toggle v-model="form.subnexus_invite_rewards_enabled" />
+              </div>
+
+              <div v-if="form.subnexus_invite_rewards_enabled" class="mt-5 space-y-5">
+                <div class="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.affiliate.signupRewards.inviterAmount') }}
+                    </label>
+                    <input
+                      v-model.number="form.subnexus_invite_reward_inviter_amount"
+                      type="number"
+                      min="0"
+                      step="0.00000001"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ t('admin.settings.features.affiliate.signupRewards.inviterAmountHint') }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t('admin.settings.features.affiliate.signupRewards.inviteeAmount') }}
+                    </label>
+                    <input
+                      v-model.number="form.subnexus_invite_reward_invitee_amount"
+                      type="number"
+                      min="0"
+                      step="0.00000001"
+                      class="input"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">
+                      {{ t('admin.settings.features.affiliate.signupRewards.inviteeAmountHint') }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t('admin.settings.features.affiliate.signupRewards.ipLimit') }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.settings.features.affiliate.signupRewards.ipLimitHint') }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.subnexus_invite_reward_ip_limit_enabled" />
+                </div>
+
+                <div v-if="form.subnexus_invite_reward_ip_limit_enabled">
+                  <label class="input-label">
+                    {{ t('admin.settings.features.affiliate.signupRewards.ipDailyLimit') }}
+                  </label>
+                  <input
+                    v-model.number="form.subnexus_invite_reward_ip_daily_limit"
+                    type="number"
+                    min="1"
+                    step="1"
+                    class="input sm:max-w-xs"
+                  />
+                  <p class="mt-1 text-xs text-gray-400">
+                    {{ t('admin.settings.features.affiliate.signupRewards.ipDailyLimitHint') }}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div v-if="form.affiliate_enabled" class="space-y-6">
@@ -8777,6 +8954,8 @@ import {
   defaultWeChatConnectScopesForMode,
   deriveWeChatConnectStoredMode,
   normalizeDefaultSubscriptionSettings,
+  normalizeSubNexusInviteRewardSettings,
+  SUBNEXUS_INVITE_REWARD_DEFAULTS,
   resolveWeChatConnectModeCapabilities,
 } from "@/api/admin/settings";
 import type {
@@ -8787,6 +8966,7 @@ import type {
   DefaultSubscriptionSetting,
   DefaultPlatformQuotasMap,
   OpenAIFastPolicyRule,
+  SubNexusInviteRewardSettings,
   WeChatConnectMode,
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
@@ -9479,7 +9659,8 @@ type SettingsForm = Omit<
   | "wechat_connect_open_enabled"
   | "wechat_connect_mp_enabled"
   | "wechat_connect_mobile_enabled"
-> & {
+  | keyof SubNexusInviteRewardSettings
+> & SubNexusInviteRewardSettings & {
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
   channel_monitor_show_quota: boolean;
@@ -9521,12 +9702,17 @@ type SettingsForm = Omit<
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
   account_scheduling_thresholds: ReturnType<typeof normalizeAccountSchedulingThresholdsMap>;
+  default_language: string;
+  customer_support_enabled: boolean;
+  customer_support_content: string;
 };
 
 const schedulingThresholdPlatforms = SCHEDULING_THRESHOLD_PLATFORMS;
 
 const form = reactive<SettingsForm>({
   registration_enabled: true,
+  registration_ip_cooldown_enabled: false,
+  registration_ip_cooldown_seconds: 300,
   email_verify_enabled: false,
   registration_email_suffix_whitelist: [],
   registration_email_domain_quota_enabled: false,
@@ -9565,6 +9751,9 @@ const form = reactive<SettingsForm>({
   contact_info: "",
   doc_url: "",
   home_content: "",
+  default_language: "",
+  customer_support_enabled: false,
+  customer_support_content: "",
   compact_home_enabled: false,
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
@@ -9793,7 +9982,7 @@ const form = reactive<SettingsForm>({
   account_quota_notify_emails: [] as NotifyEmailEntry[],
   // Channel Monitor feature switch
   channel_monitor_enabled: true,
-  channel_monitor_mode: 'v1' as 'v1' | 'v2',
+  channel_monitor_mode: 'v1' as 'v1' | 'v2' | 'v3',
   channel_monitor_default_interval_seconds: 60,
   channel_monitor_hide_throughput: false,
   channel_monitor_show_quota: false,
@@ -9807,6 +9996,8 @@ const form = reactive<SettingsForm>({
   plugin_management_enabled: false,
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: false,
+  // SubNexus invite-signup rewards; keep the independent gate disabled by default.
+  ...SUBNEXUS_INVITE_REWARD_DEFAULTS,
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
@@ -10774,6 +10965,23 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    // A legacy backend can omit these migrated fields. Preserve any existing
+    // form state in that case; an explicitly returned invalid/empty value is
+    // still normalized fail-closed.
+    if (Object.prototype.hasOwnProperty.call(settings, "default_language")) {
+      form.default_language = settings.default_language === "zh" || settings.default_language === "en"
+        ? settings.default_language
+        : "";
+    }
+    if (Object.prototype.hasOwnProperty.call(settings, "customer_support_enabled")) {
+      form.customer_support_enabled = settings.customer_support_enabled === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(settings, "customer_support_content")) {
+      form.customer_support_content = typeof settings.customer_support_content === "string"
+        ? settings.customer_support_content
+        : "";
+    }
+    Object.assign(form, normalizeSubNexusInviteRewardSettings(settings));
     syncCaptchaProviderSelection();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =
@@ -10796,7 +11004,9 @@ async function loadSettings() {
     form.login_agreement_mode =
       settings.login_agreement_mode === "checkbox" ? "checkbox" : "modal";
     form.channel_monitor_mode =
-      settings.channel_monitor_mode === "v2" ? "v2" : "v1";
+      settings.channel_monitor_mode === "v2" || settings.channel_monitor_mode === "v3"
+        ? settings.channel_monitor_mode
+        : "v1";
     form.channel_monitor_hide_throughput = Boolean(
       settings.channel_monitor_hide_throughput
     );
@@ -11152,8 +11362,22 @@ async function saveSettings() {
     form.claude_oauth_system_prompt_blocks =
       claudeOAuthSystemPromptBlocksJSON;
 
+    const normalizedInviteRewardSettings =
+      normalizeSubNexusInviteRewardSettings(form);
+    Object.assign(form, normalizedInviteRewardSettings);
+
     const payload: UpdateSettingsRequest = {
       registration_enabled: form.registration_enabled,
+      registration_ip_cooldown_enabled: form.registration_ip_cooldown_enabled,
+      // Keep malformed/empty number inputs from turning the whole settings
+      // request into a backend validation error.
+      registration_ip_cooldown_seconds: Math.max(
+        1,
+        Math.min(
+          86400,
+          Math.floor(Number(form.registration_ip_cooldown_seconds) || 300),
+        ),
+      ),
       email_verify_enabled: form.email_verify_enabled,
       registration_email_suffix_whitelist:
         registrationEmailSuffixWhitelistTags.value.map((suffix) =>
@@ -11197,6 +11421,11 @@ async function saveSettings() {
       contact_info: form.contact_info,
       doc_url: form.doc_url,
       home_content: form.home_content,
+      default_language: form.default_language === "zh" || form.default_language === "en"
+        ? form.default_language
+        : "",
+      customer_support_enabled: form.customer_support_enabled === true,
+      customer_support_content: form.customer_support_content || "",
       compact_home_enabled: form.compact_home_enabled,
       backend_mode_enabled: form.backend_mode_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,
@@ -11452,7 +11681,7 @@ async function saveSettings() {
       ).filter((e) => e.email.trim() !== ""),
       // Channel Monitor feature switch
       channel_monitor_enabled: form.channel_monitor_enabled,
-      channel_monitor_mode: form.channel_monitor_mode === 'v1' ? 'v1' : 'v2',
+      channel_monitor_mode: form.channel_monitor_mode,
       channel_monitor_default_interval_seconds:
         Number(form.channel_monitor_default_interval_seconds) || 60,
       channel_monitor_hide_throughput: Boolean(form.channel_monitor_hide_throughput),
@@ -11466,6 +11695,8 @@ async function saveSettings() {
       plugin_management_enabled: form.plugin_management_enabled,
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
+      // SubNexus invite-signup rewards (independent feature gate)
+      ...normalizedInviteRewardSettings,
       allow_user_view_error_requests: form.allow_user_view_error_requests,
     };
 
@@ -11516,6 +11747,24 @@ async function saveSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    // Older backends do not know the SubNexus site-extension fields and may
+    // omit them from the response. Only normalize a field when the response
+    // explicitly carries it; otherwise keep the value the administrator just
+    // edited in the form (the request remains backwards-compatible).
+    if (Object.prototype.hasOwnProperty.call(updated, "default_language")) {
+      form.default_language = updated.default_language === "zh" || updated.default_language === "en"
+        ? updated.default_language
+        : "";
+    }
+    if (Object.prototype.hasOwnProperty.call(updated, "customer_support_enabled")) {
+      form.customer_support_enabled = updated.customer_support_enabled === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(updated, "customer_support_content")) {
+      form.customer_support_content = typeof updated.customer_support_content === "string"
+        ? updated.customer_support_content
+        : "";
+    }
+    Object.assign(form, normalizeSubNexusInviteRewardSettings(updated));
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
     form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(

@@ -34,6 +34,14 @@ const (
 	AffiliateRebateDurationDaysMax      = 3650  // ~10 年
 	AffiliateRebatePerInviteeCapDefault = 0.0   // 0 = 无上限
 	AdminRechargeRebateEnabledDefault   = false // 管理员充值默认不产生返利
+	// SubNexus invite signup rewards are deliberately independent from the
+	// upstream affiliate switch. Missing/invalid settings always fail closed.
+	SubNexusInviteRewardsEnabledDefault      = false
+	SubNexusInviteSignupRewardAmountDefault  = 0.0
+	SubNexusInviteSignupRewardAmountMax      = 1_000_000_000.0
+	SubNexusInviteSignupRewardIPLimitDefault = false
+	SubNexusInviteSignupRewardIPDailyDefault = 3
+	SubNexusInviteSignupRewardIPDailyMax     = 10000
 )
 
 // Platform constants
@@ -193,6 +201,8 @@ const DingTalkConnectSyntheticEmailDomain = "@dingtalk-connect.invalid"
 const (
 	// 注册设置
 	SettingKeyRegistrationEnabled              = "registration_enabled"                // 是否开放注册
+	SettingKeyRegistrationIPCooldownEnabled    = "registration_ip_cooldown_enabled"    // 同 IP 注册冷却开关（默认关闭）
+	SettingKeyRegistrationIPCooldownSeconds    = "registration_ip_cooldown_seconds"    // 同 IP 注册冷却秒数
 	SettingKeyEmailVerifyEnabled               = "email_verify_enabled"                // 是否开启邮件验证
 	SettingKeyRegistrationEmailSuffixWhitelist = "registration_email_suffix_whitelist" // 注册邮箱后缀白名单（JSON 数组）
 	// 白名单非空时，是否放行非白名单域名按主域名限量注册（每域名 1 个账户）。
@@ -208,14 +218,21 @@ const (
 	SettingKeyAffiliateRebateDurationDays         = "affiliate_rebate_duration_days"   // 返利有效期（天，0=永久）
 	SettingKeyAffiliateRebatePerInviteeCap        = "affiliate_rebate_per_invitee_cap" // 单人返利上限（0=无上限）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
-	SettingKeyRiskControlEnabled                  = "risk_control_enabled"             // 是否启用风控中心入口与审计链路
-	SettingKeyContentModerationConfig             = "content_moderation_config"        // 内容审计配置（JSON）
-	SettingKeyCyberSessionBlockEnabled            = "cyber_session_block_enabled"      // cyber 命中后会话级自动屏蔽总开关(默认关)
-	SettingKeyCyberSessionBlockTTLSeconds         = "cyber_session_block_ttl_seconds"  // 会话屏蔽 TTL 秒数(默认 3600)
-	SettingKeyLoginAgreementEnabled               = "login_agreement_enabled"          // 登录前是否要求同意条款
-	SettingKeyLoginAgreementMode                  = "login_agreement_mode"             // 条款确认展示模式：modal / checkbox
-	SettingKeyLoginAgreementUpdatedAt             = "login_agreement_updated_at"       // 条款更新日期（展示用）
-	SettingKeyLoginAgreementDocuments             = "login_agreement_documents"        // 条款文档列表（JSON，Markdown 内容）
+	// SubNexus invite signup reward settings are intentionally namespaced so a
+	// legacy affiliate setting cannot enable this migrated balance-writing path.
+	SettingKeySubNexusInviteRewardsEnabled      = "subnexus_invite_rewards_enabled"
+	SettingKeySubNexusInviteSignupRewardInviter = "subnexus_invite_reward_inviter_amount"
+	SettingKeySubNexusInviteSignupRewardInvitee = "subnexus_invite_reward_invitee_amount"
+	SettingKeySubNexusInviteSignupRewardIPLimit = "subnexus_invite_reward_ip_limit_enabled"
+	SettingKeySubNexusInviteSignupRewardIPDaily = "subnexus_invite_reward_ip_daily_limit"
+	SettingKeyRiskControlEnabled                = "risk_control_enabled"            // 是否启用风控中心入口与审计链路
+	SettingKeyContentModerationConfig           = "content_moderation_config"       // 内容审计配置（JSON）
+	SettingKeyCyberSessionBlockEnabled          = "cyber_session_block_enabled"     // cyber 命中后会话级自动屏蔽总开关(默认关)
+	SettingKeyCyberSessionBlockTTLSeconds       = "cyber_session_block_ttl_seconds" // 会话屏蔽 TTL 秒数(默认 3600)
+	SettingKeyLoginAgreementEnabled             = "login_agreement_enabled"         // 登录前是否要求同意条款
+	SettingKeyLoginAgreementMode                = "login_agreement_mode"            // 条款确认展示模式：modal / checkbox
+	SettingKeyLoginAgreementUpdatedAt           = "login_agreement_updated_at"      // 条款更新日期（展示用）
+	SettingKeyLoginAgreementDocuments           = "login_agreement_documents"       // 条款文档列表（JSON，Markdown 内容）
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址
@@ -347,21 +364,29 @@ const (
 	SettingKeyGoogleOAuthFrontendRedirectURL = "google_oauth_frontend_redirect_url"
 
 	// OEM设置
-	SettingKeySiteName                    = "site_name"                     // 网站名称
-	SettingKeySiteLogo                    = "site_logo"                     // 网站Logo (base64)
-	SettingKeySiteSubtitle                = "site_subtitle"                 // 网站副标题
-	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
-	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
-	SettingKeyDocURL                      = "doc_url"                       // 文档链接
-	SettingKeyHomeContent                 = "home_content"                  // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
-	SettingKeyCompactHomeEnabled          = "compact_home_enabled"          // 是否启用内置简洁首页
-	SettingKeyHideCcsImportButton         = "hide_ccs_import_button"        // 是否隐藏 API Keys 页面的导入 CCS 按钮
-	SettingKeyPurchaseSubscriptionEnabled = "purchase_subscription_enabled" // 是否展示"购买订阅"页面入口
-	SettingKeyPurchaseSubscriptionURL     = "purchase_subscription_url"     // "购买订阅"页面 URL（作为 iframe src）
-	SettingKeyTableDefaultPageSize        = "table_default_page_size"       // 表格默认每页条数
-	SettingKeyTablePageSizeOptions        = "table_page_size_options"       // 表格可选每页条数（JSON 数组）
-	SettingKeyCustomMenuItems             = "custom_menu_items"             // 自定义菜单项（JSON 数组）
-	SettingKeyCustomEndpoints             = "custom_endpoints"              // 自定义端点列表（JSON 数组）
+	SettingKeySiteName     = "site_name"     // 网站名称
+	SettingKeySiteLogo     = "site_logo"     // 网站Logo (base64)
+	SettingKeySiteSubtitle = "site_subtitle" // 网站副标题
+	SettingKeyAPIBaseURL   = "api_base_url"  // API端点地址（用于客户端配置和导入）
+	SettingKeyContactInfo  = "contact_info"  // 客服联系方式
+	SettingKeyDocURL       = "doc_url"       // 文档链接
+	// SubNexus site extensions use namespaced storage keys. The unprefixed
+	// aliases below are retained for same-database rollback to the legacy app.
+	SettingKeySubNexusDefaultLanguage        = "subnexus_default_language"
+	SettingKeySubNexusCustomerSupportEnabled = "subnexus_customer_support_enabled"
+	SettingKeySubNexusCustomerSupportContent = "subnexus_customer_support_content"
+	SettingKeyDefaultLanguage                = "default_language"              // legacy alias
+	SettingKeyCustomerSupportEnabled         = "customer_support_enabled"      // legacy alias
+	SettingKeyCustomerSupportContent         = "customer_support_content"      // legacy alias
+	SettingKeyHomeContent                    = "home_content"                  // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
+	SettingKeyCompactHomeEnabled             = "compact_home_enabled"          // 是否启用内置简洁首页
+	SettingKeyHideCcsImportButton            = "hide_ccs_import_button"        // 是否隐藏 API Keys 页面的导入 CCS 按钮
+	SettingKeyPurchaseSubscriptionEnabled    = "purchase_subscription_enabled" // 是否展示"购买订阅"页面入口
+	SettingKeyPurchaseSubscriptionURL        = "purchase_subscription_url"     // "购买订阅"页面 URL（作为 iframe src）
+	SettingKeyTableDefaultPageSize           = "table_default_page_size"       // 表格默认每页条数
+	SettingKeyTablePageSizeOptions           = "table_page_size_options"       // 表格可选每页条数（JSON 数组）
+	SettingKeyCustomMenuItems                = "custom_menu_items"             // 自定义菜单项（JSON 数组）
+	SettingKeyCustomEndpoints                = "custom_endpoints"              // 自定义端点列表（JSON 数组）
 
 	// 默认配置
 	SettingKeyDefaultConcurrency   = "default_concurrency"    // 新用户默认并发量
@@ -460,13 +485,15 @@ const (
 	// When false: runner skips scheduling and user-facing endpoints return an empty list.
 	SettingKeyChannelMonitorEnabled = "channel_monitor_enabled"
 
-	// SettingKeyChannelMonitorMode selects exclusive implementation:
-	// "v1" active probes, "v2" passive aggregation. Default "v1" (opt-in to v2).
+	// SettingKeyChannelMonitorMode selects the exclusive monitor implementation:
+	// "v1" active probes, "v2" passive aggregation + V2 UI, "v3" passive
+	// aggregation + V3 UI. Default "v1" (opt-in to V2/V3).
 	SettingKeyChannelMonitorMode = "channel_monitor_mode"
 
-	// ChannelMonitorModeV1/V2 are the only accepted mode values.
+	// ChannelMonitorModeV1/V2/V3 are the accepted mode values.
 	ChannelMonitorModeV1 = "v1"
 	ChannelMonitorModeV2 = "v2"
+	ChannelMonitorModeV3 = "v3"
 
 	// SettingKeyChannelMonitorDefaultIntervalSeconds controls the default interval (seconds)
 	// pre-filled when creating a new channel monitor from the admin UI. Range: [15, 3600].
@@ -502,6 +529,17 @@ const (
 	// user-facing aggregate view. When false: user endpoint returns an empty list and the
 	// sidebar entry is hidden. Defaults to false (opt-in feature).
 	SettingKeyAvailableChannelsEnabled = "available_channels_enabled"
+
+	// SettingKeySubNexusCheckInEnabled is the independent opt-in switch for
+	// the migrated SubNexus check-in slice. It must not inherit the legacy
+	// activity JSON payload.
+	SettingKeySubNexusCheckInEnabled = "subnexus_checkin_enabled"
+
+	// SettingKeySubNexusLeaderboardEnabled is the independent opt-in switch for
+	// the migrated usage/invite leaderboard slice. It is deliberately separate
+	// from legacy ACTIVITY_CONFIG so a stale JSON setting cannot enable reads or
+	// reward settlement implicitly.
+	SettingKeySubNexusLeaderboardEnabled = "subnexus_leaderboard_enabled"
 
 	// SettingKeyModelPlazaEnabled is a DB-backed soft switch for the Model Plaza page
 	// (public group/model pricing showcase). When false: the plaza endpoint returns 404

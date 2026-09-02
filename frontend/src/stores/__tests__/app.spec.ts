@@ -394,6 +394,24 @@ describe('useAppStore', () => {
       consoleError.mockRestore()
     })
 
+    it('强制刷新失败时清除旧设置和启动注入，所有功能按关闭处理', async () => {
+      const initial = createPublicSettings({ payment_enabled: true })
+      vi.mocked(getPublicSettings).mockResolvedValueOnce(initial)
+      const store = useAppStore()
+      await store.fetchPublicSettings()
+      expect(store.publicSettingsLoaded).toBe(true)
+      expect(store.cachedPublicSettings?.payment_enabled).toBe(true)
+
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      vi.mocked(getPublicSettings).mockRejectedValueOnce(new Error('refresh failed'))
+      await expect(store.fetchPublicSettings(true)).resolves.toBeNull()
+
+      expect(store.publicSettingsLoaded).toBe(false)
+      expect(store.cachedPublicSettings).toBeNull()
+      expect((window as any).__APP_CONFIG__).toBeUndefined()
+      consoleError.mockRestore()
+    })
+
     it('从 window.__APP_CONFIG__ 初始化', () => {
       const windowAny = window as any
       windowAny.__APP_CONFIG__ = {

@@ -366,6 +366,8 @@ const ImageUploadStub = defineComponent({
 
 const baseSettingsResponse = {
   registration_enabled: true,
+  registration_ip_cooldown_enabled: false,
+  registration_ip_cooldown_seconds: 300,
   email_verify_enabled: false,
   registration_email_suffix_whitelist: [],
   promo_code_enabled: true,
@@ -736,6 +738,29 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("loads and saves registration IP cooldown with bounded seconds", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    const toggle = wrapper.get('[data-testid="registration-ip-cooldown-toggle"]');
+    expect((toggle.element as HTMLInputElement).checked).toBe(false);
+    expect(wrapper.find('[data-testid="registration-ip-cooldown-seconds"]').exists()).toBe(false);
+
+    await toggle.setValue(true);
+    const seconds = wrapper.get('[data-testid="registration-ip-cooldown-seconds"]');
+    await seconds.setValue("90000");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        registration_ip_cooldown_enabled: true,
+        registration_ip_cooldown_seconds: 86400,
+      }),
+    );
+  });
+
   it("renders panel rate limit card and saves settings", async () => {
     getPanelRateLimitSettings.mockClear();
     updatePanelRateLimitSettings.mockClear();
@@ -1092,6 +1117,24 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         affiliate_admin_recharge_enabled: true,
+      }),
+    );
+  });
+
+  it("keeps invite signup rewards disabled when the backend omits their settings", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subnexus_invite_rewards_enabled: false,
+        subnexus_invite_reward_inviter_amount: 0,
+        subnexus_invite_reward_invitee_amount: 0,
+        subnexus_invite_reward_ip_limit_enabled: false,
+        subnexus_invite_reward_ip_daily_limit: 3,
       }),
     );
   });
@@ -1952,5 +1995,43 @@ describe("admin SettingsView platform quota matrix", () => {
     const quotas = payload["default_platform_quotas"] as Record<string, Record<string, unknown>>;
     // 不管输入是什么，提交值应为 null（而非 "" 或 NaN）
     expect(quotas["anthropic"]?.["daily"]).toBe(null);
+  });
+
+  it("旧后端保存响应缺少站点扩展字段时保留当前表单值", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      default_language: "zh",
+      customer_support_enabled: true,
+      customer_support_content: "当前客服内容",
+    });
+    // Simulate an older backend that accepts the request but returns a
+    // response without fields introduced by the SubNexus migration.
+    updateSettings.mockResolvedValueOnce({
+      site_name: "Sub2API",
+      default_platform_quotas: baseSettingsResponse.default_platform_quotas,
+      account_scheduling_thresholds: {},
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect((wrapper.get("#settings-default-language").element as HTMLSelectElement).value).toBe("zh");
+    expect((wrapper.get("#settings-customer-support").element as HTMLInputElement).checked).toBe(true);
+    expect((wrapper.get("#settings-customer-support-content").element as HTMLTextAreaElement).value).toBe("当前客服内容");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        default_language: "zh",
+        customer_support_enabled: true,
+        customer_support_content: "当前客服内容",
+      }),
+    );
+    // The missing response fields must not reset what the administrator sees.
+    expect((wrapper.get("#settings-default-language").element as HTMLSelectElement).value).toBe("zh");
+    expect((wrapper.get("#settings-customer-support").element as HTMLInputElement).checked).toBe(true);
+    expect((wrapper.get("#settings-customer-support-content").element as HTMLTextAreaElement).value).toBe("当前客服内容");
   });
 });

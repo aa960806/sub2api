@@ -21,7 +21,7 @@ export type OrderStatus =
 
 export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex'
 
-export type OrderType = 'balance' | 'subscription'
+export type OrderType = 'balance' | 'subscription' | 'first_recharge_gift'
 
 // ==================== Configuration ====================
 
@@ -39,6 +39,17 @@ export interface PaymentConfig {
   help_image_url: string
   help_text: string
   stripe_publishable_key: string
+}
+
+export interface FirstRechargeGiftStatus {
+  enabled: boolean
+  purchased: boolean
+  pending: boolean
+  price: number
+  credited_amount: number
+  ratio: number
+  order_id?: number
+  purchased_at?: string
 }
 
 export interface MethodLimit {
@@ -176,6 +187,8 @@ export interface CreateOrderRequest {
   openid?: string
   wechat_resume_token?: string
   is_mobile?: boolean
+  /** Explicit opt-in marker for the isolated ordinary student recharge offer. */
+  student_benefit?: boolean
 }
 
 export type CreateOrderResultType = 'order_created' | 'oauth_required' | 'jsapi_ready'
@@ -220,6 +233,8 @@ export interface CreateOrderResult {
   oauth?: WechatOAuthInfo
   jsapi?: WechatJSAPIPayload
   jsapi_payload?: WechatJSAPIPayload
+  student_benefit?: boolean
+  student_bonus_amount?: number
 }
 
 export type CurrencyAmounts = Record<string, number>

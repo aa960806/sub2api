@@ -238,6 +238,12 @@ export interface PublicSettings {
   contact_info: string
   doc_url: string
   home_content: string
+  /** Preferred server locale; empty means follow the browser/user choice. */
+  default_language?: 'zh' | 'en' | string
+  /** Customer-support entry is opt-in and fail-closed when absent. */
+  customer_support_enabled?: boolean
+  /** Administrator-authored Markdown shown by the support modal. */
+  customer_support_content?: string
   compact_home_enabled: boolean
   hide_ccs_import_button: boolean
   payment_enabled: boolean
@@ -266,8 +272,8 @@ export interface PublicSettings {
   account_quota_notify_enabled: boolean
   balance_low_notify_threshold: number
   channel_monitor_enabled: boolean
-  /** Exclusive mode: v1 active probes or v2 passive aggregation. Default v2. */
-  channel_monitor_mode?: 'v1' | 'v2'
+  /** Exclusive mode: v1 active probes, v2 passive UI, or v3 passive UI. Default v1. */
+  channel_monitor_mode?: 'v1' | 'v2' | 'v3'
   channel_monitor_default_interval_seconds: number
   /** When true, user monitor hides RPM/TPM so scale cannot be reverse-estimated. */
   channel_monitor_hide_throughput?: boolean
@@ -279,6 +285,30 @@ export interface PublicSettings {
   plugin_management_enabled: boolean
   service_quota_enabled: boolean
   affiliate_enabled: boolean
+  /** Invoice workflow switch; missing values fail closed for new requests. */
+  invoice_enabled?: boolean
+  /** Activity-center shell is opt-in; missing values must remain disabled. */
+  subnexus_activity_center_enabled?: boolean
+  /** Marquee polling is opt-in; missing values must never start a poller. */
+  subnexus_marquee_enabled?: boolean
+  /** Check-in is independently opt-in; legacy activity settings cannot enable it. */
+  subnexus_checkin_enabled?: boolean
+  /** Usage/invite leaderboard is independently opt-in; missing values stay disabled. */
+  subnexus_leaderboard_enabled?: boolean
+  /** Aggregate emergency stop for the three migrated invite activities. */
+  subnexus_invite_activities_enabled?: boolean
+  /** Invite lottery is opt-in and also requires the aggregate switch. */
+  subnexus_invite_lottery_enabled?: boolean
+  /** Recharge wheel is opt-in and also requires the aggregate switch. */
+  subnexus_recharge_wheel_enabled?: boolean
+  /** Invite milestones are opt-in and also require the aggregate switch. */
+  subnexus_invite_milestone_enabled?: boolean
+  /** Battle Pass is independently opt-in; missing values must remain disabled. */
+  battle_pass_enabled?: boolean
+  /** First-recharge offer is independently opt-in and fail-closed. */
+  subnexus_first_recharge_enabled?: boolean
+  /** Student recharge benefit is independently opt-in and fail-closed. */
+  subnexus_student_recharge_benefit_enabled?: boolean
   allow_user_view_error_requests?: boolean
 }
 

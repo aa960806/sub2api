@@ -396,6 +396,10 @@ export function deriveWeChatConnectStoredMode(
 export interface SystemSettings {
   // Registration settings
   registration_enabled: boolean;
+  /** Same trusted-client IP registration cooldown; disabled by default. */
+  registration_ip_cooldown_enabled: boolean;
+  /** Cooldown duration in seconds (bounded by the backend to 1-86400). */
+  registration_ip_cooldown_seconds: number;
   email_verify_enabled: boolean;
   registration_email_suffix_whitelist: string[];
   registration_email_domain_quota_enabled: boolean;
@@ -479,6 +483,11 @@ export interface SystemSettings {
   contact_info: string;
   doc_url: string;
   home_content: string;
+  /** Empty means the frontend follows the browser/user locale. */
+  default_language?: 'zh' | 'en' | string;
+  /** Customer support is opt-in and must be explicitly true to display. */
+  customer_support_enabled?: boolean;
+  customer_support_content?: string;
   compact_home_enabled: boolean;
   hide_ccs_import_button: boolean;
   table_default_page_size: number;
@@ -716,7 +725,7 @@ export interface SystemSettings {
 
   // Channel Monitor feature switch
   channel_monitor_enabled: boolean;
-  channel_monitor_mode?: 'v1' | 'v2';
+  channel_monitor_mode?: 'v1' | 'v2' | 'v3';
   channel_monitor_default_interval_seconds: number;
   channel_monitor_hide_throughput?: boolean;
   channel_monitor_show_quota?: boolean;
@@ -733,6 +742,13 @@ export interface SystemSettings {
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: boolean;
 
+  // SubNexus invite-signup rewards (independent opt-in switch)
+  subnexus_invite_rewards_enabled?: boolean;
+  subnexus_invite_reward_inviter_amount?: number;
+  subnexus_invite_reward_invitee_amount?: number;
+  subnexus_invite_reward_ip_limit_enabled?: boolean;
+  subnexus_invite_reward_ip_daily_limit?: number;
+
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
 
@@ -742,6 +758,8 @@ export interface SystemSettings {
 
 export interface UpdateSettingsRequest {
   registration_enabled?: boolean;
+  registration_ip_cooldown_enabled?: boolean;
+  registration_ip_cooldown_seconds?: number;
   email_verify_enabled?: boolean;
   registration_email_suffix_whitelist?: string[];
   registration_email_domain_quota_enabled?: boolean;
@@ -819,6 +837,9 @@ export interface UpdateSettingsRequest {
   contact_info?: string;
   doc_url?: string;
   home_content?: string;
+  default_language?: 'zh' | 'en' | string;
+  customer_support_enabled?: boolean;
+  customer_support_content?: string;
   compact_home_enabled?: boolean;
   hide_ccs_import_button?: boolean;
   table_default_page_size?: number;
@@ -1017,7 +1038,7 @@ export interface UpdateSettingsRequest {
 
   // Channel Monitor feature switch
   channel_monitor_enabled?: boolean;
-  channel_monitor_mode?: 'v1' | 'v2';
+  channel_monitor_mode?: 'v1' | 'v2' | 'v3';
   channel_monitor_default_interval_seconds?: number;
   channel_monitor_hide_throughput?: boolean;
   channel_monitor_show_quota?: boolean;
@@ -1034,10 +1055,70 @@ export interface UpdateSettingsRequest {
   // Affiliate (邀请返利) feature switch
   affiliate_enabled?: boolean;
 
+  // SubNexus invite-signup rewards (independent opt-in switch)
+  subnexus_invite_rewards_enabled?: boolean;
+  subnexus_invite_reward_inviter_amount?: number;
+  subnexus_invite_reward_invitee_amount?: number;
+  subnexus_invite_reward_ip_limit_enabled?: boolean;
+  subnexus_invite_reward_ip_daily_limit?: number;
+
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
 
   allow_user_view_error_requests?: boolean;
+}
+
+/**
+ * SubNexus invite-signup reward settings use an independent feature gate.
+ * Keep these defaults fail-closed so an older backend response cannot enable
+ * the feature accidentally.
+ */
+export interface SubNexusInviteRewardSettings {
+  subnexus_invite_rewards_enabled: boolean;
+  subnexus_invite_reward_inviter_amount: number;
+  subnexus_invite_reward_invitee_amount: number;
+  subnexus_invite_reward_ip_limit_enabled: boolean;
+  subnexus_invite_reward_ip_daily_limit: number;
+}
+
+export const SUBNEXUS_INVITE_REWARD_DEFAULTS: SubNexusInviteRewardSettings = {
+  subnexus_invite_rewards_enabled: false,
+  subnexus_invite_reward_inviter_amount: 0,
+  subnexus_invite_reward_invitee_amount: 0,
+  subnexus_invite_reward_ip_limit_enabled: false,
+  subnexus_invite_reward_ip_daily_limit: 3,
+};
+
+/** Normalize API/form values before rendering or submitting invite rewards. */
+export function normalizeSubNexusInviteRewardSettings(
+  input?: Partial<SubNexusInviteRewardSettings> | null,
+): SubNexusInviteRewardSettings {
+  const amount = (value: unknown): number => {
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+  const dailyLimit = (value: unknown): number => {
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) && parsed >= 1
+      ? Math.floor(parsed)
+      : SUBNEXUS_INVITE_REWARD_DEFAULTS.subnexus_invite_reward_ip_daily_limit;
+  };
+
+  return {
+    subnexus_invite_rewards_enabled:
+      input?.subnexus_invite_rewards_enabled === true,
+    subnexus_invite_reward_inviter_amount: amount(
+      input?.subnexus_invite_reward_inviter_amount,
+    ),
+    subnexus_invite_reward_invitee_amount: amount(
+      input?.subnexus_invite_reward_invitee_amount,
+    ),
+    subnexus_invite_reward_ip_limit_enabled:
+      input?.subnexus_invite_reward_ip_limit_enabled === true,
+    subnexus_invite_reward_ip_daily_limit: dailyLimit(
+      input?.subnexus_invite_reward_ip_daily_limit,
+    ),
+  };
 }
 
 /**

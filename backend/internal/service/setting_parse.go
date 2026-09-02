@@ -55,20 +55,30 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 	// 初始化默认设置
 	defaults := map[string]string{
-		SettingKeyRegistrationEnabled:                       "true",
-		SettingKeyEmailVerifyEnabled:                        "false",
-		SettingKeyRegistrationEmailSuffixWhitelist:          "[]",
-		SettingKeyRegistrationEmailDomainQuotaEnabled:       "false",
-		SettingKeyPromoCodeEnabled:                          "true", // 默认启用优惠码功能
-		SettingKeyLoginAgreementEnabled:                     "false",
-		SettingKeyLoginAgreementMode:                        defaultLoginAgreementMode,
-		SettingKeyLoginAgreementUpdatedAt:                   defaultLoginAgreementDate,
-		SettingKeyLoginAgreementDocuments:                   loginAgreementDocumentsJSON,
-		SettingKeyAPIKeyACLTrustForwardedIP:                 "true",
-		SettingKeyForwardedClientIPHeaders:                  string(forwardedClientIPHeadersJSON),
-		settingKeyForwardedClientIPModeV2:                   "true",
-		SettingKeySiteName:                                  "Sub2API",
-		SettingKeySiteLogo:                                  "",
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyRegistrationIPCooldownEnabled:       "false",
+		SettingKeyRegistrationIPCooldownSeconds:       strconv.Itoa(RegistrationIPCooldownSecondsDefault),
+		SettingKeyEmailVerifyEnabled:                  "false",
+		SettingKeyRegistrationEmailSuffixWhitelist:    "[]",
+		SettingKeyRegistrationEmailDomainQuotaEnabled: "false",
+		SettingKeyPromoCodeEnabled:                    "true", // 默认启用优惠码功能
+		SettingKeyLoginAgreementEnabled:               "false",
+		SettingKeyLoginAgreementMode:                  defaultLoginAgreementMode,
+		SettingKeyLoginAgreementUpdatedAt:             defaultLoginAgreementDate,
+		SettingKeyLoginAgreementDocuments:             loginAgreementDocumentsJSON,
+		SettingKeyAPIKeyACLTrustForwardedIP:           "true",
+		SettingKeyForwardedClientIPHeaders:            string(forwardedClientIPHeadersJSON),
+		settingKeyForwardedClientIPModeV2:             "true",
+		SettingKeySiteName:                            "Sub2API",
+		SettingKeySiteLogo:                            "",
+		// SubNexus site extensions are opt-in and kept in both namespaced and
+		// legacy keys so an older binary can be rolled back safely.
+		SettingKeySubNexusDefaultLanguage:                   "",
+		SettingKeyDefaultLanguage:                           "",
+		SettingKeySubNexusCustomerSupportEnabled:            "false",
+		SettingKeyCustomerSupportEnabled:                    "false",
+		SettingKeySubNexusCustomerSupportContent:            "",
+		SettingKeyCustomerSupportContent:                    "",
 		SettingKeyPurchaseSubscriptionEnabled:               "false",
 		SettingKeyPurchaseSubscriptionURL:                   "",
 		SettingKeyTableDefaultPageSize:                      "20",
@@ -192,6 +202,26 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyChannelMonitorHideThroughput:         "true",
 		SettingKeyChannelMonitorShowQuota:              "false",
 
+		// SubNexus activity center is opt-in and never inherits the legacy JSON switch.
+		SettingKeySubNexusActivityCenterEnabled: "false",
+		// Student recharge bonuses write user balances, so the rollout switch is
+		// independent from the legacy JSON configuration and defaults off.
+		SettingKeySubNexusStudentRechargeBenefitEnabled: "false",
+		// SubNexus marquee is independently gated; legacy activity switches are ignored.
+		SettingKeySubNexusMarqueeEnabled: "false",
+		// SubNexus check-in is independently gated and defaults to disabled.
+		SettingKeySubNexusCheckInEnabled: "false",
+		// SubNexus leaderboard is independently gated and defaults to disabled.
+		SettingKeySubNexusLeaderboardEnabled: "false",
+		// Invite/recharge reward activities are independently opt-in and
+		// fail closed until an administrator saves a validated policy.
+		SettingKeySubNexusInviteActivitiesEnabled: "false",
+		// Battle Pass is independently gated and defaults to disabled.
+		SettingKeyBattlePassEnabled: "false",
+		// Invoice workflow is independently gated; the legacy JSON setting is
+		// retained only for parameters and rollback compatibility.
+		SettingKeySubNexusInvoiceEnabled: "false",
+
 		// Grok: safe defaults — no cross-vendor model rewrite unless operators enable it.
 		SettingKeyGrokDefaultTextModel:           "grok-4.6",
 		SettingKeyGrokCrossClientModelMapEnabled: "true",
@@ -209,6 +239,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// Affiliate (邀请返利) feature (default disabled; opt-in)
 		SettingKeyAffiliateEnabled:              "false",
 		SettingKeyAffiliateAdminRechargeEnabled: strconv.FormatBool(AdminRechargeRebateEnabledDefault),
+		// SubNexus invite signup rewards are a separate opt-in balance path.
+		SettingKeySubNexusInviteRewardsEnabled:      strconv.FormatBool(SubNexusInviteRewardsEnabledDefault),
+		SettingKeySubNexusInviteSignupRewardInviter: strconv.FormatFloat(SubNexusInviteSignupRewardAmountDefault, 'f', 8, 64),
+		SettingKeySubNexusInviteSignupRewardInvitee: strconv.FormatFloat(SubNexusInviteSignupRewardAmountDefault, 'f', 8, 64),
+		SettingKeySubNexusInviteSignupRewardIPLimit: strconv.FormatBool(SubNexusInviteSignupRewardIPLimitDefault),
+		SettingKeySubNexusInviteSignupRewardIPDaily: strconv.Itoa(SubNexusInviteSignupRewardIPDailyDefault),
 
 		// 风控中心功能（默认关闭，显式启用）
 		SettingKeyRiskControlEnabled: "false",
@@ -311,6 +347,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result := &SystemSettings{
 		RegistrationEnabled:                    settings[SettingKeyRegistrationEnabled] == "true",
+		RegistrationIPCooldownEnabled:          settings[SettingKeyRegistrationIPCooldownEnabled] == "true",
+		RegistrationIPCooldownSeconds:          parseRegistrationIPCooldownSeconds(settings[SettingKeyRegistrationIPCooldownSeconds]),
 		EmailVerifyEnabled:                     emailVerifyEnabled,
 		RegistrationEmailSuffixWhitelist:       ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
 		RegistrationEmailDomainQuotaEnabled:    settings[SettingKeyRegistrationEmailDomainQuotaEnabled] == "true",
@@ -356,6 +394,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		APIBaseURL:                             settings[SettingKeyAPIBaseURL],
 		ContactInfo:                            settings[SettingKeyContactInfo],
 		DocURL:                                 settings[SettingKeyDocURL],
+		DefaultLanguage:                        NormalizeSubNexusDefaultLanguage(subNexusSiteSetting(settings, SettingKeySubNexusDefaultLanguage, SettingKeyDefaultLanguage)),
+		CustomerSupportEnabled:                 subNexusSiteBool(settings, SettingKeySubNexusCustomerSupportEnabled, SettingKeyCustomerSupportEnabled),
+		CustomerSupportContent:                 subNexusSiteSetting(settings, SettingKeySubNexusCustomerSupportContent, SettingKeyCustomerSupportContent),
 		HomeContent:                            settings[SettingKeyHomeContent],
 		CompactHomeEnabled:                     settings[SettingKeyCompactHomeEnabled] == "true",
 		HideCcsImportButton:                    settings[SettingKeyHideCcsImportButton] == "true",
@@ -414,6 +455,15 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.AffiliateRebatePerInviteeCap = perInviteeCap
 	}
 	result.AdminRechargeRebateEnabled = settings[SettingKeyAffiliateAdminRechargeEnabled] == "true"
+	result.SubNexusInviteRewardsEnabled = settings[SettingKeySubNexusInviteRewardsEnabled] == "true"
+	result.SubNexusInviteRewardInviterAmount = parseSubNexusInviteRewardAmountOrDefault(settings[SettingKeySubNexusInviteSignupRewardInviter])
+	result.SubNexusInviteRewardInviteeAmount = parseSubNexusInviteRewardAmountOrDefault(settings[SettingKeySubNexusInviteSignupRewardInvitee])
+	result.SubNexusInviteRewardIPLimitEnabled = settings[SettingKeySubNexusInviteSignupRewardIPLimit] == "true"
+	if limit, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeySubNexusInviteSignupRewardIPDaily])); err == nil && limit > 0 && limit <= SubNexusInviteSignupRewardIPDailyMax {
+		result.SubNexusInviteRewardIPDailyLimit = limit
+	} else {
+		result.SubNexusInviteRewardIPDailyLimit = SubNexusInviteSignupRewardIPDailyDefault
+	}
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
 
 	// 敏感信息直接返回，方便测试连接时使用
@@ -791,8 +841,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		}
 	}
 
-	// Channel monitor feature (default: enabled, 60s)
-	result.ChannelMonitorEnabled = !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled])
+	// Channel monitor feature: only the canonical persisted value enables it.
+	// Missing/malformed values remain disabled until an operator explicitly
+	// confirms the setting, preventing a partial migration from starting probes.
+	result.ChannelMonitorEnabled = settings[SettingKeyChannelMonitorEnabled] == "true"
 	result.ChannelMonitorMode = normalizeChannelMonitorMode(settings[SettingKeyChannelMonitorMode])
 	result.ChannelMonitorDefaultIntervalSeconds = parseChannelMonitorInterval(
 		settings[SettingKeyChannelMonitorDefaultIntervalSeconds],

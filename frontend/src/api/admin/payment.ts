@@ -53,6 +53,14 @@ export interface UpdatePaymentConfigRequest {
   help_text?: string
 }
 
+/** Isolated rollout configuration for the first-recharge gift. */
+export interface AdminFirstRechargeGiftConfig {
+  enabled: boolean
+  price: number
+  credited_amount: number
+  ratio: number
+}
+
 export interface RefundResult {
   success: boolean
   warning?: string
@@ -72,6 +80,16 @@ export const adminPaymentAPI = {
   /** Update payment configuration */
   updateConfig(data: UpdatePaymentConfigRequest) {
     return apiClient.put('/admin/payment/config', data)
+  },
+
+  /** Get the isolated first-recharge gift configuration. */
+  getFirstRechargeGiftConfig() {
+    return apiClient.get<AdminFirstRechargeGiftConfig>('/admin/payment/first-recharge-gift/config')
+  },
+
+  /** Update the offer and its independent rollout switch. */
+  updateFirstRechargeGiftConfig(data: AdminFirstRechargeGiftConfig) {
+    return apiClient.put<AdminFirstRechargeGiftConfig>('/admin/payment/first-recharge-gift/config', data)
   },
 
   // ==================== Dashboard ====================

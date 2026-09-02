@@ -163,6 +163,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// 注册设置
 	updates[SettingKeyRegistrationEnabled] = strconv.FormatBool(settings.RegistrationEnabled)
+	updates[SettingKeyRegistrationIPCooldownEnabled] = strconv.FormatBool(settings.RegistrationIPCooldownEnabled)
+	updates[SettingKeyRegistrationIPCooldownSeconds] = strconv.Itoa(parseRegistrationIPCooldownSeconds(strconv.Itoa(settings.RegistrationIPCooldownSeconds)))
 	updates[SettingKeyEmailVerifyEnabled] = strconv.FormatBool(settings.EmailVerifyEnabled)
 	registrationEmailSuffixWhitelistJSON, err := json.Marshal(settings.RegistrationEmailSuffixWhitelist)
 	if err != nil {
@@ -342,6 +344,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeyDocURL] = settings.DocURL
+	appendSubNexusSiteSettings(updates, settings)
 	updates[SettingKeyHomeContent] = settings.HomeContent
 	updates[SettingKeyCompactHomeEnabled] = strconv.FormatBool(settings.CompactHomeEnabled)
 	updates[SettingKeyHideCcsImportButton] = strconv.FormatBool(settings.HideCcsImportButton)
@@ -384,6 +387,16 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
 	updates[SettingKeyAffiliateAdminRechargeEnabled] = strconv.FormatBool(settings.AdminRechargeRebateEnabled)
+	settings.SubNexusInviteRewardInviterAmount = normalizeSubNexusInviteRewardAmount(settings.SubNexusInviteRewardInviterAmount)
+	settings.SubNexusInviteRewardInviteeAmount = normalizeSubNexusInviteRewardAmount(settings.SubNexusInviteRewardInviteeAmount)
+	if settings.SubNexusInviteRewardIPDailyLimit <= 0 || settings.SubNexusInviteRewardIPDailyLimit > SubNexusInviteSignupRewardIPDailyMax {
+		settings.SubNexusInviteRewardIPDailyLimit = SubNexusInviteSignupRewardIPDailyDefault
+	}
+	updates[SettingKeySubNexusInviteRewardsEnabled] = strconv.FormatBool(settings.SubNexusInviteRewardsEnabled)
+	updates[SettingKeySubNexusInviteSignupRewardInviter] = strconv.FormatFloat(settings.SubNexusInviteRewardInviterAmount, 'f', 8, 64)
+	updates[SettingKeySubNexusInviteSignupRewardInvitee] = strconv.FormatFloat(settings.SubNexusInviteRewardInviteeAmount, 'f', 8, 64)
+	updates[SettingKeySubNexusInviteSignupRewardIPLimit] = strconv.FormatBool(settings.SubNexusInviteRewardIPLimitEnabled)
+	updates[SettingKeySubNexusInviteSignupRewardIPDaily] = strconv.Itoa(settings.SubNexusInviteRewardIPDailyLimit)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)
 	if err != nil {
@@ -545,6 +558,13 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAllowUserViewErrorRequests] = strconv.FormatBool(settings.AllowUserViewErrorRequests)
 
 	return updates, nil
+}
+
+func normalizeSubNexusInviteRewardAmount(value float64) float64 {
+	if value < 0 || value > SubNexusInviteSignupRewardAmountMax || math.IsNaN(value) || math.IsInf(value, 0) {
+		return SubNexusInviteSignupRewardAmountDefault
+	}
+	return math.Round(value*1e8) / 1e8
 }
 
 func defaultAccountSchedulingThresholds() map[string]int {
@@ -788,10 +808,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	// codex_cli_only 加固策略缓存：设置更新后强制下次重载（涉及 4 个键 + JSON 解析，直接置过期）。
 	s.codexRestrictionPolicySF.Forget("codex_restriction_policy")
 	s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{expiresAt: 0})
-	if s.onUpdate != nil {
-		s.onUpdate() // Invalidate cache after settings update
-	}
-	s.notifyChannelMonitorRuntimeListeners()
+	s.NotifySettingsUpdated()
 }
 
 func (s *SettingService) defaultRewriteMessageCacheControl() bool {

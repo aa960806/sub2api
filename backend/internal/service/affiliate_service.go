@@ -116,6 +116,104 @@ type AffiliateRepository interface {
 	GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error)
 }
 
+// AffiliateSignupRewardRepository is an optional migration capability. Keeping
+// it separate preserves the upstream AffiliateRepository contract for tests and
+// alternate repository implementations while the SubNexus switch is disabled.
+type AffiliateSignupRewardRepository interface {
+	GrantSignupReward(ctx context.Context, inviterID, inviteeUserID int64, inviterAmount, inviteeAmount float64, clientIP string, ipLimitEnabled bool, ipDailyLimit int) (AffiliateSignupRewardResult, error)
+}
+
+// AffiliateSignupRewardPending is the immutable policy snapshot persisted
+// after an invite binding.  Keeping the amounts and risk-control inputs on the
+// job means a retry cannot silently pick up a later administrator change.
+type AffiliateSignupRewardPending struct {
+	InviterID      int64
+	InviteeUserID  int64
+	InviterAmount  float64
+	InviteeAmount  float64
+	ClientIP       string
+	IPLimitEnabled bool
+	IPDailyLimit   int
+}
+
+// AffiliateSignupRewardProcessResult describes one durable pending-job
+// transition.  A transient reward error is returned to the caller while the
+// repository keeps the row pending with a bounded backoff.
+type AffiliateSignupRewardProcessResult struct {
+	Applied        bool
+	Completed      bool
+	Skipped        bool
+	RetryScheduled bool
+	SkipReason     string
+	InviterID      int64
+	InviteeUserID  int64
+}
+
+// AffiliateSignupRewardReconcileResult is intentionally small and suitable
+// for scheduler logs/metrics.  AffectedUserIDs lets the service invalidate
+// balance/affiliate caches after a background grant without coupling the
+// repository to cache implementations.
+type AffiliateSignupRewardReconcileResult struct {
+	Examined        int
+	Applied         int
+	Completed       int
+	Skipped         int
+	Retried         int
+	AffectedUserIDs []int64
+}
+
+// AffiliateSignupRewardPendingRepository is an optional capability layered on
+// top of the upstream affiliate repository.  Keeping it separate preserves
+// compatibility with old tests and alternate repository implementations.
+type AffiliateSignupRewardPendingRepository interface {
+	EnqueueSignupReward(ctx context.Context, pending AffiliateSignupRewardPending) (jobID int64, inserted bool, err error)
+	ProcessSignupReward(ctx context.Context, jobID int64) (AffiliateSignupRewardProcessResult, error)
+	ReconcileSignupRewards(ctx context.Context, limit int) (AffiliateSignupRewardReconcileResult, error)
+}
+
+// AffiliateSignupRewardAtomicBinder is implemented by the production SQL
+// repository so an inviter binding and its durable signup-reward job are
+// committed together. It is optional to preserve compatibility with the
+// upstream AffiliateRepository contract and lightweight test doubles.
+type AffiliateSignupRewardAtomicBinder interface {
+	BindInviterAndEnqueueSignupReward(ctx context.Context, userID, inviterID int64, pending AffiliateSignupRewardPending) (bound bool, jobID int64, err error)
+}
+
+// AffiliateSignupRewardResult describes a registration reward attempt. A
+// skipped result is intentionally not an error: idempotent retries and risk
+// controls must never turn a successful registration into a failure.
+type AffiliateSignupRewardResult struct {
+	Applied    bool
+	Skipped    bool
+	SkipReason string
+}
+
+type affiliateSignupIPContextKey struct{}
+
+// WithAffiliateSignupIP carries the IP resolved by the HTTP boundary into the
+// registration service. Callers must pass a trusted value (normally
+// ip.GetTrustedClientIP); this helper does not parse or trust forwarding headers.
+func WithAffiliateSignupIP(ctx context.Context, clientIP string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	clientIP = strings.TrimSpace(clientIP)
+	if clientIP == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, affiliateSignupIPContextKey{}, clientIP)
+}
+
+func affiliateSignupIPFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if value, ok := ctx.Value(affiliateSignupIPContextKey{}).(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
 // AffiliateAdminFilter 列表筛选条件
 type AffiliateAdminFilter struct {
 	Search   string
@@ -301,6 +399,40 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 		return ErrAffiliateCodeInvalid
 	}
 
+	// Resolve the optional reward policy before binding. An unavailable or
+	// malformed policy preserves the upstream binding behavior, while a valid
+	// policy enables the atomic binding+enqueue path below.
+	pending, rewardReady, rewardConfigErr := s.buildSignupRewardPending(ctx, inviterSummary.UserID, userID)
+	if rewardConfigErr != nil {
+		logger.LegacyPrintf("service.affiliate", "[Affiliate] SubNexus signup reward policy unavailable: inviter_id=%d invitee_id=%d err=%v", inviterSummary.UserID, userID, rewardConfigErr)
+	}
+
+	// The production SQL repository implements this capability. Keeping the
+	// binding and durable job insert in one transaction closes the only window
+	// in which a successful binding could otherwise lose its reward job.
+	if rewardReady {
+		if atomicBinder, ok := s.repo.(AffiliateSignupRewardAtomicBinder); ok {
+			bound, jobID, err := atomicBinder.BindInviterAndEnqueueSignupReward(ctx, userID, inviterSummary.UserID, pending)
+			if err != nil {
+				return err
+			}
+			if !bound {
+				return ErrAffiliateAlreadyBound
+			}
+			if jobID > 0 {
+				// The binding and pending row are already committed together.  An
+				// immediate balance attempt is deliberately best-effort: a transient
+				// failure is persisted by ProcessSignupReward and must never turn a
+				// successful upstream registration/binding into an error.  The
+				// background scanner will retry the pending row with backoff.
+				if processErr := s.processSignupRewardJob(ctx, jobID, inviterSummary.UserID, userID); processErr != nil {
+					logger.LegacyPrintf("service.affiliate", "[Affiliate] failed to process durable SubNexus signup reward: inviter_id=%d invitee_id=%d job_id=%d err=%v", inviterSummary.UserID, userID, jobID, processErr)
+				}
+			}
+			return nil
+		}
+	}
+
 	bound, err := s.repo.BindInviter(ctx, userID, inviterSummary.UserID)
 	if err != nil {
 		return err
@@ -308,7 +440,134 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 	if !bound {
 		return ErrAffiliateAlreadyBound
 	}
+	// Alternate repositories that do not expose the atomic capability retain a
+	// compatibility path. Production always takes the atomic branch above;
+	// failures here remain non-blocking for registration.
+	if rewardReady {
+		if err := s.grantSubNexusSignupRewardAfterBind(ctx, inviterSummary.UserID, userID, pending); err != nil {
+			logger.LegacyPrintf("service.affiliate", "[Affiliate] failed to grant SubNexus signup reward: inviter_id=%d invitee_id=%d err=%v", inviterSummary.UserID, userID, err)
+		}
+	}
 	return nil
+}
+
+func (s *AffiliateService) buildSignupRewardPending(ctx context.Context, inviterID, inviteeUserID int64) (AffiliateSignupRewardPending, bool, error) {
+	var pending AffiliateSignupRewardPending
+	if s == nil || s.repo == nil || s.settingService == nil {
+		return pending, false, nil
+	}
+	config, err := s.settingService.GetSubNexusInviteSignupRewardRuntime(ctx)
+	if err != nil {
+		return pending, false, err
+	}
+	if !config.Enabled {
+		return pending, false, nil
+	}
+	if config.InviterAmount <= 0 && config.InviteeAmount <= 0 {
+		return pending, false, nil
+	}
+	clientIP := affiliateSignupIPFromContext(ctx)
+	if config.IPLimitEnabled && clientIP == "" {
+		return pending, false, nil
+	}
+	return AffiliateSignupRewardPending{
+		InviterID:      inviterID,
+		InviteeUserID:  inviteeUserID,
+		InviterAmount:  config.InviterAmount,
+		InviteeAmount:  config.InviteeAmount,
+		ClientIP:       clientIP,
+		IPLimitEnabled: config.IPLimitEnabled,
+		IPDailyLimit:   config.IPDailyLimit,
+	}, true, nil
+}
+
+func (s *AffiliateService) processSignupRewardJob(ctx context.Context, jobID, inviterID, inviteeUserID int64) error {
+	pendingRepo, ok := s.repo.(AffiliateSignupRewardPendingRepository)
+	if !ok {
+		return errors.New("affiliate signup reward pending repository capability unavailable")
+	}
+	result, processErr := pendingRepo.ProcessSignupReward(ctx, jobID)
+	if result.Applied {
+		s.invalidateAffiliateCaches(ctx, inviterID)
+		s.invalidateAffiliateCaches(ctx, inviteeUserID)
+	}
+	return processErr
+}
+
+func (s *AffiliateService) grantSubNexusSignupRewardAfterBind(ctx context.Context, inviterID, inviteeUserID int64, pending AffiliateSignupRewardPending) error {
+	if s == nil || s.repo == nil {
+		return nil
+	}
+
+	// Newer repositories persist the reward policy before attempting the
+	// balance write.  This closes the only durable-loss window in the old
+	// fire-and-forget path: a transient database failure after binding leaves a
+	// pending row which the reconciler can retry.  The capability is optional so
+	// upstream-compatible repository doubles continue to use the direct path.
+	if pendingRepo, ok := s.repo.(AffiliateSignupRewardPendingRepository); ok {
+		jobID, _, err := pendingRepo.EnqueueSignupReward(ctx, pending)
+		if err != nil {
+			return err
+		}
+		if jobID <= 0 {
+			// The repository re-checks the gate in the enqueue transaction.  A
+			// concurrent disable therefore results in a deliberate no-op.
+			return nil
+		}
+		return s.processSignupRewardJob(ctx, jobID, inviterID, inviteeUserID)
+	}
+
+	rewardRepo, ok := s.repo.(AffiliateSignupRewardRepository)
+	if !ok {
+		return errors.New("affiliate signup reward repository capability unavailable")
+	}
+	result, err := rewardRepo.GrantSignupReward(
+		ctx,
+		inviterID,
+		inviteeUserID,
+		pending.InviterAmount,
+		pending.InviteeAmount,
+		pending.ClientIP,
+		pending.IPLimitEnabled,
+		pending.IPDailyLimit,
+	)
+	if err != nil {
+		return err
+	}
+	if result.Applied {
+		s.invalidateAffiliateCaches(ctx, inviterID)
+		s.invalidateAffiliateCaches(ctx, inviteeUserID)
+	}
+	return nil
+}
+
+// ReconcileAffiliateSignupRewardsOnce processes a bounded batch of persisted
+// signup-reward jobs.  The independent rollout gate is checked before any
+// balance write; when disabled or malformed, pending rows remain untouched so
+// an operator can safely pause the feature and resume it later.
+func (s *AffiliateService) ReconcileAffiliateSignupRewardsOnce(ctx context.Context, limit int) (AffiliateSignupRewardReconcileResult, error) {
+	var result AffiliateSignupRewardReconcileResult
+	if s == nil || s.repo == nil || s.settingService == nil {
+		return result, nil
+	}
+	config, err := s.settingService.GetSubNexusInviteSignupRewardRuntime(ctx)
+	if err != nil {
+		return result, err
+	}
+	if !config.Enabled || (config.InviterAmount <= 0 && config.InviteeAmount <= 0) {
+		return result, nil
+	}
+	pendingRepo, ok := s.repo.(AffiliateSignupRewardPendingRepository)
+	if !ok {
+		return result, nil
+	}
+	result, err = pendingRepo.ReconcileSignupRewards(ctx, limit)
+	for _, userID := range result.AffectedUserIDs {
+		if userID > 0 {
+			s.invalidateAffiliateCaches(ctx, userID)
+		}
+	}
+	return result, err
 }
 
 func (s *AffiliateService) AccrueInviteRebate(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64) (float64, error) {

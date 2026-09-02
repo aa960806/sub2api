@@ -335,7 +335,7 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 			return
 		}
 		tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
-			c.Request.Context(),
+			h.affiliateSignupContext(c),
 			email,
 			username,
 			"",
@@ -588,7 +588,7 @@ func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 		return
 	}
 	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
-		c.Request.Context(),
+		h.affiliateSignupContext(c),
 		email,
 		username,
 		req.InvitationCode,

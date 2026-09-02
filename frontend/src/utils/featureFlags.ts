@@ -25,12 +25,18 @@
  *
  * ## Modes
  *
- *   - **`opt-out`** (default enabled) — menu visible when settings unloaded,
- *     hidden only when the backend explicitly sends `false`. Use for features
- *     that ship enabled by default (Channel Monitor, Payment).
- *   - **`opt-in`**  (default disabled) — menu hidden when settings unloaded,
- *     visible only when the backend explicitly sends `true`. Use for features
- *     that ship disabled (Available Channels).
+ *   - **`opt-out`** (default enabled) — once settings are loaded, a missing
+ *     field remains visible and only an explicit `false` hides it. Use for
+ *     features that ship enabled by default (Channel Monitor, Payment).
+ *   - **`opt-in`**  (default disabled) — once settings are loaded, a missing
+ *     field remains hidden and only an explicit `true` enables it. Use for
+ *     features that ship disabled (all staged SubNexus slices).
+ *
+ * Before a settings response has been successfully loaded, every flag is
+ * fail-closed. This is intentional: a stale SSR/cache value must not expose a
+ * feature while a refresh is pending or after a failed refresh. SSR injection
+ * calls `applySettings`, which marks the payload loaded before the first
+ * render, so valid injected configuration is unaffected.
  *
  * For `opt-in` flags to render immediately on refresh, the backend **must**
  * inject the field through `PublicSettingsInjectionPayload`. A drift test in
@@ -129,6 +135,66 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  inviteActivities: defineFlag({
+    key: 'subnexus_invite_activities_enabled',
+    mode: 'opt-in',
+    label: 'Invite Activities',
+  }),
+  activityCenter: defineFlag({
+    key: 'subnexus_activity_center_enabled',
+    mode: 'opt-in',
+    label: 'Activity Center',
+  }),
+  invoice: defineFlag({
+    key: 'invoice_enabled',
+    mode: 'opt-in',
+    label: 'Invoices',
+  }),
+  checkIn: defineFlag({
+    key: 'subnexus_checkin_enabled',
+    mode: 'opt-in',
+    label: 'Daily Check-in',
+  }),
+  leaderboard: defineFlag({
+    key: 'subnexus_leaderboard_enabled',
+    mode: 'opt-in',
+    label: 'Leaderboard',
+  }),
+  inviteLottery: defineFlag({
+    key: 'subnexus_invite_lottery_enabled',
+    mode: 'opt-in',
+    label: 'Invite Lottery',
+  }),
+  rechargeWheel: defineFlag({
+    key: 'subnexus_recharge_wheel_enabled',
+    mode: 'opt-in',
+    label: 'Recharge Wheel',
+  }),
+  inviteMilestone: defineFlag({
+    key: 'subnexus_invite_milestone_enabled',
+    mode: 'opt-in',
+    label: 'Invite Milestone',
+  }),
+  battlePass: defineFlag({
+    key: 'battle_pass_enabled',
+    mode: 'opt-in',
+    label: 'Battle Pass',
+  }),
+  marquee: defineFlag({
+    key: 'subnexus_marquee_enabled',
+    mode: 'opt-in',
+    label: 'Broadcast Marquee',
+  }),
+  firstRecharge: defineFlag({
+    key: 'subnexus_first_recharge_enabled',
+    mode: 'opt-in',
+    label: 'First Recharge Gift',
+  }),
+  studentRechargeBenefit: defineFlag({
+    key: 'subnexus_student_recharge_benefit_enabled',
+    mode: 'opt-in',
+    label: 'Student Recharge Benefit',
+  }),
 } as const
 
 export type RegisteredFeatureFlag = keyof typeof FeatureFlags
@@ -140,12 +206,17 @@ export type RegisteredFeatureFlag = keyof typeof FeatureFlags
  */
 export function isFeatureFlagEnabled(flag: FeatureFlagDefinition): boolean {
   const appStore = useAppStore()
+  // Never consult a cache that is not backed by a successful current load.
+  // This prevents a previously enabled value from leaking through while a
+  // refresh is pending or after the public-settings request failed.
+  if (appStore.publicSettingsLoaded !== true) return false
+
   const raw = appStore.cachedPublicSettings?.[flag.key] as
     | boolean
     | undefined
   if (typeof raw === 'boolean') return raw
-  // Settings not yet loaded → fall back to the flag's declared mode:
-  //   opt-out → visible by default, opt-in → hidden by default.
+  // A successfully loaded payload that omits a key still follows the
+  // definition's compatibility mode. Staged migration flags are opt-in.
   return flag.mode === 'opt-out'
 }
 
@@ -158,18 +229,43 @@ export function makeSidebarFlag(flag: FeatureFlagDefinition): () => boolean {
   return () => isFeatureFlagEnabled(flag)
 }
 
+/** Activity center is intentionally fail-closed when settings are missing. */
+export function isActivityCenterEnabled(): boolean {
+  return isFeatureFlagEnabled(FeatureFlags.activityCenter)
+}
+
+/** Check-in is intentionally fail-closed when settings are missing. */
+export function isCheckInEnabled(): boolean {
+  return isFeatureFlagEnabled(FeatureFlags.checkIn)
+}
+
+/** Leaderboard is intentionally fail-closed when settings are missing. */
+export function isLeaderboardEnabled(): boolean {
+  return isFeatureFlagEnabled(FeatureFlags.leaderboard)
+}
+
+/** Battle Pass is intentionally fail-closed when settings are missing. */
+export function isBattlePassEnabled(): boolean {
+  return isFeatureFlagEnabled(FeatureFlags.battlePass)
+}
+
+/** Invoice creation is opt-in; history access is handled by the invoice API. */
+export function isInvoiceEnabled(): boolean {
+  return isFeatureFlagEnabled(FeatureFlags.invoice)
+}
+
 /** True when channel monitor feature flag is enabled. */
 export function isChannelMonitorRouteEnabled(): boolean {
   return isFeatureFlagEnabled(FeatureFlags.channelMonitor)
 }
 
-export type ChannelMonitorMode = 'v1' | 'v2'
+export type ChannelMonitorMode = 'v1' | 'v2' | 'v3'
 
-/** Exclusive channel-monitor implementation. Invalid/missing → v1 (opt-in to v2). */
+/** Exclusive channel-monitor implementation. Invalid/missing -> v1 (opt-in to v2/v3). */
 export function getChannelMonitorMode(): ChannelMonitorMode {
   const appStore = useAppStore()
   const mode = appStore.cachedPublicSettings?.channel_monitor_mode
-  return mode === 'v2' ? 'v2' : 'v1'
+  return mode === 'v2' || mode === 'v3' ? mode : 'v1'
 }
 
 export function isChannelMonitorV1Mode(): boolean {
@@ -178,6 +274,10 @@ export function isChannelMonitorV1Mode(): boolean {
 
 export function isChannelMonitorV2Mode(): boolean {
   return isChannelMonitorRouteEnabled() && getChannelMonitorMode() === 'v2'
+}
+
+export function isChannelMonitorV3Mode(): boolean {
+  return isChannelMonitorRouteEnabled() && getChannelMonitorMode() === 'v3'
 }
 
 export function getChannelMonitorRefreshIntervalSeconds(): number {

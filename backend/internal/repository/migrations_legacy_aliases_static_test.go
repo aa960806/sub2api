@@ -16,7 +16,7 @@ import (
 // inspect the legacy checkout: production adoption is based on the recorded
 // legacy filename/checksum, while this test protects the target-side contract.
 func TestLegacyMigrationAliasesStaticContract(t *testing.T) {
-	const expectedAliasCount = 25
+	const expectedAliasCount = 27
 
 	require.Len(t, legacyMigrationAliases, expectedAliasCount)
 

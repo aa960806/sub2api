@@ -191,7 +191,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	_, user, err := h.authService.RegisterWithVerification(
-		c.Request.Context(),
+		h.affiliateSignupContext(c),
 		req.Email,
 		req.Password,
 		req.VerifyCode,
@@ -205,6 +205,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	h.respondWithTokenPair(c, user)
+}
+
+func (h *AuthHandler) affiliateSignupContext(c *gin.Context) context.Context {
+	if c == nil || c.Request == nil {
+		return context.Background()
+	}
+	return service.WithAffiliateSignupIP(c.Request.Context(), ip.GetTrustedClientIP(c))
 }
 
 // SendVerifyCode 发送邮箱验证码

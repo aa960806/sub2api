@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -24,6 +25,8 @@ import (
 type UpdateSettingsRequest struct {
 	// 注册设置
 	RegistrationEnabled                 bool                         `json:"registration_enabled"`
+	RegistrationIPCooldownEnabled       *bool                        `json:"registration_ip_cooldown_enabled"`
+	RegistrationIPCooldownSeconds       *int                         `json:"registration_ip_cooldown_seconds"`
 	EmailVerifyEnabled                  bool                         `json:"email_verify_enabled"`
 	RegistrationEmailSuffixWhitelist    []string                     `json:"registration_email_suffix_whitelist"`
 	RegistrationEmailDomainQuotaEnabled *bool                        `json:"registration_email_domain_quota_enabled"` // 非白名单域名限量注册开关（省略=保持现值）
@@ -153,12 +156,17 @@ type UpdateSettingsRequest struct {
 	GoogleOAuthFrontendRedirectURL string `json:"google_oauth_frontend_redirect_url"`
 
 	// OEM设置
-	SiteName                    string                `json:"site_name"`
-	SiteLogo                    string                `json:"site_logo"`
-	SiteSubtitle                string                `json:"site_subtitle"`
-	APIBaseURL                  string                `json:"api_base_url"`
-	ContactInfo                 string                `json:"contact_info"`
-	DocURL                      string                `json:"doc_url"`
+	SiteName     string `json:"site_name"`
+	SiteLogo     string `json:"site_logo"`
+	SiteSubtitle string `json:"site_subtitle"`
+	APIBaseURL   string `json:"api_base_url"`
+	ContactInfo  string `json:"contact_info"`
+	DocURL       string `json:"doc_url"`
+	// SubNexus site extensions are optional pointers so older clients that do
+	// not know these fields retain the stored value during a whole-document PUT.
+	DefaultLanguage             *string               `json:"default_language"`
+	CustomerSupportEnabled      *bool                 `json:"customer_support_enabled"`
+	CustomerSupportContent      *string               `json:"customer_support_content"`
 	HomeContent                 string                `json:"home_content"`
 	CompactHomeEnabled          bool                  `json:"compact_home_enabled"`
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
@@ -177,6 +185,11 @@ type UpdateSettingsRequest struct {
 	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
 	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
+	SubNexusInviteRewardsEnabled              *bool                             `json:"subnexus_invite_rewards_enabled"`
+	SubNexusInviteRewardInviterAmount         *float64                          `json:"subnexus_invite_reward_inviter_amount"`
+	SubNexusInviteRewardInviteeAmount         *float64                          `json:"subnexus_invite_reward_invitee_amount"`
+	SubNexusInviteRewardIPLimitEnabled        *bool                             `json:"subnexus_invite_reward_ip_limit_enabled"`
+	SubNexusInviteRewardIPDailyLimit          *int                              `json:"subnexus_invite_reward_ip_daily_limit"`
 	DefaultUserRPMLimit                       int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                      []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance             *float64                          `json:"auth_source_default_email_balance"`
@@ -522,6 +535,32 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.RegistrationEmailDomainQuotaEnabled != nil {
 		registrationEmailDomainQuotaEnabled = *req.RegistrationEmailDomainQuotaEnabled
 	}
+	registrationIPCooldownEnabled := previousSettings.RegistrationIPCooldownEnabled
+	if req.RegistrationIPCooldownEnabled != nil {
+		registrationIPCooldownEnabled = *req.RegistrationIPCooldownEnabled
+	}
+	registrationIPCooldownSeconds := previousSettings.RegistrationIPCooldownSeconds
+	if req.RegistrationIPCooldownSeconds != nil {
+		registrationIPCooldownSeconds = *req.RegistrationIPCooldownSeconds
+	}
+	if registrationIPCooldownSeconds <= 0 {
+		registrationIPCooldownSeconds = service.RegistrationIPCooldownSecondsDefault
+	}
+	if registrationIPCooldownSeconds > service.RegistrationIPCooldownSecondsMax {
+		registrationIPCooldownSeconds = service.RegistrationIPCooldownSecondsMax
+	}
+	defaultLanguage := previousSettings.DefaultLanguage
+	if req.DefaultLanguage != nil {
+		defaultLanguage = service.NormalizeSubNexusDefaultLanguage(*req.DefaultLanguage)
+	}
+	customerSupportEnabled := previousSettings.CustomerSupportEnabled
+	if req.CustomerSupportEnabled != nil {
+		customerSupportEnabled = *req.CustomerSupportEnabled
+	}
+	customerSupportContent := previousSettings.CustomerSupportContent
+	if req.CustomerSupportContent != nil {
+		customerSupportContent = *req.CustomerSupportContent
+	}
 	if passkeyEnabled {
 		configured, _, _ := h.settingService.PasskeyConfiguration()
 		if !configured {
@@ -598,6 +637,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	adminRechargeRebateEnabled := previousSettings.AdminRechargeRebateEnabled
 	if req.AdminRechargeRebateEnabled != nil {
 		adminRechargeRebateEnabled = *req.AdminRechargeRebateEnabled
+	}
+	subNexusInviteRewardInviterAmount := previousSettings.SubNexusInviteRewardInviterAmount
+	if req.SubNexusInviteRewardInviterAmount != nil {
+		subNexusInviteRewardInviterAmount = *req.SubNexusInviteRewardInviterAmount
+	}
+	if math.IsNaN(subNexusInviteRewardInviterAmount) || math.IsInf(subNexusInviteRewardInviterAmount, 0) || subNexusInviteRewardInviterAmount < 0 || subNexusInviteRewardInviterAmount > service.SubNexusInviteSignupRewardAmountMax {
+		response.BadRequest(c, "subnexus_invite_reward_inviter_amount must be a finite value within the supported range")
+		return
+	}
+	subNexusInviteRewardInviteeAmount := previousSettings.SubNexusInviteRewardInviteeAmount
+	if req.SubNexusInviteRewardInviteeAmount != nil {
+		subNexusInviteRewardInviteeAmount = *req.SubNexusInviteRewardInviteeAmount
+	}
+	if math.IsNaN(subNexusInviteRewardInviteeAmount) || math.IsInf(subNexusInviteRewardInviteeAmount, 0) || subNexusInviteRewardInviteeAmount < 0 || subNexusInviteRewardInviteeAmount > service.SubNexusInviteSignupRewardAmountMax {
+		response.BadRequest(c, "subnexus_invite_reward_invitee_amount must be a finite value within the supported range")
+		return
+	}
+	subNexusInviteRewardIPDailyLimit := previousSettings.SubNexusInviteRewardIPDailyLimit
+	if req.SubNexusInviteRewardIPDailyLimit != nil {
+		subNexusInviteRewardIPDailyLimit = *req.SubNexusInviteRewardIPDailyLimit
+	}
+	if subNexusInviteRewardIPDailyLimit <= 0 || subNexusInviteRewardIPDailyLimit > service.SubNexusInviteSignupRewardIPDailyMax {
+		response.BadRequest(c, "subnexus_invite_reward_ip_daily_limit is outside the supported range")
+		return
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1500,6 +1563,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AccountSchedulingThresholds: req.AccountSchedulingThresholds,
 
 		RegistrationEnabled:                 req.RegistrationEnabled,
+		RegistrationIPCooldownEnabled:       registrationIPCooldownEnabled,
+		RegistrationIPCooldownSeconds:       registrationIPCooldownSeconds,
 		EmailVerifyEnabled:                  req.EmailVerifyEnabled,
 		RegistrationEmailSuffixWhitelist:    req.RegistrationEmailSuffixWhitelist,
 		RegistrationEmailDomainQuotaEnabled: registrationEmailDomainQuotaEnabled,
@@ -1619,6 +1684,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		APIBaseURL:                             req.APIBaseURL,
 		ContactInfo:                            req.ContactInfo,
 		DocURL:                                 req.DocURL,
+		DefaultLanguage:                        defaultLanguage,
+		CustomerSupportEnabled:                 customerSupportEnabled,
+		CustomerSupportContent:                 customerSupportContent,
 		HomeContent:                            req.HomeContent,
 		CompactHomeEnabled:                     req.CompactHomeEnabled,
 		HideCcsImportButton:                    req.HideCcsImportButton,
@@ -1635,19 +1703,34 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:             adminRechargeRebateEnabled,
-		DefaultUserRPMLimit:                    req.DefaultUserRPMLimit,
-		DefaultSubscriptions:                   defaultSubscriptions,
-		EnableModelFallback:                    req.EnableModelFallback,
-		FallbackModelAnthropic:                 req.FallbackModelAnthropic,
-		FallbackModelOpenAI:                    req.FallbackModelOpenAI,
-		FallbackModelGemini:                    req.FallbackModelGemini,
-		FallbackModelAntigravity:               req.FallbackModelAntigravity,
-		EnableIdentityPatch:                    req.EnableIdentityPatch,
-		IdentityPatchPrompt:                    req.IdentityPatchPrompt,
-		MinClaudeCodeVersion:                   req.MinClaudeCodeVersion,
-		MaxClaudeCodeVersion:                   req.MaxClaudeCodeVersion,
-		AllowUngroupedKeyScheduling:            req.AllowUngroupedKeyScheduling,
-		BackendModeEnabled:                     req.BackendModeEnabled,
+		SubNexusInviteRewardsEnabled: func() bool {
+			if req.SubNexusInviteRewardsEnabled != nil {
+				return *req.SubNexusInviteRewardsEnabled
+			}
+			return previousSettings.SubNexusInviteRewardsEnabled
+		}(),
+		SubNexusInviteRewardInviterAmount: subNexusInviteRewardInviterAmount,
+		SubNexusInviteRewardInviteeAmount: subNexusInviteRewardInviteeAmount,
+		SubNexusInviteRewardIPLimitEnabled: func() bool {
+			if req.SubNexusInviteRewardIPLimitEnabled != nil {
+				return *req.SubNexusInviteRewardIPLimitEnabled
+			}
+			return previousSettings.SubNexusInviteRewardIPLimitEnabled
+		}(),
+		SubNexusInviteRewardIPDailyLimit: subNexusInviteRewardIPDailyLimit,
+		DefaultUserRPMLimit:              req.DefaultUserRPMLimit,
+		DefaultSubscriptions:             defaultSubscriptions,
+		EnableModelFallback:              req.EnableModelFallback,
+		FallbackModelAnthropic:           req.FallbackModelAnthropic,
+		FallbackModelOpenAI:              req.FallbackModelOpenAI,
+		FallbackModelGemini:              req.FallbackModelGemini,
+		FallbackModelAntigravity:         req.FallbackModelAntigravity,
+		EnableIdentityPatch:              req.EnableIdentityPatch,
+		IdentityPatchPrompt:              req.IdentityPatchPrompt,
+		MinClaudeCodeVersion:             req.MinClaudeCodeVersion,
+		MaxClaudeCodeVersion:             req.MaxClaudeCodeVersion,
+		AllowUngroupedKeyScheduling:      req.AllowUngroupedKeyScheduling,
+		BackendModeEnabled:               req.BackendModeEnabled,
 		AllowUserViewErrorRequests: func() bool {
 			if req.AllowUserViewErrorRequests != nil {
 				return *req.AllowUserViewErrorRequests
@@ -2129,6 +2212,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                                    updatedSettings.RegistrationEnabled,
+		RegistrationIPCooldownEnabled:                          updatedSettings.RegistrationIPCooldownEnabled,
+		RegistrationIPCooldownSeconds:                          updatedSettings.RegistrationIPCooldownSeconds,
 		EmailVerifyEnabled:                                     updatedSettings.EmailVerifyEnabled,
 		RegistrationEmailSuffixWhitelist:                       updatedSettings.RegistrationEmailSuffixWhitelist,
 		RegistrationEmailDomainQuotaEnabled:                    updatedSettings.RegistrationEmailDomainQuotaEnabled,
@@ -2247,6 +2332,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		APIBaseURL:                                             updatedSettings.APIBaseURL,
 		ContactInfo:                                            updatedSettings.ContactInfo,
 		DocURL:                                                 updatedSettings.DocURL,
+		DefaultLanguage:                                        updatedSettings.DefaultLanguage,
+		CustomerSupportEnabled:                                 updatedSettings.CustomerSupportEnabled,
+		CustomerSupportContent:                                 updatedSettings.CustomerSupportContent,
 		HomeContent:                                            updatedSettings.HomeContent,
 		CompactHomeEnabled:                                     updatedSettings.CompactHomeEnabled,
 		HideCcsImportButton:                                    updatedSettings.HideCcsImportButton,
@@ -2263,6 +2351,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:                            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
+		SubNexusInviteRewardsEnabled:                           updatedSettings.SubNexusInviteRewardsEnabled,
+		SubNexusInviteRewardInviterAmount:                      updatedSettings.SubNexusInviteRewardInviterAmount,
+		SubNexusInviteRewardInviteeAmount:                      updatedSettings.SubNexusInviteRewardInviteeAmount,
+		SubNexusInviteRewardIPLimitEnabled:                     updatedSettings.SubNexusInviteRewardIPLimitEnabled,
+		SubNexusInviteRewardIPDailyLimit:                       updatedSettings.SubNexusInviteRewardIPDailyLimit,
 		DefaultUserRPMLimit:                                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   updatedDefaultSubscriptions,
 		EnableModelFallback:                                    updatedSettings.EnableModelFallback,

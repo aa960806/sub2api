@@ -33,6 +33,10 @@ const (
 	NotificationEmailEventCyberPolicyNotice           = "content_moderation.cyber_policy_notice"
 	NotificationEmailEventOpsAlert                    = "ops.alert"
 	NotificationEmailEventOpsScheduledReport          = "ops.scheduled_report"
+	NotificationEmailEventInvoiceSubmittedUser        = "invoice.application_submitted_user"
+	NotificationEmailEventInvoiceSubmittedAdmin       = "invoice.application_submitted_admin"
+	NotificationEmailEventInvoiceRejected             = "invoice.application_rejected"
+	NotificationEmailEventInvoiceIssued               = "invoice.issued"
 
 	notificationEmailTemplateKeyPrefix    = "notification_email_template:"
 	notificationEmailPreferenceKeyPrefix  = "notification_email_preference:"
@@ -1034,6 +1038,10 @@ var notificationEmailEventOrder = []string{
 	NotificationEmailEventCyberPolicyNotice,
 	NotificationEmailEventOpsAlert,
 	NotificationEmailEventOpsScheduledReport,
+	NotificationEmailEventInvoiceSubmittedUser,
+	NotificationEmailEventInvoiceSubmittedAdmin,
+	NotificationEmailEventInvoiceRejected,
+	NotificationEmailEventInvoiceIssued,
 }
 
 var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
@@ -1151,6 +1159,34 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 			),
 			append(append([]string{}, notificationEmailOpsSummaryPlaceholders...), "report_detail_display", "report_html")...,
 		),
+	},
+	NotificationEmailEventInvoiceSubmittedUser: {
+		Event:       NotificationEmailEventInvoiceSubmittedUser,
+		Label:       "Invoice application submitted",
+		Description: "Sent to a user after an invoice application is received.",
+		Category:    "billing", Optional: false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "invoice_request_no", "invoice_amount", "invoice_order_count", "invoice_title", "invoice_url"),
+	},
+	NotificationEmailEventInvoiceSubmittedAdmin: {
+		Event:       NotificationEmailEventInvoiceSubmittedAdmin,
+		Label:       "New invoice application",
+		Description: "Sent to configured administrators when an invoice application is received.",
+		Category:    "billing", Optional: false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "invoice_request_no", "invoice_amount", "invoice_order_count", "invoice_title", "invoice_url"),
+	},
+	NotificationEmailEventInvoiceRejected: {
+		Event:       NotificationEmailEventInvoiceRejected,
+		Label:       "Invoice application rejected",
+		Description: "Sent to a user when an invoice application needs correction.",
+		Category:    "billing", Optional: false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "invoice_request_no", "invoice_amount", "invoice_reject_reason", "invoice_url"),
+	},
+	NotificationEmailEventInvoiceIssued: {
+		Event:       NotificationEmailEventInvoiceIssued,
+		Label:       "Invoice issued",
+		Description: "Sent to a user when an invoice file is ready.",
+		Category:    "billing", Optional: false,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "invoice_request_no", "invoice_amount", "invoice_date", "invoice_url"),
 	},
 }
 
@@ -1434,6 +1470,46 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
 		notificationEmailLocaleChinese: {
 			Subject: "[运维报表] {{report_name}}",
 			HTML:    notificationEmailOpsScheduledReportTemplate(notificationEmailLocaleChinese),
+		},
+	},
+	NotificationEmailEventInvoiceSubmittedUser: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Invoice application received",
+			HTML:    notificationEmailCard("#0f766e", "Invoice application received", `<p>Hello {{recipient_name}},</p><p>Your invoice application <strong>{{invoice_request_no}}</strong> was received.</p><p>Amount: {{invoice_amount}}<br>Orders: {{invoice_order_count}}<br>Title: {{invoice_title}}</p><p><a class="button" href="{{invoice_url}}">View invoice history</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 已收到发票申请",
+			HTML:    notificationEmailCard("#0f766e", "已收到发票申请", `<p>{{recipient_name}}，您好：</p><p>您的发票申请 <strong>{{invoice_request_no}}</strong> 已收到。</p><p>金额：{{invoice_amount}}<br>订单数：{{invoice_order_count}}<br>抬头：{{invoice_title}}</p><p><a class="button" href="{{invoice_url}}">查看发票记录</a></p>`),
+		},
+	},
+	NotificationEmailEventInvoiceSubmittedAdmin: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] New invoice application {{invoice_request_no}}",
+			HTML:    notificationEmailCard("#0f766e", "New invoice application", `<p>A new invoice application requires review.</p><p>Request: {{invoice_request_no}}<br>Amount: {{invoice_amount}}<br>Orders: {{invoice_order_count}}<br>Title: {{invoice_title}}</p><p><a class="button" href="{{invoice_url}}">Open invoice console</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 新发票申请 {{invoice_request_no}}",
+			HTML:    notificationEmailCard("#0f766e", "新发票申请", `<p>有一笔发票申请等待处理。</p><p>申请单：{{invoice_request_no}}<br>金额：{{invoice_amount}}<br>订单数：{{invoice_order_count}}<br>抬头：{{invoice_title}}</p><p><a class="button" href="{{invoice_url}}">打开发票管理</a></p>`),
+		},
+	},
+	NotificationEmailEventInvoiceRejected: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Invoice application needs correction",
+			HTML:    notificationEmailCard("#b45309", "Invoice application needs correction", `<p>Hello {{recipient_name}},</p><p>Application {{invoice_request_no}} needs correction.</p><p>Reason: {{invoice_reject_reason}}</p><p><a class="button" href="{{invoice_url}}">Review and resubmit</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 发票申请需要修改",
+			HTML:    notificationEmailCard("#b45309", "发票申请需要修改", `<p>{{recipient_name}}，您好：</p><p>申请单 {{invoice_request_no}} 需要修改。</p><p>原因：{{invoice_reject_reason}}</p><p><a class="button" href="{{invoice_url}}">查看并重新提交</a></p>`),
+		},
+	},
+	NotificationEmailEventInvoiceIssued: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Invoice {{invoice_request_no}} is ready",
+			HTML:    notificationEmailCard("#15803d", "Invoice ready", `<p>Hello {{recipient_name}},</p><p>Your invoice {{invoice_request_no}} is ready to download.</p><p>Amount: {{invoice_amount}}<br>Invoice date: {{invoice_date}}</p><p><a class="button" href="{{invoice_url}}">Download invoice</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 发票 {{invoice_request_no}} 已开具",
+			HTML:    notificationEmailCard("#15803d", "发票已开具", `<p>{{recipient_name}}，您好：</p><p>您的发票 {{invoice_request_no}} 已准备好下载。</p><p>金额：{{invoice_amount}}<br>开票日期：{{invoice_date}}</p><p><a class="button" href="{{invoice_url}}">下载发票</a></p>`),
 		},
 	},
 }

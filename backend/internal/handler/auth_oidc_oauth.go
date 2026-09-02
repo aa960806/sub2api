@@ -691,7 +691,7 @@ func (h *AuthHandler) CompleteOIDCOAuthRegistration(c *gin.Context) {
 		return
 	}
 	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
-		c.Request.Context(),
+		h.affiliateSignupContext(c),
 		email,
 		username,
 		req.InvitationCode,
@@ -1236,7 +1236,7 @@ func (h *AuthHandler) tryOIDCVerifiedEmailFastPath(
 	if h == nil || h.authService == nil || h.settingSvc == nil {
 		return false
 	}
-	ctx := c.Request.Context()
+	ctx := h.affiliateSignupContext(c)
 	if h.isForceEmailOnThirdPartySignup(ctx) {
 		return false
 	}

@@ -117,6 +117,10 @@ func provideCleanup(
 	grokOAuth *service.GrokOAuthService,
 	openAIGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
+	battlePassScanner *service.BattlePassScanner,
+	leaderboardRewardScheduler *service.LeaderboardRewardScheduler,
+	affiliateSignupRewardScanner *service.AffiliateSignupRewardScanner,
+	studentRechargeBenefitScheduler *service.StudentRechargeBenefitScheduler,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
@@ -335,6 +339,30 @@ func provideCleanup(
 			{"ScheduledTestRunnerService", func() error {
 				if scheduledTestRunner != nil {
 					scheduledTestRunner.Stop()
+				}
+				return nil
+			}},
+			{"BattlePassScanner", func() error {
+				if battlePassScanner != nil {
+					battlePassScanner.Stop()
+				}
+				return nil
+			}},
+			{"LeaderboardRewardScheduler", func() error {
+				if leaderboardRewardScheduler != nil {
+					leaderboardRewardScheduler.Stop()
+				}
+				return nil
+			}},
+			{"AffiliateSignupRewardScanner", func() error {
+				if affiliateSignupRewardScanner != nil {
+					affiliateSignupRewardScanner.Stop()
+				}
+				return nil
+			}},
+			{"StudentRechargeBenefitScheduler", func() error {
+				if studentRechargeBenefitScheduler != nil {
+					studentRechargeBenefitScheduler.Stop()
 				}
 				return nil
 			}},

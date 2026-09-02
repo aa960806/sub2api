@@ -129,4 +129,13 @@ var legacyMigrationAliases = map[string]legacyMigrationAlias{
 		legacyChecksum: "ef297c957b0d8813e552272adce6ed4cf72a1177a8c40cccc1a9e7fd39d52d14",
 		replayPrelude:  "SET LOCAL search_path = public; ALTER TABLE public.channel_monitors DROP CONSTRAINT IF EXISTS channel_monitors_check_mode_check",
 	},
+	"9008_subnexus_student_recharge_benefit.sql": {
+		legacyFilename: "199_student_recharge_benefit.sql",
+		checksum:       "f7e2caaf7d0587a5e40cc0f9938166797145fbd6538499355b635ea9ed3e6d24",
+		legacyChecksum: "1c4e5619db73455158e76330825475fcca0188e7f3bbfab39e1afd05969eeb90",
+	},
+	"9010_subnexus_registration_ip_cooldown.sql": {
+		legacyFilename: "159_registration_ip_cooldown.sql",
+		checksum:       "d84e20270be20d7fe06175c480dea2b99f905b56079a0670ca6f757dfb429683",
+	},
 }

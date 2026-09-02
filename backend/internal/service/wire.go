@@ -785,6 +785,98 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
+// ProvideActivityCenterService connects the feature-specific settings write to
+// the shared SettingService invalidation contract.  The activity center keeps
+// its repository and compatibility writes isolated, while embedded frontend
+// HTML still refreshes immediately after an administrator toggles the flag.
+func ProvideActivityCenterService(
+	activityCenterRepository ActivityCenterRepository,
+	settingRepository SettingRepository,
+	settingService *SettingService,
+) *ActivityCenterService {
+	svc := NewActivityCenterService(activityCenterRepository, settingRepository)
+	if settingService != nil {
+		svc.SetSettingsUpdatedNotifier(settingService.NotifySettingsUpdated)
+	}
+	return svc
+}
+
+// ProvideMarqueeService keeps marquee cache invalidation connected to public
+// settings while its SQL repository remains behind the independent opt-in gate.
+func ProvideMarqueeService(
+	marqueeRepository MarqueeRepository,
+	settingRepository SettingRepository,
+	settingService *SettingService,
+) *MarqueeService {
+	svc := NewMarqueeService(marqueeRepository, settingRepository)
+	if settingService != nil {
+		svc.SetSettingsUpdatedNotifier(settingService.NotifySettingsUpdated)
+	}
+	return svc
+}
+
+// ProvideCheckInService wires the production SQL path.  Keeping this as a
+// named provider is important: the lightweight constructor remains useful in
+// unit tests, but production must receive the transaction database and cache
+// invalidators so rewards cannot bypass payment/freeze rules or stale caches.
+func ProvideCheckInService(
+	checkInRepository CheckInRepository,
+	settingRepository SettingRepository,
+	db *sql.DB,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	billingCacheService *BillingCacheService,
+	settingService *SettingService,
+) *CheckInService {
+	return NewCheckInServiceWithDependencies(
+		checkInRepository,
+		settingRepository,
+		db,
+		authCacheInvalidator,
+		billingCacheService,
+		settingService,
+	)
+}
+
+// ProvideLeaderboardService wires the leaderboard aggregate and its optional
+// transactional reward dependencies. The service remains independently
+// disabled until subnexus_leaderboard_enabled is the literal "true".
+func ProvideLeaderboardService(
+	leaderboardRepository LeaderboardRepository,
+	settingRepository SettingRepository,
+	db *sql.DB,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	billingCacheService *BillingCacheService,
+	settingService *SettingService,
+) *LeaderboardService {
+	return NewLeaderboardServiceWithDependencies(
+		leaderboardRepository,
+		settingRepository,
+		db,
+		authCacheInvalidator,
+		billingCacheService,
+		settingService,
+	)
+}
+
+// ProvideStudentRechargeBenefitService wires the isolated student identity
+// and bonus ledger. The service is intentionally independent from the generic
+// activity services; a nil/missing setting keeps the feature fail-closed.
+func ProvideStudentRechargeBenefitService(
+	db *sql.DB,
+	settingRepository SettingRepository,
+	paymentConfigService *PaymentConfigService,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	billingCacheService *BillingCacheService,
+) *StudentRechargeBenefitService {
+	return NewStudentRechargeBenefitService(
+		db,
+		settingRepository,
+		paymentConfigService,
+		authCacheInvalidator,
+		billingCacheService,
+	)
+}
+
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
 func ProvideBillingCacheService(
 	cache BillingCache,
@@ -838,6 +930,16 @@ var ProviderSet = wire.NewSet(
 	NewBillingService,
 	ProvideBillingCacheService,
 	NewAnnouncementService,
+	ProvideActivityCenterService,
+	ProvideMarqueeService,
+	ProvideCheckInService,
+	ProvideLeaderboardService,
+	ProvideLeaderboardRewardScheduler,
+	ProvideInviteActivitiesService,
+	ProvideBattlePassService,
+	ProvideBattlePassScanner,
+	ProvideStudentRechargeBenefitService,
+	ProvideStudentRechargeBenefitScheduler,
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
@@ -891,6 +993,12 @@ var ProviderSet = wire.NewSet(
 	ProvideOpsScheduledReportService,
 	NewEmailService,
 	NewNotificationEmailService,
+	NewInvoiceFileStore,
+	wire.Bind(new(InvoiceStorageReadiness), new(*InvoiceFileStore)),
+	NewInvoiceConfigService,
+	NewInvoiceEmailService,
+	wire.Bind(new(InvoiceEmailNotifier), new(*InvoiceEmailService)),
+	NewInvoiceService,
 	ProvideEmailQueueService,
 	NewTurnstileService,
 	NewTencentCaptchaService,
@@ -935,6 +1043,7 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaService,
 	NewContentModerationService,
 	NewAffiliateService,
+	ProvideAffiliateSignupRewardScanner,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
@@ -969,9 +1078,13 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, studentBenefitService *StudentRechargeBenefitService) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetStudentRechargeBenefitService(studentBenefitService)
+	if studentBenefitService != nil {
+		studentBenefitService.SetStudentRechargeBenefitPaymentConfigService(configService)
+	}
 	return svc
 }
 

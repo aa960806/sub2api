@@ -6,6 +6,7 @@ const isV1 = vi.fn(() => false)
 
 vi.mock('@/utils/featureFlags', () => ({
   isChannelMonitorV1Mode: () => isV1(),
+  isChannelMonitorV3Mode: () => false,
 }))
 
 vi.mock('../ChannelStatusV1View.vue', () => ({

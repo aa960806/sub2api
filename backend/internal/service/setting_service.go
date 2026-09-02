@@ -377,6 +377,21 @@ func (s *SettingService) SetOnUpdateCallback(callback func()) {
 	s.onUpdate = callback
 }
 
+// NotifySettingsUpdated informs process-level consumers that settings have
+// changed outside UpdateSettings (for example, a feature-specific service that
+// persists a small, independent setting set).  Keeping the notification in
+// SettingService ensures embedded HTML and other runtime listeners observe the
+// same invalidation contract as regular system-settings writes.
+func (s *SettingService) NotifySettingsUpdated() {
+	if s == nil {
+		return
+	}
+	if s.onUpdate != nil {
+		s.onUpdate()
+	}
+	s.notifyChannelMonitorRuntimeListeners()
+}
+
 // SubscribeChannelMonitorRuntime registers a listener that is invoked after
 // settings are successfully persisted (and process caches refreshed).
 // Used by ChannelMonitorRunner / ChannelMonitorV2Aggregator for immediate

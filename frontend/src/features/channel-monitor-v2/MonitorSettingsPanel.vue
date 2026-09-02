@@ -267,7 +267,7 @@ import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import { getChannelMonitorMode, isChannelMonitorV2Mode } from '@/utils/featureFlags'
+import { getChannelMonitorMode, isChannelMonitorV2Mode, isChannelMonitorV3Mode } from '@/utils/featureFlags'
 import {
   getConfig,
   updateConfig,
@@ -293,15 +293,17 @@ const errorCategories = MONITOR_ERROR_CATEGORIES
 const countedErrorCategoryCount = computed(
   () => errorCategories.length - (draft.value?.ignored_error_categories?.length || 0)
 )
-/** System settings mode must be v2 for aggregation to run; config remains editable for prep. */
-const systemModeV2 = computed(() => isChannelMonitorV2Mode())
+/** V2 aggregation also powers V3; config remains editable for preparation. */
+const systemModeV2 = computed(() => isChannelMonitorV2Mode() || isChannelMonitorV3Mode())
 const systemModeLabel = computed(() => {
   if (!appStore.cachedPublicSettings?.channel_monitor_enabled) {
     return t('channelMonitorV2.settings.modeClosed')
   }
   return getChannelMonitorMode() === 'v1'
     ? t('channelMonitorV2.settings.modeV1')
-    : t('channelMonitorV2.settings.modeV2')
+    : getChannelMonitorMode() === 'v3'
+      ? t('channelMonitorV2.settings.modeV3')
+      : t('channelMonitorV2.settings.modeV2')
 })
 const defaultThresholds = {
   minimum_sample: 50,

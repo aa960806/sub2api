@@ -1766,8 +1766,9 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
+	baseCtx := h.affiliateSignupContext(c)
 	tokenPair, user, err := h.authService.RegisterOAuthEmailAccount(
-		c.Request.Context(),
+		baseCtx,
 		email,
 		req.Password,
 		strings.TrimSpace(req.VerifyCode),
@@ -1821,7 +1822,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
-	tx, err := client.Tx(c.Request.Context())
+	tx, err := client.Tx(baseCtx)
 	if err != nil {
 		if rollbackCreatedUser(err) {
 			return
@@ -1830,7 +1831,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
-	txCtx := dbent.NewTxContext(c.Request.Context(), tx)
+	txCtx := dbent.NewTxContext(baseCtx, tx)
 
 	if err := applyPendingOAuthBinding(txCtx, client, h.authService, h.userService, session, decision, &user.ID, true, false); err != nil {
 		_ = tx.Rollback()

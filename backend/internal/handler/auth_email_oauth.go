@@ -187,7 +187,7 @@ func (h *AuthHandler) emailOAuthCallbackWithProfile(
 	}
 
 	tokenPair, user, err := h.authService.LoginOrRegisterVerifiedEmailOAuthWithSignupCodes(
-		c.Request.Context(),
+		h.affiliateSignupContext(c),
 		input,
 		"",
 		affiliateCode,
@@ -372,8 +372,9 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		affiliateCode = pendingSessionStringValue(session.UpstreamIdentityClaims, "aff_code")
 	}
 
+	baseCtx := h.affiliateSignupContext(c)
 	tokenPair, user, err := h.authService.RegisterVerifiedOAuthEmailAccount(
-		c.Request.Context(),
+		baseCtx,
 		strings.TrimSpace(session.ResolvedEmail),
 		req.Password,
 		strings.TrimSpace(req.InvitationCode),
@@ -383,19 +384,45 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		response.ErrorFrom(c, err)
 		return
 	}
+	rollbackCreatedUser := func(originalErr error) bool {
+		rollbackErr := h.authService.RollbackOAuthEmailAccountCreation(
+			c.Request.Context(),
+			user.ID,
+			strings.TrimSpace(req.InvitationCode),
+		)
+		if rollbackErr == nil {
+			return false
+		}
+		response.ErrorFrom(c, infraerrors.InternalServer(
+			"PENDING_AUTH_ACCOUNT_ROLLBACK_FAILED",
+			"failed to rollback pending oauth account creation",
+		).WithCause(errors.Join(originalErr, rollbackErr)))
+		return true
+	}
 
 	client := h.entClient()
 	if client == nil {
-		response.ErrorFrom(c, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready"))
+		// The account was created before the pending-session transaction was
+		// opened. Roll it back (including its IP cooldown reservation) if the
+		// database client is unavailable at this boundary.
+		originalErr := infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
+		if rollbackCreatedUser(originalErr) {
+			return
+		}
+		response.ErrorFrom(c, originalErr)
 		return
 	}
-	tx, err := client.Tx(c.Request.Context())
+	tx, err := client.Tx(baseCtx)
 	if err != nil {
-		response.ErrorFrom(c, infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to consume pending oauth session").WithCause(err))
+		originalErr := infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to consume pending oauth session").WithCause(err)
+		if rollbackCreatedUser(originalErr) {
+			return
+		}
+		response.ErrorFrom(c, originalErr)
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
-	txCtx := dbent.NewTxContext(c.Request.Context(), tx)
+	txCtx := dbent.NewTxContext(baseCtx, tx)
 	sessionForBinding := *session
 	sessionForBinding.UpstreamIdentityClaims = clonePendingMap(session.UpstreamIdentityClaims)
 	if strings.TrimSpace(req.InvitationCode) != "" {
@@ -404,13 +431,17 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 	decision, err := h.ensurePendingOAuthAdoptionDecision(c, session.ID, oauthAdoptionDecisionRequest{})
 	if err != nil {
 		_ = tx.Rollback()
-		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
+		if rollbackCreatedUser(err) {
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
 	if err := applyPendingOAuthBinding(txCtx, client, h.authService, h.userService, &sessionForBinding, decision, &user.ID, true, false); err != nil {
 		_ = tx.Rollback()
-		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
+		if rollbackCreatedUser(err) {
+			return
+		}
 		respondPendingOAuthBindingApplyError(c, err)
 		return
 	}
@@ -422,20 +453,27 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		affiliateCode,
 	); err != nil {
 		_ = tx.Rollback()
-		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
+		if rollbackCreatedUser(err) {
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
 	if err := consumePendingOAuthBrowserSessionTx(c.Request.Context(), tx, session); err != nil {
 		_ = tx.Rollback()
-		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
+		if rollbackCreatedUser(err) {
+			return
+		}
 		clearCookies()
 		response.ErrorFrom(c, err)
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
-		response.ErrorFrom(c, infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to consume pending oauth session").WithCause(err))
+		originalErr := infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to consume pending oauth session").WithCause(err)
+		if rollbackCreatedUser(originalErr) {
+			return
+		}
+		response.ErrorFrom(c, originalErr)
 		return
 	}
 	h.authService.ApplyOAuthSignupPromoCode(c.Request.Context(), user.ID, pendingOAuthPromoCode(session))

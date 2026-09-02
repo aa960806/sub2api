@@ -173,6 +173,36 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	announcementReadRepository := repository.NewAnnouncementReadRepository(client)
 	announcementService := service.NewAnnouncementService(announcementRepository, announcementReadRepository, userRepository, userSubscriptionRepository)
 	announcementHandler := handler.NewAnnouncementHandler(announcementService)
+	encryptionKey, err := payment.ProvideEncryptionKey(configConfig)
+	if err != nil {
+		return nil, err
+	}
+	paymentConfigService := service.ProvidePaymentConfigService(client, settingRepository, encryptionKey)
+	studentRechargeBenefitService := service.ProvideStudentRechargeBenefitService(db, settingRepository, paymentConfigService, apiKeyAuthCacheInvalidator, billingCacheService)
+	studentRechargeBenefitHandler := handler.NewStudentRechargeBenefitHandler(studentRechargeBenefitService)
+	inviteActivitiesRepository := repository.NewSubNexusInviteActivitiesRepository(db)
+	inviteActivitiesService := service.ProvideInviteActivitiesService(inviteActivitiesRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCacheService, settingService)
+	subNexusInviteActivitiesHandler := handler.NewSubNexusInviteActivitiesHandler(inviteActivitiesService)
+	activityCenterRepository := repository.NewActivityCenterRepository(db)
+	activityCenterService := service.ProvideActivityCenterService(activityCenterRepository, settingRepository, settingService)
+	activityCenterHandler := handler.NewActivityCenterHandler(activityCenterService)
+	marqueeRepository := repository.NewSubNexusMarqueeRepository(db)
+	marqueeService := service.ProvideMarqueeService(marqueeRepository, settingRepository, settingService)
+	subNexusMarqueeHandler := handler.NewSubNexusMarqueeHandler(marqueeService)
+	checkInRepository := repository.NewSubNexusCheckInRepository(db)
+	checkInService := service.ProvideCheckInService(checkInRepository, settingRepository, db, apiKeyAuthCacheInvalidator, billingCacheService, settingService)
+	subNexusCheckInHandler := handler.NewSubNexusCheckInHandler(checkInService)
+	leaderboardRepository := repository.NewSubNexusLeaderboardRepository(db)
+	leaderboardService := service.ProvideLeaderboardService(leaderboardRepository, settingRepository, db, apiKeyAuthCacheInvalidator, billingCacheService, settingService)
+	subNexusLeaderboardHandler := handler.NewSubNexusLeaderboardHandler(leaderboardService)
+	invoiceRepository := repository.NewInvoiceRepository(db)
+	invoiceFileStore := service.NewInvoiceFileStore(configConfig)
+	invoiceConfigService := service.NewInvoiceConfigService(settingRepository, invoiceFileStore)
+	invoiceEmailService := service.NewInvoiceEmailService(notificationEmailService, invoiceConfigService)
+	invoiceService := service.NewInvoiceService(invoiceRepository, invoiceConfigService, invoiceFileStore, invoiceEmailService)
+	invoiceHandler := handler.NewInvoiceHandler(invoiceService)
+	battlePassService := service.ProvideBattlePassService(db, settingRepository, apiKeyService, billingCacheService, subscriptionService, settingService)
+	battlePassHandler := handler.NewBattlePassHandler(battlePassService)
 	channelMonitorRepository := repository.NewChannelMonitorRepository(client, db)
 	channelMonitorService := service.ProvideChannelMonitorService(channelMonitorRepository, secretEncryptor, settingService)
 	channelMonitorUserHandler := handler.NewChannelMonitorUserHandler(channelMonitorService, settingService)
@@ -207,6 +237,14 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
 	accountHandler := admin.ProvideAccountHandler(adminService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, rateLimitService, accountUsageService, accountTestService, concurrencyService, crsSyncService, sessionLimitCache, rpmCache, compositeTokenCacheInvalidator, grokQuotaService)
 	adminAnnouncementHandler := admin.NewAnnouncementHandler(announcementService)
+	adminStudentRechargeBenefitHandler := admin.NewStudentRechargeBenefitHandler(studentRechargeBenefitService)
+	adminSubNexusInviteActivitiesHandler := admin.NewSubNexusInviteActivitiesHandler(inviteActivitiesService)
+	adminActivityCenterHandler := admin.NewActivityCenterHandler(activityCenterService)
+	adminSubNexusMarqueeHandler := admin.NewSubNexusMarqueeHandler(marqueeService)
+	adminSubNexusCheckInHandler := admin.NewSubNexusCheckInHandler(checkInService)
+	adminSubNexusLeaderboardHandler := admin.NewSubNexusLeaderboardHandler(leaderboardService)
+	adminInvoiceHandler := admin.NewInvoiceHandler(invoiceService)
+	adminBattlePassHandler := admin.NewBattlePassHandler(battlePassService)
 	dataManagementService := service.NewDataManagementService()
 	dataManagementHandler := admin.NewDataManagementHandler(dataManagementService)
 	backupObjectStoreFactory := repository.NewS3BackupStoreFactory()
@@ -227,14 +265,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	proxyHandler := admin.NewProxyHandler(adminService)
 	adminRedeemHandler := admin.NewRedeemHandler(adminService, redeemService)
 	promoHandler := admin.NewPromoHandler(promoService)
-	encryptionKey, err := payment.ProvideEncryptionKey(configConfig)
-	if err != nil {
-		return nil, err
-	}
-	paymentConfigService := service.ProvidePaymentConfigService(client, settingRepository, encryptionKey)
 	registry := payment.ProvideRegistry()
 	defaultLoadBalancer := payment.ProvideDefaultLoadBalancer(client, encryptionKey)
-	paymentService := service.ProvidePaymentService(client, registry, defaultLoadBalancer, redeemService, subscriptionService, paymentConfigService, userRepository, groupRepository, affiliateService, notificationEmailService)
+	paymentService := service.ProvidePaymentService(client, registry, defaultLoadBalancer, redeemService, subscriptionService, paymentConfigService, userRepository, groupRepository, affiliateService, notificationEmailService, studentRechargeBenefitService)
 	settingHandler := handler.ProvideAdminSettingHandler(settingService, emailService, turnstileService, aliyunCaptchaService, opsService, paymentConfigService, paymentService, userAttributeService, notificationEmailService, totpService, userService)
 	opsHandler := admin.NewOpsHandler(opsService)
 	updateCache := repository.NewUpdateCache(redisClient)
@@ -284,7 +317,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	auditLogHandler := admin.NewAuditLogHandler(auditLogService, totpService)
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	ollamaCloudUsageService := service.ProvideOllamaCloudUsageService(accountRepository, httpUpstream, settingService, secretEncryptor, configConfig, leaderLockCache, db)
-	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, upstreamBillingProbeService, ollamaCloudUsageService)
+	adminHandlers := handler.ProvideAdminHandlers(dashboardHandler, adminUserHandler, groupHandler, accountHandler, adminAnnouncementHandler, adminStudentRechargeBenefitHandler, adminSubNexusInviteActivitiesHandler, adminActivityCenterHandler, adminSubNexusMarqueeHandler, adminSubNexusCheckInHandler, adminSubNexusLeaderboardHandler, adminInvoiceHandler, adminBattlePassHandler, dataManagementHandler, backupHandler, oAuthHandler, openAIOAuthHandler, geminiOAuthHandler, antigravityOAuthHandler, grokOAuthHandler, cnProviderHandler, proxyHandler, adminRedeemHandler, promoHandler, settingHandler, opsHandler, systemHandler, adminSubscriptionHandler, adminUsageHandler, userAttributeHandler, errorPassthroughHandler, tlsFingerprintProfileHandler, pluginHandler, adminAPIKeyHandler, scheduledTestHandler, channelHandler, channelMonitorHandler, channelMonitorRequestTemplateHandler, contentModerationHandler, promptAdminHandler, paymentHandler, affiliateHandler, complianceHandler, auditLogHandler, upstreamBillingProbeService, ollamaCloudUsageService)
 	usageRecordWorkerPool := service.NewUsageRecordWorkerPool(configConfig)
 	userMsgQueueCache := repository.NewUserMsgQueueCache(redisClient)
 	userMessageQueueService := service.ProvideUserMessageQueueService(userMsgQueueCache, rpmCache, configConfig)
@@ -320,7 +353,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
-	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService)
+	battlePassScanner := service.ProvideBattlePassScanner(battlePassService)
+	studentRechargeBenefitScheduler := service.ProvideStudentRechargeBenefitScheduler(studentRechargeBenefitService)
+	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, studentRechargeBenefitHandler, subNexusInviteActivitiesHandler, activityCenterHandler, subNexusMarqueeHandler, subNexusCheckInHandler, subNexusLeaderboardHandler, invoiceHandler, battlePassHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService, battlePassScanner, studentRechargeBenefitScheduler)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	optionalJWTAuthMiddleware := middleware.NewOptionalJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(authService, userService, settingService, auditLogService)
@@ -342,12 +377,14 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	subscriptionExpiryService := service.ProvideSubscriptionExpiryService(userSubscriptionRepository, settingRepository, notificationEmailService, leaderLockCache, db)
 	batchImageWorkerRuntime := service.ProvideBatchImageWorkerRuntime(batchImageRepository, accountRepository, batchImageQueue, usageBillingRepository, usageLogRepository, batchImageModelPricingResolver, apiKeyAuthCacheInvalidator, configConfig)
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
+	leaderboardRewardScheduler := service.ProvideLeaderboardRewardScheduler(leaderboardService, leaderLockCache, db, configConfig)
+	affiliateSignupRewardScanner := service.ProvideAffiliateSignupRewardScanner(affiliateService)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	channelMonitorQuotaFetcher := service.NewChannelMonitorQuotaFetcher(accountUsageService, cnProviderQuotaService, cnProviderBalanceService, accountRepository, configConfig)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService, channelMonitorQuotaFetcher)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, battlePassScanner, leaderboardRewardScheduler, affiliateSignupRewardScanner, studentRechargeBenefitScheduler, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -420,6 +457,10 @@ func provideCleanup(
 	grokOAuth *service.GrokOAuthService,
 	openAIGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
+	battlePassScanner *service.BattlePassScanner,
+	leaderboardRewardScheduler *service.LeaderboardRewardScheduler,
+	affiliateSignupRewardScanner *service.AffiliateSignupRewardScanner,
+	studentRechargeBenefitScheduler *service.StudentRechargeBenefitScheduler,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
@@ -637,6 +678,30 @@ func provideCleanup(
 			{"ScheduledTestRunnerService", func() error {
 				if scheduledTestRunner != nil {
 					scheduledTestRunner.Stop()
+				}
+				return nil
+			}},
+			{"BattlePassScanner", func() error {
+				if battlePassScanner != nil {
+					battlePassScanner.Stop()
+				}
+				return nil
+			}},
+			{"LeaderboardRewardScheduler", func() error {
+				if leaderboardRewardScheduler != nil {
+					leaderboardRewardScheduler.Stop()
+				}
+				return nil
+			}},
+			{"AffiliateSignupRewardScanner", func() error {
+				if affiliateSignupRewardScanner != nil {
+					affiliateSignupRewardScanner.Stop()
+				}
+				return nil
+			}},
+			{"StudentRechargeBenefitScheduler", func() error {
+				if studentRechargeBenefitScheduler != nil {
+					studentRechargeBenefitScheduler.Stop()
 				}
 				return nil
 			}},

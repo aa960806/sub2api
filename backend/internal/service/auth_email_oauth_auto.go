@@ -103,11 +103,10 @@ func (s *AuthService) loginOrRegisterVerifiedEmailOAuth(
 		user, err = s.userRepo.GetByEmail(ctx, email)
 		if err != nil {
 			if errors.Is(err, ErrUserNotFound) {
-				user, err = s.createEmailOAuthUser(ctx, email, input.Username, providerType, invitationCode, affiliateCode)
+				user, created, err = s.createEmailOAuthUserWithStatus(ctx, email, input.Username, providerType, invitationCode, affiliateCode)
 				if err != nil {
 					return nil, nil, err
 				}
-				created = true
 			} else {
 				logger.LegacyPrintf("service.auth", "[Auth] Database error during %s oauth login: %v", providerType, err)
 				return nil, nil, ErrServiceUnavailable
@@ -154,25 +153,49 @@ func (s *AuthService) loginOrRegisterVerifiedEmailOAuth(
 	return tokenPair, user, nil
 }
 
+// createEmailOAuthUser keeps the historical helper contract for callers that
+// only need the resulting user. The status-aware implementation is used by
+// the login flow so a create race cannot be mistaken for a newly-created
+// account and subsequently deleted during cleanup.
 func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username, providerType, invitationCode, affiliateCode string) (*User, error) {
+	user, _, err := s.createEmailOAuthUserWithStatus(ctx, email, username, providerType, invitationCode, affiliateCode)
+	return user, err
+}
+
+// createEmailOAuthUserWithStatus returns whether this invocation inserted the
+// user. When another request wins the email uniqueness race, it returns the
+// existing user with created=false after releasing this request's cooldown
+// reservation.
+func (s *AuthService) createEmailOAuthUserWithStatus(ctx context.Context, email, username, providerType, invitationCode, affiliateCode string) (*User, bool, error) {
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
-		return nil, ErrRegDisabled
+		return nil, false, ErrRegDisabled
 	}
 	invitationRedeemCode, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode)
 	if err != nil {
 		if errors.Is(err, ErrInvitationCodeRequired) {
-			return nil, ErrOAuthInvitationRequired
+			return nil, false, ErrOAuthInvitationRequired
 		}
-		return nil, err
+		return nil, false, err
 	}
+
+	registrationClaim, err := s.claimRegistrationIPCooldown(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	registrationFinalized := false
+	defer func() {
+		if registrationClaim != nil && !registrationFinalized {
+			s.releaseRegistrationIPCooldownClaimBestEffort(ctx, registrationClaim, "verified OAuth auto registration")
+		}
+	}()
 
 	randomPassword, err := randomHexString(32)
 	if err != nil {
-		return nil, ErrServiceUnavailable
+		return nil, false, ErrServiceUnavailable
 	}
 	hashedPassword, err := s.HashPassword(randomPassword)
 	if err != nil {
-		return nil, fmt.Errorf("hash password: %w", err)
+		return nil, false, fmt.Errorf("hash password: %w", err)
 	}
 	grantPlan := s.resolveSignupGrantPlan(ctx, providerType)
 	var defaultRPMLimit int
@@ -192,14 +215,31 @@ func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		if errors.Is(err, ErrEmailExists) {
+			// Another request won the create race; this request did not create a
+			// user and must not consume the IP cooldown reservation.
+			releaseErr := s.releaseRegistrationIPCooldownClaim(ctx, registrationClaim)
+			registrationClaim = nil
+			if releaseErr != nil {
+				return nil, false, wrapRegistrationCleanupError("release registration IP cooldown claim after create race", releaseErr)
+			}
 			existing, loadErr := s.userRepo.GetByEmail(ctx, email)
 			if loadErr != nil {
-				return nil, ErrServiceUnavailable
+				return nil, false, ErrServiceUnavailable
 			}
-			return existing, nil
+			if existing == nil {
+				return nil, false, ErrServiceUnavailable
+			}
+			return existing, false, nil
 		}
-		return nil, ErrServiceUnavailable
+		return nil, false, ErrServiceUnavailable
 	}
+
+	if err := s.attachRegistrationIPCooldownClaim(ctx, registrationClaim, user.ID); err != nil {
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, false, wrapRegistrationCleanupError("attach registration IP cooldown claim", err))
+		registrationClaim = nil
+		return nil, false, cleanupErr
+	}
+
 	s.postAuthUserBootstrap(ctx, user, providerType, false)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
@@ -207,11 +247,18 @@ func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username,
 	s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
 	if invitationRedeemCode != nil {
 		if err := s.useOAuthRegistrationInvitation(ctx, invitationRedeemCode.ID, user.ID); err != nil {
-			_ = s.RollbackOAuthEmailAccountCreation(ctx, user.ID, invitationCode)
-			return nil, ErrInvitationCodeInvalid
+			cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, true, ErrInvitationCodeInvalid)
+			registrationClaim = nil
+			return nil, false, cleanupErr
 		}
 	}
-	return user, nil
+	if err := s.finalizeRegistrationIPCooldown(ctx, registrationClaim, user.ID); err != nil {
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, true, wrapRegistrationCleanupError("finalize registration IP cooldown", err))
+		registrationClaim = nil
+		return nil, false, cleanupErr
+	}
+	registrationFinalized = registrationClaim != nil
+	return user, true, nil
 }
 
 func (s *AuthService) findEmailOAuthIdentityOwner(ctx context.Context, providerType, providerKey, providerSubject string) (*User, error) {
@@ -285,5 +332,36 @@ func (s *AuthService) ensureEmailOAuthIdentity(ctx context.Context, userID int64
 		SetProviderSubject(providerSubject).
 		SetMetadata(metadata).
 		Save(ctx)
-	return err
+	if err == nil {
+		return nil
+	}
+	if !dbent.IsConstraintError(err) {
+		return infraerrors.InternalServer("AUTH_IDENTITY_SAVE_FAILED", "failed to save auth identity").WithCause(err)
+	}
+
+	// Two first-time OAuth requests can both observe no identity and race on
+	// the unique provider tuple. Re-read after a uniqueness conflict. If the
+	// winner belongs to this same user, the operation is idempotently complete;
+	// only a different owner is a real security conflict. This prevents the
+	// caller's compensating account cleanup from deleting an account that a
+	// concurrent request has already bound successfully.
+	winner, lookupErr := s.entClient.AuthIdentity.Query().
+		Where(
+			authidentity.ProviderTypeEQ(providerType),
+			authidentity.ProviderKeyEQ(providerKey),
+			authidentity.ProviderSubjectEQ(providerSubject),
+		).
+		Only(ctx)
+	if lookupErr != nil {
+		return infraerrors.InternalServer("AUTH_IDENTITY_LOOKUP_FAILED", "failed to resolve concurrent auth identity creation").WithCause(lookupErr)
+	}
+	if winner.UserID != userID {
+		return infraerrors.Conflict("AUTH_IDENTITY_OWNERSHIP_CONFLICT", "auth identity already belongs to another user")
+	}
+	if _, updateErr := s.entClient.AuthIdentity.UpdateOneID(winner.ID).
+		SetMetadata(metadata).
+		Save(ctx); updateErr != nil {
+		return infraerrors.InternalServer("AUTH_IDENTITY_SAVE_FAILED", "failed to refresh auth identity").WithCause(updateErr)
+	}
+	return nil
 }

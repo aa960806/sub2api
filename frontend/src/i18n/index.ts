@@ -59,6 +59,30 @@ export async function initI18n(): Promise<void> {
   document.documentElement.setAttribute('lang', current)
 }
 
+/**
+ * Apply the server's preferred locale without overriding an explicit browser
+ * choice. This intentionally does not persist anything: the setting is a
+ * deployment default, while localStorage remains the user's manual choice.
+ */
+export async function applyServerDefaultLocale(value: unknown): Promise<void> {
+  const candidate = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (!isLocaleCode(candidate)) return
+
+  try {
+    const saved = localStorage.getItem(LOCALE_KEY)
+    if (saved && isLocaleCode(saved.trim().toLowerCase())) return
+  } catch {
+    // Storage can be unavailable in private/embedded contexts; continue with
+    // the server default in that case.
+  }
+
+  await loadLocaleMessages(candidate)
+  i18n.global.locale.value = candidate
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('lang', candidate)
+  }
+}
+
 export async function setLocale(locale: string): Promise<void> {
   if (!isLocaleCode(locale)) {
     return

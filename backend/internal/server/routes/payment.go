@@ -33,6 +33,7 @@ func RegisterPaymentRoutes(
 		authenticated.GET("/checkout-info", paymentHandler.GetCheckoutInfo)
 		authenticated.GET("/plans", paymentHandler.GetPlans)
 		authenticated.GET("/limits", paymentHandler.GetLimits)
+		authenticated.GET("/first-recharge-gift", paymentHandler.GetFirstRechargeGift)
 
 		orders := authenticated.Group("/orders")
 		{
@@ -80,6 +81,8 @@ func RegisterPaymentRoutes(
 		// Config
 		adminGroup.GET("/config", adminPaymentHandler.GetConfig)
 		adminGroup.PUT("/config", adminPaymentHandler.UpdateConfig)
+		adminGroup.GET("/first-recharge-gift/config", adminPaymentHandler.GetFirstRechargeGiftConfig)
+		adminGroup.PUT("/first-recharge-gift/config", adminPaymentHandler.UpdateFirstRechargeGiftConfig)
 
 		// Orders
 		adminOrders := adminGroup.Group("/orders")

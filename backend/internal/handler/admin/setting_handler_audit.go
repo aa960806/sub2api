@@ -35,6 +35,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.RegistrationEnabled != after.RegistrationEnabled {
 		changed = append(changed, "registration_enabled")
 	}
+	if before.RegistrationIPCooldownEnabled != after.RegistrationIPCooldownEnabled {
+		changed = append(changed, "registration_ip_cooldown_enabled")
+	}
+	if before.RegistrationIPCooldownSeconds != after.RegistrationIPCooldownSeconds {
+		changed = append(changed, "registration_ip_cooldown_seconds")
+	}
 	if before.EmailVerifyEnabled != after.EmailVerifyEnabled {
 		changed = append(changed, "email_verify_enabled")
 	}
@@ -335,6 +341,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.DocURL != after.DocURL {
 		changed = append(changed, "doc_url")
 	}
+	if before.DefaultLanguage != after.DefaultLanguage {
+		changed = append(changed, "default_language")
+	}
+	if before.CustomerSupportEnabled != after.CustomerSupportEnabled {
+		changed = append(changed, "customer_support_enabled")
+	}
+	if before.CustomerSupportContent != after.CustomerSupportContent {
+		changed = append(changed, "customer_support_content")
+	}
 	if before.HomeContent != after.HomeContent {
 		changed = append(changed, "home_content")
 	}
@@ -361,6 +376,21 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.AffiliateRebatePerInviteeCap != after.AffiliateRebatePerInviteeCap {
 		changed = append(changed, "affiliate_rebate_per_invitee_cap")
+	}
+	if before.SubNexusInviteRewardsEnabled != after.SubNexusInviteRewardsEnabled {
+		changed = append(changed, "subnexus_invite_rewards_enabled")
+	}
+	if before.SubNexusInviteRewardInviterAmount != after.SubNexusInviteRewardInviterAmount {
+		changed = append(changed, "subnexus_invite_reward_inviter_amount")
+	}
+	if before.SubNexusInviteRewardInviteeAmount != after.SubNexusInviteRewardInviteeAmount {
+		changed = append(changed, "subnexus_invite_reward_invitee_amount")
+	}
+	if before.SubNexusInviteRewardIPLimitEnabled != after.SubNexusInviteRewardIPLimitEnabled {
+		changed = append(changed, "subnexus_invite_reward_ip_limit_enabled")
+	}
+	if before.SubNexusInviteRewardIPDailyLimit != after.SubNexusInviteRewardIPDailyLimit {
+		changed = append(changed, "subnexus_invite_reward_ip_daily_limit")
 	}
 	if before.AdminRechargeRebateEnabled != after.AdminRechargeRebateEnabled {
 		changed = append(changed, "affiliate_admin_recharge_enabled")

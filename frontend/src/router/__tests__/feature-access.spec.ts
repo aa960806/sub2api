@@ -25,6 +25,9 @@ const appStore = vi.hoisted(() => ({
   cachedPublicSettings: null as null | {
     payment_enabled?: boolean
     risk_control_enabled?: boolean
+    subnexus_activity_center_enabled?: boolean
+    subnexus_leaderboard_enabled?: boolean
+    battle_pass_enabled?: boolean
     custom_menu_items?: []
   },
   fetchPublicSettings: vi.fn(),
@@ -173,5 +176,101 @@ describe('feature route guard', () => {
     expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith(target)
+  })
+
+  it('allows the activity center only after an explicit enabled setting is loaded', async () => {
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      const settings = { subnexus_activity_center_enabled: true }
+      appStore.cachedPublicSettings = settings
+      appStore.publicSettingsLoaded = true
+      return settings
+    })
+
+    const { navigation, next } = runGuard({ requiresActivityCenter: true }, '/activities')
+    await navigation
+
+    expect(appStore.fetchPublicSettings).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it.each([
+    ['failed load', null],
+    ['missing flag', {}],
+    ['disabled flag', { subnexus_activity_center_enabled: false }],
+  ])('fails closed for activity center when settings are %s', async (_name, settings) => {
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      appStore.cachedPublicSettings = settings
+      appStore.publicSettingsLoaded = settings !== null
+      return settings
+    })
+
+    const { navigation, next } = runGuard({ requiresActivityCenter: true }, '/activities')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('allows leaderboard only after an explicit enabled setting is loaded', async () => {
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      const settings = { subnexus_leaderboard_enabled: true }
+      appStore.cachedPublicSettings = settings
+      appStore.publicSettingsLoaded = true
+      return settings
+    })
+    const { navigation, next } = runGuard({ requiresLeaderboard: true }, '/leaderboard')
+    await navigation
+    expect(appStore.fetchPublicSettings).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it.each([
+    ['failed load', null],
+    ['missing flag', {}],
+    ['disabled flag', { subnexus_leaderboard_enabled: false }],
+  ])('fails closed for leaderboard when settings are %s', async (_name, settings) => {
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      appStore.cachedPublicSettings = settings
+      appStore.publicSettingsLoaded = settings !== null
+      return settings
+    })
+    const { navigation, next } = runGuard({ requiresLeaderboard: true }, '/leaderboard')
+    await navigation
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('allows Battle Pass only after an explicit enabled setting is loaded', async () => {
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      const settings = { battle_pass_enabled: true }
+      appStore.cachedPublicSettings = settings
+      appStore.publicSettingsLoaded = true
+      return settings
+    })
+
+    const { navigation, next } = runGuard({ requiresBattlePass: true }, '/battle-pass')
+    await navigation
+
+    expect(appStore.fetchPublicSettings).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it.each([
+    ['failed load', null],
+    ['missing flag', {}],
+    ['disabled flag', { battle_pass_enabled: false }],
+  ])('fails closed for Battle Pass when settings are %s', async (_name, settings) => {
+    appStore.fetchPublicSettings.mockImplementation(async () => {
+      appStore.cachedPublicSettings = settings
+      appStore.publicSettingsLoaded = settings !== null
+      return settings
+    })
+
+    const { navigation, next } = runGuard({ requiresBattlePass: true }, '/battle-pass')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
   })
 })

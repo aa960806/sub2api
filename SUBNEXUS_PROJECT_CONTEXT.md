@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-02（执行顺序改为本地完成 Batch 1-5 后再推送和进入生产 Release Gate）
+> 最后更新：2026-09-03（本地 Batch 1-4 实现和代码测试完成；Batch 5 运行时证据受本机 Docker daemon 阻塞；维护者验收后才推送/进入生产 Release Gate）
 
 ## 项目身份
 
@@ -10,7 +10,9 @@
 - 目标 fork：`F:\MySub2\sub2api`
 - 旧二开输入：`F:\Sub2Api\SubNexus`
 - 当前迁移分支：`feature/subnexus-migration`
-- 目标分支基线：`d596d0844`（新 fork `main`，创建迁移分支时的 HEAD）
+- 目标 fork `main`：`d596d0844`（保持不变）
+- 最新上游基线：`upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`（版本 `0.2.0`）
+- 当前迁移分支 HEAD：`23d6e8ec0e773e74146976a39f6573b3da68660a`（已合并最新上游）
 - 旧二开参考 HEAD：`ccffee6c6`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -18,13 +20,13 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | 本地优先：Batch 0 控制和 adoption 门禁已完成；正在同步最新上游并准备 Batch 1 |
-| 业务代码迁移 | Batch 1 准备中；生产证据不再阻塞本地实现 |
-| 新 fork 数据库迁移 | 未新增业务迁移；runner 已增加 25 组显式旧文件名接管门禁（23 组精确映射 + 2 组语义接管） |
+| 迁移阶段 | 本地优先：Batch 0 控制和 adoption 门禁已完成；Batch 1-4 本地实现完成，Batch 5 代码门禁通过但运行时验收受本机 Docker daemon 阻塞 |
+| 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
+| 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 本任务尚未执行 |
 | 生产部署/切换 | 未执行 |
 | 生产开关 | 未修改 |
-| 工作区 | Batch 0 文档、预检脚本与 adoption 代码均在迁移分支维护；业务依赖、前端 lockfile 和 VERSION 未改 |
+| 工作区 | 当前为本地候选工作树；业务依赖、前端 lockfile 和 VERSION 未改；当前改动尚未推送 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
 
@@ -32,7 +34,7 @@
 
 ### 迁移保留
 
-签到/签到奖励、排行榜、活动中心中仍未被上游覆盖的活动能力、公告/跑马灯扩展、首充礼包、二开邀请活动奖励、发票事务系统、Battle Pass。
+签到/签到奖励、排行榜、活动中心 `custom` 卡片、公告/跑马灯扩展、首充礼包、二开邀请活动奖励、发票事务系统、Battle Pass、学生充值优惠、注册 IP 冷却、Channel Monitor V3、默认语言和客服按钮/Markdown 弹窗。
 
 ### 明确排除
 
@@ -49,7 +51,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 数据：PostgreSQL + Redis；迁移由 `backend/internal/repository/migrations_runner.go` 启动时自动执行。
 - 迁移追踪：`schema_migrations(filename, checksum, applied_at)`；checksum 为 `SHA256(TrimSpace(SQL))`。
 - 事务规则：普通 `.sql` 在事务中执行；`*_notx.sql` 仅用于并发索引等明确非事务场景。
-- 同库兼容：25 组显式旧文件名 alias 仅在目标记录缺失、旧/目标 checksum 和数据库对象契约全部通过时处理；23 组只补写目标记录，`189/226` 两组按审计过的事务 replay 规则执行，失败时拒绝启动。
+- 同库兼容：27 组显式旧文件名 alias 仅在目标记录缺失、旧/目标 checksum 和数据库对象契约全部通过时处理；23 组只补写目标记录，`189/226` 两组按审计过的事务 replay 规则执行，学生优惠/注册冷却各有独立表契约，失败时拒绝启动。
 - 核心入口：`backend/internal/server/router.go`、`backend/internal/server/routes/`、`backend/internal/handler/`、`backend/internal/service/`、`backend/internal/repository/`。
 - 前端开关入口：`frontend/src/utils/featureFlags.ts`、`frontend/src/stores/app.ts`、`frontend/src/components/layout/AppSidebar.vue`、公共设置 API。
 
@@ -57,7 +59,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 每个迁移功能必须有后端设置，默认值为 `false`；公共设置和前端入口同步关闭；关闭时 API 只返回稳定的禁用错误/约定 404，不写数据；定时任务、队列、通知和奖励发放 no-op；关闭状态不能改变上游原有行为。开关名必须先搜索目标代码，避免与已有上游设置冲突。
 
-拟定的独立开关（实现前仍需核对）：
+当前独立开关（均默认关闭；缺失/非法按关闭处理）：
 
 ```text
 subnexus_checkin_enabled
@@ -66,9 +68,14 @@ subnexus_activity_center_enabled
 subnexus_marquee_enabled
 subnexus_first_recharge_enabled
 subnexus_invite_rewards_enabled
-invoice_enabled       # 若目标已有则复用，不重复创建
-battle_pass_enabled   # 若目标已有则复用，不重复创建
+subnexus_invite_activities_enabled
+subnexus_invoice_enabled
+battle_pass_enabled
+subnexus_student_recharge_benefit_enabled
+registration_ip_cooldown_enabled
 ```
+
+邀请活动还要求 `subnexus_invite_activities_enabled` 与对应子开关同时为字面量 `true`；Channel Monitor V3 复用 `channel_monitor_enabled` 并要求 `channel_monitor_mode=v3`，缺失/非法模式回退 `v1`。默认语言和客服设置使用 namespaced/legacy 双键，空值或非法值不产生行为。
 
 ## 数据与回滚原则
 
@@ -96,7 +103,6 @@ battle_pass_enabled   # 若目标已有则复用，不重复创建
 
 ## 下一步入口
 
-1. 在迁移分支整合最新 `upstream/main`，运行更新后的上游基线测试，保持 fork `main` 和旧项目不变。
-2. 本地依次完成 Batch 1-4，并在 Batch 5 完成全量后端、前端、PostgreSQL/Redis、Docker 和旧版本回滚验证；所有开关默认关闭。
-3. 维护者验收本地候选后才推送迁移分支并固定 release SHA，随后才允许服务器拉取和执行生产只读 preflight。
-4. Release Gate 取得可恢复 PostgreSQL/Redis 备份并完成隔离恢复、adoption 和旧版本回归后，才进入受控切换。
+1. 在本地完成 Batch 5：待 Docker daemon 恢复后执行候选启动、隔离 PostgreSQL/Redis、关闭态/开启态 smoke 和旧版本回滚克隆；所有开关继续关闭。
+2. 维护者验收本地候选、功能矩阵和测试证据后，才推送迁移分支并固定 release SHA；当前不得执行服务器命令。
+3. Release Gate 取得线上只读拓扑、可恢复 PostgreSQL/Redis 备份并完成隔离恢复、adoption 和旧版本回归后，才进入受控切换。

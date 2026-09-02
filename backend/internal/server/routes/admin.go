@@ -49,6 +49,16 @@ func RegisterAdminRoutes(
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
 
+		// SubNexus custom activity center
+		registerActivityCenterRoutes(admin, h)
+		registerSubNexusMarqueeRoutes(admin, h)
+		registerSubNexusCheckInRoutes(admin, h)
+		registerSubNexusLeaderboardRoutes(admin, h)
+		registerSubNexusInviteActivitiesRoutes(admin, h)
+		registerStudentRechargeBenefitRoutes(admin, h)
+		registerInvoiceRoutes(admin, h, panelRateLimiter)
+		registerBattlePassRoutes(admin, h, stepUpAuth)
+
 		// OpenAI OAuth
 		registerOpenAIOAuthRoutes(admin, h)
 
@@ -131,6 +141,106 @@ func RegisterAdminRoutes(
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
 	}
+}
+
+// registerStudentRechargeBenefitRoutes keeps student identity and offer
+// settings in their own namespace. The admin routes remain available while
+// the independent runtime switch is disabled so operators can prepare a
+// rollout safely.
+func registerStudentRechargeBenefitRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	student := admin.Group("/activity/student-recharge")
+	student.GET("/config", h.Admin.StudentRechargeBenefit.GetConfig)
+	student.PUT("/config", h.Admin.StudentRechargeBenefit.UpdateConfig)
+	student.GET("/users", h.Admin.StudentRechargeBenefit.ListAccounts)
+	student.POST("/users/:id/grant", h.Admin.StudentRechargeBenefit.GrantAccount)
+	student.POST("/users/:id/revoke", h.Admin.StudentRechargeBenefit.RevokeAccount)
+	student.GET("/audit-logs", h.Admin.StudentRechargeBenefit.ListAuditLogs)
+}
+
+func registerSubNexusMarqueeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	marquee := admin.Group("/marquee")
+	marquee.GET("/config", h.Admin.SubNexusMarquee.GetConfig)
+	marquee.PUT("/config", h.Admin.SubNexusMarquee.UpdateConfig)
+	marquee.GET("/broadcasts", h.Admin.SubNexusMarquee.List)
+	marquee.POST("/broadcasts", h.Admin.SubNexusMarquee.Create)
+	marquee.PUT("/broadcasts/:id", h.Admin.SubNexusMarquee.Update)
+	marquee.DELETE("/broadcasts/:id", h.Admin.SubNexusMarquee.Delete)
+}
+
+func registerSubNexusCheckInRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	checkin := admin.Group("/checkin")
+	checkin.GET("/config", h.Admin.SubNexusCheckIn.GetConfig)
+	checkin.PUT("/config", h.Admin.SubNexusCheckIn.UpdateConfig)
+}
+
+func registerSubNexusLeaderboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	leaderboard := admin.Group("/leaderboard")
+	leaderboard.GET("/config", h.Admin.SubNexusLeaderboard.GetConfig)
+	leaderboard.PUT("/config", h.Admin.SubNexusLeaderboard.UpdateConfig)
+	leaderboard.POST("/rewards", h.Admin.SubNexusLeaderboard.GrantRewards)
+	leaderboard.GET("/rewards", h.Admin.SubNexusLeaderboard.ListRewardHistory)
+}
+
+func registerSubNexusInviteActivitiesRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	activities := admin.Group("/invite-activities")
+	activities.GET("/config", h.Admin.SubNexusInviteActivities.GetConfig)
+	activities.PUT("/config", h.Admin.SubNexusInviteActivities.UpdateConfig)
+}
+
+func registerActivityCenterRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	activityCenter := admin.Group("/activity-center")
+	{
+		activityCenter.GET("/config", h.Admin.ActivityCenter.GetConfig)
+		activityCenter.PUT("/config", h.Admin.ActivityCenter.UpdateConfig)
+		activityCenter.GET("/items", h.Admin.ActivityCenter.List)
+		activityCenter.POST("/items", h.Admin.ActivityCenter.Create)
+		activityCenter.PUT("/items/:id", h.Admin.ActivityCenter.Update)
+		activityCenter.DELETE("/items/:id", h.Admin.ActivityCenter.Delete)
+	}
+}
+
+func registerInvoiceRoutes(admin *gin.RouterGroup, h *handler.Handlers, panelRateLimiter *middleware.PanelRateLimiter) {
+	invoices := admin.Group("/invoices")
+	{
+		invoices.GET("/config", h.Admin.Invoice.GetConfig)
+		invoices.PUT("/config", h.Admin.Invoice.UpdateConfig)
+		invoices.GET("/reconciliation", panelRateLimiter.Heavy(), h.Admin.Invoice.ReconcileFiles)
+		invoices.GET("", h.Admin.Invoice.List)
+		invoices.GET("/:id", h.Admin.Invoice.Get)
+		invoices.POST("/:id/accept", h.Admin.Invoice.Accept)
+		invoices.POST("/:id/release", h.Admin.Invoice.Release)
+		invoices.POST("/:id/reject", h.Admin.Invoice.Reject)
+		invoices.POST("/:id/issue", panelRateLimiter.Heavy(), middleware.RequestBodyLimit(21<<20), h.Admin.Invoice.Issue)
+		invoices.POST("/:id/replace-file", panelRateLimiter.Heavy(), middleware.RequestBodyLimit(21<<20), h.Admin.Invoice.ReplaceFile)
+		invoices.POST("/:id/void", h.Admin.Invoice.Void)
+		invoices.POST("/:id/resend-email", h.Admin.Invoice.ResendEmail)
+		invoices.GET("/:id/download", h.Admin.Invoice.Download)
+		invoices.GET("/:id/audit-logs", h.Admin.Invoice.ListAuditLogs)
+	}
+}
+
+func registerBattlePassRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
+	battlePass := admin.Group("/activity/battle-pass")
+	battlePass.GET("/settings", h.Admin.BattlePass.GetSettings)
+	battlePass.GET("/seasons", h.Admin.BattlePass.ListSeasons)
+	battlePass.GET("/seasons/:id", h.Admin.BattlePass.GetSeason)
+	battlePass.GET("/seasons/:id/users", h.Admin.BattlePass.ListSeasonUsers)
+	battlePass.GET("/seasons/:id/grants", h.Admin.BattlePass.ListSeasonGrants)
+	battlePass.GET("/seasons/:id/purchases", h.Admin.BattlePass.ListSeasonPurchases)
+	battlePass.GET("/test/state", h.Admin.BattlePass.GetTestState)
+
+	stepUp := gin.HandlerFunc(stepUpAuth)
+	battlePass.PUT("/settings", stepUp, h.Admin.BattlePass.UpdateSettings)
+	battlePass.POST("/seasons", stepUp, h.Admin.BattlePass.CreateSeason)
+	battlePass.PUT("/seasons/:id", stepUp, h.Admin.BattlePass.UpdateSeason)
+	battlePass.POST("/seasons/:id/validate", stepUp, h.Admin.BattlePass.ValidateSeason)
+	battlePass.POST("/seasons/:id/publish", stepUp, h.Admin.BattlePass.PublishSeason)
+	battlePass.POST("/seasons/:id/pause", stepUp, h.Admin.BattlePass.PauseSeason)
+	battlePass.POST("/seasons/:id/resume", stepUp, h.Admin.BattlePass.ResumeSeason)
+	battlePass.POST("/seasons/:id/end", stepUp, h.Admin.BattlePass.EndSeason)
+	battlePass.POST("/grants/:id/retry", stepUp, h.Admin.BattlePass.RetryGrant)
+	battlePass.POST("/test/activate", stepUp, h.Admin.BattlePass.ActivateSeasonForTest)
+	battlePass.POST("/test/complete", stepUp, h.Admin.BattlePass.CompleteTasksForTest)
 }
 
 func registerPromptAuditRoutes(admin *gin.RouterGroup, h *handler.Handlers) {

@@ -88,6 +88,8 @@ export interface BuildCreateOrderPayloadInput {
   forceQRCode?: boolean
   /** When true, keep the real mobile signal so the backend can select precreate */
   mobilePrecreateDeepLink?: boolean
+  /** Explicit opt-in marker for the isolated ordinary student recharge offer. */
+  studentBenefit?: boolean
 }
 
 type CreateOrderFlowResult = CreateOrderResult & {
@@ -141,6 +143,9 @@ export function buildCreateOrderPayload(input: BuildCreateOrderPayloadInput): Cr
   }
   if (normalizedOrigin) {
     payload.return_url = `${normalizedOrigin}/payment/result`
+  }
+  if (input.studentBenefit && input.orderType === 'balance') {
+    payload.student_benefit = true
   }
 
   return payload
@@ -324,7 +329,11 @@ export function readPaymentRecoverySnapshot(
       countryCode: parsed.countryCode || '',
       paymentEnv: parsed.paymentEnv || '',
       payAmount: parsed.payAmount,
-      orderType: parsed.orderType === 'subscription' ? 'subscription' : 'balance',
+      orderType: parsed.orderType === 'subscription'
+        ? 'subscription'
+        : parsed.orderType === 'first_recharge_gift'
+          ? 'first_recharge_gift'
+          : 'balance',
       paymentMode: parsed.paymentMode,
       resumeToken: parsed.resumeToken,
       alipayMobilePrecreateDeepLink: parsed.alipayMobilePrecreateDeepLink === true,

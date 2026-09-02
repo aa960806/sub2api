@@ -119,6 +119,55 @@ func RegisterUserRoutes(
 			announcements.POST("/:id/read", h.Announcement.MarkRead)
 		}
 
+		// SubNexus custom activity center. The service fails closed and does not
+		// query activity tables while its independent switch is disabled.
+		authenticated.GET("/activity-center", h.ActivityCenter.List)
+		authenticated.GET("/marquee/broadcasts", h.SubNexusMarquee.List)
+		authenticated.GET("/checkin", h.SubNexusCheckIn.Status)
+		authenticated.POST("/checkin", h.SubNexusCheckIn.Claim)
+		activity := authenticated.Group("/activity")
+		activity.GET("/first-recharge-gift", h.Payment.GetFirstRechargeGift)
+		activity.GET("/student-recharge/status", h.StudentRechargeBenefit.GetStatus)
+		activity.GET("/student-recharge/quote", h.StudentRechargeBenefit.Quote)
+		activity.GET("/leaderboard", h.SubNexusLeaderboard.GetLeaderboard)
+		activity.GET("/invite-leaderboard", h.SubNexusLeaderboard.GetInviteLeaderboard)
+		activity.GET("/checkin", h.SubNexusCheckIn.Status)
+		activity.POST("/checkin", h.SubNexusCheckIn.Claim)
+		activity.GET("/invite-lottery", h.SubNexusInviteActivities.GetInviteLotteryStatus)
+		activity.POST("/invite-lottery", h.SubNexusInviteActivities.ClaimInviteLottery)
+		activity.GET("/recharge-wheel", h.SubNexusInviteActivities.GetRechargeWheelStatus)
+		activity.POST("/recharge-wheel", h.SubNexusInviteActivities.ClaimRechargeWheel)
+		activity.GET("/invite-milestone", h.SubNexusInviteActivities.GetInviteMilestoneStatus)
+		activity.POST("/invite-milestone", h.SubNexusInviteActivities.ClaimInviteMilestone)
+
+		battlePass := authenticated.Group("/battle-pass")
+		{
+			battlePass.GET("/current", h.BattlePass.GetCurrent)
+			battlePass.GET("/current/tasks", h.BattlePass.GetTasks)
+			battlePass.GET("/current/rewards", h.BattlePass.GetRewards)
+			battlePass.POST("/current/rewards/claim-all", h.BattlePass.ClaimAllRewards)
+			battlePass.POST("/current/rewards/:id/claim", h.BattlePass.ClaimReward)
+			battlePass.GET("/current/history", h.BattlePass.GetHistory)
+			battlePass.POST("/current/purchase", h.BattlePass.Purchase)
+			battlePass.GET("/cosmetics", h.BattlePass.ListCosmetics)
+			battlePass.PUT("/cosmetics/equipped", h.BattlePass.EquipCosmetic)
+		}
+
+		// Invoice workflow is independently opt-in through the namespaced rollout
+		// switch; the service rejects writes while disabled and never touches
+		// payment data.
+		invoices := authenticated.Group("/invoices")
+		{
+			invoices.GET("/config", h.Invoice.GetConfig)
+			invoices.GET("/eligible-orders", h.Invoice.ListEligibleOrders)
+			invoices.GET("/my", h.Invoice.ListMy)
+			invoices.POST("", h.Invoice.Create)
+			invoices.GET("/:id", h.Invoice.GetMy)
+			invoices.POST("/:id/cancel", h.Invoice.Cancel)
+			invoices.PUT("/:id/resubmit", h.Invoice.Resubmit)
+			invoices.GET("/:id/download", h.Invoice.Download)
+		}
+
 		// 卡密兑换
 		redeem := authenticated.Group("/redeem")
 		{

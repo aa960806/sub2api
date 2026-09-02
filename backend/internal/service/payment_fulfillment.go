@@ -31,7 +31,9 @@ var ErrOrderNotFound = errors.New("payment order not found")
 const paymentFulfillmentLeaseDuration = 5 * time.Minute
 
 type paymentFulfillmentLease struct {
-	version time.Time
+	version               time.Time
+	firstRechargeGift     bool
+	firstRechargeFallback bool
 }
 
 // --- Payment Notification & Fulfillment ---
@@ -230,6 +232,19 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 		return infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.Status == OrderStatusCompleted {
+		if o.OrderType == payment.OrderTypeFirstRechargeGift {
+			// A replaced first-recharge order may have been settled at its actual
+			// paid amount. Its reservation is intentionally owned by another
+			// order, so do not attempt to mark that other reservation completed.
+			if s.hasAuditLog(ctx, o.ID, "FIRST_RECHARGE_FALLBACK") {
+				return nil
+			}
+			completedAt := time.Now()
+			if o.CompletedAt != nil {
+				completedAt = *o.CompletedAt
+			}
+			return s.markFirstRechargeGiftCompleted(ctx, o.UserID, o.ID, o.PayAmount, o.Amount, completedAt)
+		}
 		return nil
 	}
 	if psIsRefundStatus(o.Status) {
@@ -245,7 +260,29 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 	if lease == nil {
 		return nil
 	}
-	if err := s.doBalance(ctx, o, lease); err != nil {
+	fulfillmentOrder := o
+	if o.OrderType == payment.OrderTypeFirstRechargeGift {
+		claim, err := s.claimFirstRechargeGiftForPayment(ctx, o.UserID, o.ID)
+		if err != nil {
+			s.markFailed(ctx, oid, lease, err)
+			return err
+		}
+		lease.firstRechargeGift = claim.GiftGranted
+		lease.firstRechargeFallback = claim.FallbackToPaidAmount
+		if claim.FallbackToPaidAmount {
+			if o.PayAmount <= 0 || math.IsNaN(o.PayAmount) || math.IsInf(o.PayAmount, 0) {
+				err := errors.New("first recharge fallback has invalid paid amount")
+				s.markFailed(ctx, oid, lease, err)
+				return err
+			}
+			// The promotional credited amount must not be granted a second time
+			// after another order has consumed the user's one-time offer.
+			fallbackOrder := *o
+			fallbackOrder.Amount = o.PayAmount
+			fulfillmentOrder = &fallbackOrder
+		}
+	}
+	if err := s.doBalance(ctx, fulfillmentOrder, lease); err != nil {
 		s.markFailed(ctx, oid, lease, err)
 		return err
 	}
@@ -300,7 +337,10 @@ func (s *PaymentService) acquirePaymentFulfillmentLease(ctx context.Context, o *
 	if claimed.Status != OrderStatusRecharging {
 		return nil, infraerrors.Conflict("CONFLICT", "fulfillment lease was lost")
 	}
-	return &paymentFulfillmentLease{version: claimed.UpdatedAt}, nil
+	return &paymentFulfillmentLease{
+		version:           claimed.UpdatedAt,
+		firstRechargeGift: o.OrderType == payment.OrderTypeFirstRechargeGift,
+	}, nil
 }
 
 // redeemAction represents the idempotency decision for balance fulfillment.
@@ -372,9 +412,36 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 	if updated == 0 {
 		current, getErr := s.entClient.PaymentOrder.Get(ctx, o.ID)
 		if getErr == nil && current.Status == OrderStatusCompleted {
+			// A concurrent worker may have completed the order and lost the
+			// lease just before this worker reached the reservation update.
+			// Replaying the isolated marker is idempotent and repairs that
+			// side table without touching the balance again.
+			if o.OrderType == payment.OrderTypeFirstRechargeGift && lease.firstRechargeGift {
+				completedAt := now
+				if current.CompletedAt != nil {
+					completedAt = *current.CompletedAt
+				}
+				if markErr := s.markFirstRechargeGiftCompleted(ctx, o.UserID, o.ID, o.PayAmount, o.Amount, completedAt); markErr != nil {
+					return markErr
+				}
+			}
 			return nil
 		}
 		return infraerrors.Conflict("CONFLICT", "fulfillment lease was lost before completion")
+	}
+	if o.OrderType == payment.OrderTypeFirstRechargeGift && lease.firstRechargeGift {
+		if markErr := s.markFirstRechargeGiftCompleted(ctx, o.UserID, o.ID, o.PayAmount, o.Amount, now); markErr != nil {
+			return markErr
+		}
+	}
+	if o.OrderType == payment.OrderTypeFirstRechargeGift && lease.firstRechargeFallback {
+		// Keep a durable marker so retries of an already-completed fallback do
+		// not try to mutate the reservation now owned by another order.
+		s.writeAuditLog(ctx, o.ID, "FIRST_RECHARGE_FALLBACK", "system", map[string]any{
+			"paidAmount":     o.PayAmount,
+			"creditedAmount": o.Amount,
+			"reason":         "reservation was replaced or already consumed",
+		})
 	}
 	if !s.hasAuditLog(ctx, o.ID, auditAction) {
 		s.writeAuditLog(ctx, o.ID, auditAction, "system", map[string]any{
@@ -699,7 +766,7 @@ func affiliateRebateBaseAmount(o *dbent.PaymentOrder) float64 {
 		return 0
 	}
 	switch o.OrderType {
-	case payment.OrderTypeBalance, payment.OrderTypeSubscription:
+	case payment.OrderTypeBalance, payment.OrderTypeSubscription, payment.OrderTypeFirstRechargeGift:
 		return o.Amount
 	default:
 		return 0

@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -18,6 +20,15 @@ import (
 const (
 	affiliateCodeLength      = 12
 	affiliateCodeMaxAttempts = 12
+
+	subNexusSignupRewardSavepoint = "subnexus_signup_reward"
+
+	subNexusSignupRewardJobPending       = "pending"
+	subNexusSignupRewardJobCompleted     = "completed"
+	subNexusSignupRewardJobSkipped       = "skipped"
+	subNexusSignupRewardRetryBase        = 5 * time.Second
+	subNexusSignupRewardRetryMaxBackoff  = time.Hour
+	subNexusSignupRewardDefaultScanLimit = 50
 )
 
 var affiliateCodeCharset = []byte("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
@@ -58,6 +69,9 @@ type affiliateQueryExecer interface {
 type affiliateRepository struct {
 	client *dbent.Client
 }
+
+var _ service.AffiliateSignupRewardRepository = (*affiliateRepository)(nil)
+var _ service.AffiliateSignupRewardPendingRepository = (*affiliateRepository)(nil)
 
 func NewAffiliateRepository(client *dbent.Client, _ *sql.DB) service.AffiliateRepository {
 	return &affiliateRepository{client: client}
@@ -114,6 +128,605 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 	return bound, nil
 }
 
+// BindInviterAndEnqueueSignupReward atomically binds an invitee and persists
+// the immutable signup-reward policy snapshot. If either write fails the
+// transaction is rolled back, so a successful binding can never be left
+// without a durable reward job on the production path.
+func (r *affiliateRepository) BindInviterAndEnqueueSignupReward(ctx context.Context, userID, inviterID int64, pending service.AffiliateSignupRewardPending) (bool, int64, error) {
+	if r == nil || r.client == nil {
+		return false, 0, errors.New("affiliate repository unavailable")
+	}
+	var bound bool
+	var jobID int64
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, userID); err != nil {
+			return err
+		}
+		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, inviterID); err != nil {
+			return err
+		}
+
+		res, err := txClient.ExecContext(txCtx,
+			"UPDATE user_affiliates SET inviter_id = $1, updated_at = NOW() WHERE user_id = $2 AND inviter_id IS NULL",
+			inviterID, userID,
+		)
+		if err != nil {
+			return fmt.Errorf("bind inviter: %w", err)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			bound = false
+			return nil
+		}
+		if _, err = txClient.ExecContext(txCtx,
+			"UPDATE user_affiliates SET aff_count = aff_count + 1, updated_at = NOW() WHERE user_id = $1",
+			inviterID,
+		); err != nil {
+			return fmt.Errorf("increment inviter aff_count: %w", err)
+		}
+		bound = true
+
+		// EnqueueSignupReward detects the transaction in the context and runs
+		// against txClient, without opening a second transaction.
+		var enqueueErr error
+		jobID, _, enqueueErr = r.EnqueueSignupReward(txCtx, pending)
+		if enqueueErr != nil {
+			return enqueueErr
+		}
+		return nil
+	})
+	if err != nil {
+		return false, 0, err
+	}
+	return bound, jobID, nil
+}
+
+// GrantSignupReward atomically grants the optional SubNexus registration
+// balances and writes one audit ledger row per recipient. The invitee lock and
+// partial unique indexes make retries/concurrent callbacks idempotent without
+// touching upstream affiliate quota semantics.
+func (r *affiliateRepository) GrantSignupReward(ctx context.Context, inviterID, inviteeUserID int64, inviterAmount, inviteeAmount float64, clientIP string, ipLimitEnabled bool, ipDailyLimit int) (service.AffiliateSignupRewardResult, error) {
+	result := service.AffiliateSignupRewardResult{}
+	if inviterID <= 0 || inviteeUserID <= 0 || inviterID == inviteeUserID {
+		return skippedSignupReward("invalid_request"), nil
+	}
+	if !validSignupRewardAmount(inviterAmount) || !validSignupRewardAmount(inviteeAmount) || (inviterAmount <= 0 && inviteeAmount <= 0) {
+		return skippedSignupReward("invalid_amount"), nil
+	}
+	clientIP = strings.TrimSpace(clientIP)
+	if clientIP != "" {
+		addr, err := netip.ParseAddr(clientIP)
+		if err != nil {
+			return skippedSignupReward("invalid_client_ip"), nil
+		}
+		clientIP = addr.Unmap().String()
+	}
+	if ipLimitEnabled {
+		// A missing trusted IP must never bypass the configured anti-abuse limit.
+		if clientIP == "" {
+			return skippedSignupReward("missing_client_ip"), nil
+		}
+		if ipDailyLimit <= 0 || ipDailyLimit > service.SubNexusInviteSignupRewardIPDailyMax {
+			ipDailyLimit = service.SubNexusInviteSignupRewardIPDailyDefault
+		}
+	}
+
+	err := r.withSubNexusSignupRewardTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if _, err := txClient.ExecContext(txCtx, "SELECT pg_advisory_xact_lock(1397638990, hashint8($1::bigint))", inviteeUserID); err != nil {
+			return fmt.Errorf("lock SubNexus signup reward: %w", err)
+		}
+		bound, err := querySubNexusSignupRewardBindingExists(txCtx, txClient, inviterID, inviteeUserID)
+		if err != nil {
+			return fmt.Errorf("verify SubNexus signup reward binding: %w", err)
+		}
+		if !bound {
+			result = skippedSignupReward("inviter_mismatch")
+			return nil
+		}
+
+		exists, err := querySubNexusSignupRewardExists(txCtx, txClient, inviteeUserID)
+		if err != nil {
+			return fmt.Errorf("check SubNexus signup reward idempotency: %w", err)
+		}
+		if exists {
+			result = skippedSignupReward("already_granted")
+			return nil
+		}
+
+		if ipLimitEnabled {
+			if _, err := txClient.ExecContext(txCtx, "SELECT pg_advisory_xact_lock(1397638991, hashtext($1))", clientIP); err != nil {
+				return fmt.Errorf("lock SubNexus signup reward IP: %w", err)
+			}
+			count, err := querySubNexusSignupRewardIPDailyCount(txCtx, txClient, clientIP)
+			if err != nil {
+				return fmt.Errorf("check SubNexus signup reward IP limit: %w", err)
+			}
+			if count >= ipDailyLimit {
+				result = skippedSignupReward("ip_daily_limit")
+				return nil
+			}
+		}
+
+		if inviterAmount > 0 {
+			if err := grantSubNexusSignupBalanceTx(txCtx, txClient, inviterID, inviterAmount, "signup_bonus_inviter", inviteeUserID, clientIP); err != nil {
+				return err
+			}
+		}
+		if inviteeAmount > 0 {
+			if err := grantSubNexusSignupBalanceTx(txCtx, txClient, inviteeUserID, inviteeAmount, "signup_bonus_invitee", inviteeUserID, clientIP); err != nil {
+				return err
+			}
+		}
+		result.Applied = true
+		return nil
+	})
+	return result, err
+}
+
+// EnqueueSignupReward persists the reward policy snapshot after an inviter
+// binding.  The gate is re-read and locked in this transaction so a concurrent
+// disable cannot race an enqueue into a balance-writing path.  Existing rows
+// are returned unchanged; the unique invitee key makes retries idempotent and
+// preserves the original policy snapshot.
+func (r *affiliateRepository) EnqueueSignupReward(ctx context.Context, pending service.AffiliateSignupRewardPending) (jobID int64, inserted bool, err error) {
+	if r == nil || r.client == nil {
+		return 0, false, errors.New("affiliate repository unavailable")
+	}
+	if pending.InviterID <= 0 || pending.InviteeUserID <= 0 || pending.InviterID == pending.InviteeUserID {
+		return 0, false, nil
+	}
+	if !validSignupRewardAmount(pending.InviterAmount) || !validSignupRewardAmount(pending.InviteeAmount) || (pending.InviterAmount <= 0 && pending.InviteeAmount <= 0) {
+		return 0, false, nil
+	}
+	if pending.IPDailyLimit <= 0 || pending.IPDailyLimit > service.SubNexusInviteSignupRewardIPDailyMax {
+		pending.IPDailyLimit = service.SubNexusInviteSignupRewardIPDailyDefault
+	}
+	pending.ClientIP = strings.TrimSpace(pending.ClientIP)
+	if pending.ClientIP != "" {
+		addr, parseErr := netip.ParseAddr(pending.ClientIP)
+		if parseErr != nil {
+			// Preserve the row for an auditable deterministic skip.  The reward
+			// processor will mark it skipped without touching balances.
+			pending.ClientIP = strings.TrimSpace(pending.ClientIP)
+		} else {
+			pending.ClientIP = addr.Unmap().String()
+		}
+	}
+
+	apply := func(txCtx context.Context, txClient *dbent.Client) error {
+		gateEnabled, gateErr := querySubNexusInviteSignupRewardGateTx(txCtx, txClient)
+		if gateErr != nil {
+			return fmt.Errorf("verify SubNexus signup reward gate: %w", gateErr)
+		}
+		if !gateEnabled {
+			jobID = 0
+			inserted = false
+			return nil
+		}
+
+		row, queryErr := txClient.QueryContext(txCtx, `
+INSERT INTO subnexus_affiliate_signup_reward_jobs (
+    inviter_id, invitee_user_id, inviter_amount, invitee_amount,
+    client_ip, ip_limit_enabled, ip_daily_limit, status,
+    attempt_count, next_attempt_at, last_error, skip_reason,
+    created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, NOW(), '', '', NOW(), NOW())
+ON CONFLICT (invitee_user_id) DO NOTHING
+RETURNING id`,
+			pending.InviterID,
+			pending.InviteeUserID,
+			pending.InviterAmount,
+			pending.InviteeAmount,
+			pending.ClientIP,
+			pending.IPLimitEnabled,
+			pending.IPDailyLimit,
+		)
+		if queryErr != nil {
+			return fmt.Errorf("enqueue SubNexus signup reward: %w", queryErr)
+		}
+		if row.Next() {
+			if scanErr := row.Scan(&jobID); scanErr != nil {
+				_ = row.Close()
+				return fmt.Errorf("scan SubNexus signup reward job: %w", scanErr)
+			}
+			inserted = true
+		} else if rowErr := row.Err(); rowErr != nil {
+			_ = row.Close()
+			return fmt.Errorf("read SubNexus signup reward insert result: %w", rowErr)
+		}
+		if closeErr := row.Close(); closeErr != nil {
+			return fmt.Errorf("close SubNexus signup reward insert: %w", closeErr)
+		}
+		if inserted {
+			return nil
+		}
+
+		// ON CONFLICT DO NOTHING has no RETURNING row.  Fetch the existing job
+		// so a process that was interrupted between enqueue and immediate
+		// processing can safely resume it.
+		existing, fetchErr := querySignupRewardJobByInvitee(txCtx, txClient, pending.InviteeUserID)
+		if errors.Is(fetchErr, sql.ErrNoRows) {
+			return nil
+		}
+		if fetchErr != nil {
+			return fmt.Errorf("load existing SubNexus signup reward job: %w", fetchErr)
+		}
+		jobID = existing.ID
+		return nil
+	}
+
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		err = r.withSubNexusSignupRewardTx(ctx, apply)
+		return jobID, inserted, err
+	}
+	err = r.withTx(ctx, apply)
+	return jobID, inserted, err
+}
+
+// ProcessSignupReward performs one durable state transition.  The pending row
+// remains locked while GrantSignupReward executes, so concurrent workers cannot
+// issue duplicate balances.  A reward error is persisted with backoff and is
+// returned to the caller for observability; it is not allowed to abort the
+// registration or lose the job.
+func (r *affiliateRepository) ProcessSignupReward(ctx context.Context, jobID int64) (service.AffiliateSignupRewardProcessResult, error) {
+	var result service.AffiliateSignupRewardProcessResult
+	if r == nil || r.client == nil || jobID <= 0 {
+		return result, nil
+	}
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return result, fmt.Errorf("begin SubNexus signup reward job transaction: %w", err)
+	}
+	txCtx := dbent.NewTxContext(ctx, tx)
+	defer func() { _ = tx.Rollback() }()
+
+	// Acquire the rollout row before the job row.  EnqueueSignupReward uses
+	// the same order; keeping lock ordering consistent avoids a gate/job
+	// deadlock when a duplicate registration and the scanner race.
+	gateEnabled, err := querySubNexusInviteSignupRewardGateTx(txCtx, tx.Client())
+	if err != nil {
+		return result, fmt.Errorf("verify SubNexus signup reward gate: %w", err)
+	}
+	if !gateEnabled {
+		if err := tx.Commit(); err != nil {
+			return result, fmt.Errorf("commit disabled SubNexus signup reward job lookup: %w", err)
+		}
+		return result, nil
+	}
+
+	job, err := querySignupRewardJobByID(txCtx, tx.Client(), jobID, true)
+	if errors.Is(err, sql.ErrNoRows) {
+		if commitErr := tx.Commit(); commitErr != nil {
+			return result, fmt.Errorf("commit missing SubNexus signup reward job lookup: %w", commitErr)
+		}
+		return result, nil
+	}
+	if err != nil {
+		return result, fmt.Errorf("load SubNexus signup reward job: %w", err)
+	}
+	result.InviterID = job.InviterID
+	result.InviteeUserID = job.InviteeUserID
+	if job.Status != subNexusSignupRewardJobPending {
+		if err := tx.Commit(); err != nil {
+			return result, fmt.Errorf("commit completed SubNexus signup reward job lookup: %w", err)
+		}
+		return result, nil
+	}
+
+	rewardResult, rewardErr := r.GrantSignupReward(txCtx, job.InviterID, job.InviteeUserID, job.InviterAmount, job.InviteeAmount, job.ClientIP, job.IPLimit, job.IPDailyLimit)
+	if rewardErr != nil {
+		attempt := job.AttemptCount + 1
+		nextAttempt := time.Now().UTC().Add(subNexusSignupRewardRetryDelay(attempt))
+		if _, updateErr := tx.Client().ExecContext(txCtx, `
+UPDATE subnexus_affiliate_signup_reward_jobs
+SET attempt_count = $1,
+    next_attempt_at = $2,
+    last_error = $3,
+    updated_at = NOW()
+WHERE id = $4 AND status = 'pending'`,
+			attempt,
+			nextAttempt,
+			truncateSignupRewardError(rewardErr),
+			job.ID,
+		); updateErr != nil {
+			return result, fmt.Errorf("schedule SubNexus signup reward retry: %w (original: %v)", updateErr, rewardErr)
+		}
+		if commitErr := tx.Commit(); commitErr != nil {
+			return result, fmt.Errorf("commit SubNexus signup reward retry: %w (original: %v)", commitErr, rewardErr)
+		}
+		result.RetryScheduled = true
+		return result, rewardErr
+	}
+
+	status := subNexusSignupRewardJobSkipped
+	skipReason := strings.TrimSpace(rewardResult.SkipReason)
+	if rewardResult.Applied || skipReason == "already_granted" {
+		status = subNexusSignupRewardJobCompleted
+		result.Completed = true
+		result.Applied = rewardResult.Applied
+	} else if rewardResult.Skipped {
+		result.Skipped = true
+	} else {
+		// A repository implementation should always describe a result.  Treat
+		// an empty result as a deterministic skip rather than risking an
+		// endlessly hot retry loop.
+		result.Skipped = true
+		skipReason = "empty_result"
+	}
+	if _, err := tx.Client().ExecContext(txCtx, `
+UPDATE subnexus_affiliate_signup_reward_jobs
+SET status = $1,
+    skip_reason = $2,
+    last_error = '',
+    updated_at = NOW()
+WHERE id = $3 AND status = 'pending'`, status, skipReason, job.ID); err != nil {
+		return result, fmt.Errorf("complete SubNexus signup reward job: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return result, fmt.Errorf("commit SubNexus signup reward job: %w", err)
+	}
+	result.SkipReason = skipReason
+	return result, nil
+}
+
+// ReconcileSignupRewards processes a bounded due batch.  Each job is handled
+// in its own transaction so one transient failure cannot roll back unrelated
+// completions.  A gate race or an empty queue stops the scan without spinning.
+func (r *affiliateRepository) ReconcileSignupRewards(ctx context.Context, limit int) (service.AffiliateSignupRewardReconcileResult, error) {
+	var result service.AffiliateSignupRewardReconcileResult
+	if r == nil || r.client == nil {
+		return result, nil
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = subNexusSignupRewardDefaultScanLimit
+	}
+	for i := 0; i < limit; i++ {
+		jobID, err := r.findDueSignupRewardJob(ctx)
+		if errors.Is(err, sql.ErrNoRows) {
+			break
+		}
+		if err != nil {
+			return result, fmt.Errorf("find due SubNexus signup reward job: %w", err)
+		}
+		processed, processErr := r.ProcessSignupReward(ctx, jobID)
+		if processed.InviterID > 0 {
+			result.Examined++
+		}
+		if processed.Applied {
+			result.Applied++
+			result.Completed++
+			result.AffectedUserIDs = appendUniqueInt64(result.AffectedUserIDs, processed.InviterID, processed.InviteeUserID)
+		} else if processed.Completed {
+			result.Completed++
+		} else if processed.Skipped {
+			result.Skipped++
+		} else if processed.RetryScheduled {
+			result.Retried++
+		}
+		if processErr != nil && !processed.RetryScheduled {
+			return result, processErr
+		}
+		if processErr != nil && processed.RetryScheduled {
+			// Continue with the next due row; the current row now has a future
+			// next_attempt_at and cannot be selected again in this scan.
+			continue
+		}
+		if processed.InviterID == 0 {
+			break
+		}
+	}
+	return result, nil
+}
+
+type subNexusSignupRewardJob struct {
+	ID            int64
+	InviterID     int64
+	InviteeUserID int64
+	InviterAmount float64
+	InviteeAmount float64
+	ClientIP      string
+	IPLimit       bool
+	IPDailyLimit  int
+	Status        string
+	AttemptCount  int
+}
+
+func querySignupRewardJobByID(ctx context.Context, client affiliateQueryExecer, jobID int64, lock bool) (*subNexusSignupRewardJob, error) {
+	query := `
+SELECT id, inviter_id, invitee_user_id,
+       inviter_amount::double precision,
+       invitee_amount::double precision,
+       client_ip, ip_limit_enabled, ip_daily_limit, status, attempt_count
+FROM subnexus_affiliate_signup_reward_jobs
+WHERE id = $1`
+	if lock {
+		query += " FOR UPDATE"
+	}
+	return scanSignupRewardJob(ctx, client, query, jobID)
+}
+
+func querySignupRewardJobByInvitee(ctx context.Context, client affiliateQueryExecer, inviteeUserID int64) (*subNexusSignupRewardJob, error) {
+	return scanSignupRewardJob(ctx, client, `
+SELECT id, inviter_id, invitee_user_id,
+       inviter_amount::double precision,
+       invitee_amount::double precision,
+       client_ip, ip_limit_enabled, ip_daily_limit, status, attempt_count
+FROM subnexus_affiliate_signup_reward_jobs
+WHERE invitee_user_id = $1
+LIMIT 1`, inviteeUserID)
+}
+
+func scanSignupRewardJob(ctx context.Context, client affiliateQueryExecer, query string, args ...any) (*subNexusSignupRewardJob, error) {
+	rows, err := client.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, sql.ErrNoRows
+	}
+	var job subNexusSignupRewardJob
+	if err := rows.Scan(&job.ID, &job.InviterID, &job.InviteeUserID, &job.InviterAmount, &job.InviteeAmount, &job.ClientIP, &job.IPLimit, &job.IPDailyLimit, &job.Status, &job.AttemptCount); err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
+func (r *affiliateRepository) findDueSignupRewardJob(ctx context.Context) (int64, error) {
+	rows, err := r.client.QueryContext(ctx, `
+SELECT id
+FROM subnexus_affiliate_signup_reward_jobs
+WHERE status = 'pending' AND next_attempt_at <= NOW()
+ORDER BY next_attempt_at, id
+LIMIT 1`)
+
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, sql.ErrNoRows
+	}
+	var id int64
+	if err := rows.Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func querySubNexusInviteSignupRewardGateTx(ctx context.Context, client affiliateQueryExecer) (bool, error) {
+	rows, err := client.QueryContext(ctx, `SELECT value FROM settings WHERE key = $1 FOR UPDATE`, service.SettingKeySubNexusInviteRewardsEnabled)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var raw string
+	if err := rows.Scan(&raw); err != nil {
+		return false, err
+	}
+	return raw == "true", nil
+}
+
+func subNexusSignupRewardRetryDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	delay := subNexusSignupRewardRetryBase
+	for i := 1; i < attempt && delay < subNexusSignupRewardRetryMaxBackoff; i++ {
+		delay *= 2
+		if delay >= subNexusSignupRewardRetryMaxBackoff {
+			return subNexusSignupRewardRetryMaxBackoff
+		}
+	}
+	return delay
+}
+
+func truncateSignupRewardError(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := strings.TrimSpace(err.Error())
+	const maxLength = 2000
+	if len(text) > maxLength {
+		return text[:maxLength]
+	}
+	return text
+}
+
+func appendUniqueInt64(values []int64, additions ...int64) []int64 {
+	for _, value := range additions {
+		if value <= 0 {
+			continue
+		}
+		found := false
+		for _, existing := range values {
+			if existing == value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+// withSubNexusSignupRewardTx isolates the optional reward work from a caller's
+// existing transaction. PostgreSQL keeps a transaction aborted after any SQL
+// error until it is rolled back; the savepoint lets registration continue when
+// the service deliberately treats a reward failure as non-fatal.
+func (r *affiliateRepository) withSubNexusSignupRewardTx(ctx context.Context, fn func(txCtx context.Context, txClient *dbent.Client) error) error {
+	tx := dbent.TxFromContext(ctx)
+	if tx == nil {
+		return r.withTx(ctx, fn)
+	}
+
+	txClient := tx.Client()
+	if _, err := txClient.ExecContext(ctx, "SAVEPOINT "+subNexusSignupRewardSavepoint); err != nil {
+		return fmt.Errorf("create SubNexus signup reward savepoint: %w", err)
+	}
+	if err := fn(ctx, txClient); err != nil {
+		if _, rollbackErr := txClient.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+subNexusSignupRewardSavepoint); rollbackErr != nil {
+			return fmt.Errorf("SubNexus signup reward failed: %w; rollback savepoint: %v", err, rollbackErr)
+		}
+		if _, releaseErr := txClient.ExecContext(ctx, "RELEASE SAVEPOINT "+subNexusSignupRewardSavepoint); releaseErr != nil {
+			return fmt.Errorf("SubNexus signup reward failed: %w; release savepoint: %v", err, releaseErr)
+		}
+		return err
+	}
+	if _, err := txClient.ExecContext(ctx, "RELEASE SAVEPOINT "+subNexusSignupRewardSavepoint); err != nil {
+		return fmt.Errorf("release SubNexus signup reward savepoint: %w", err)
+	}
+	return nil
+}
+
+func querySubNexusSignupRewardBindingExists(ctx context.Context, client affiliateQueryExecer, inviterID, inviteeUserID int64) (bool, error) {
+	rows, err := client.QueryContext(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM user_affiliates
+    WHERE user_id = $1
+      AND inviter_id = $2
+)`, inviteeUserID, inviterID)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var exists bool
+	if err := rows.Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, rows.Close()
+}
+
+func skippedSignupReward(reason string) service.AffiliateSignupRewardResult {
+	return service.AffiliateSignupRewardResult{Skipped: true, SkipReason: reason}
+}
+
+func validSignupRewardAmount(value float64) bool {
+	return value >= 0 && value <= service.SubNexusInviteSignupRewardAmountMax && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
 func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
 	if amount <= 0 {
 		return false, nil
@@ -121,6 +734,21 @@ func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, invite
 
 	var applied bool
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		// The service performs an inexpensive gate check before entering this
+		// transaction, but that read is not a concurrency boundary.  Lock the
+		// canonical Affiliate switch here, before touching quota or the ledger,
+		// so a concurrent disable is linearized either before this mutation or
+		// after the whole transaction commits.  Missing/malformed values fail
+		// closed and preserve the upstream default for a partially migrated DB.
+		affiliateEnabled, gateErr := queryAffiliateEnabledTx(txCtx, txClient)
+		if gateErr != nil {
+			return fmt.Errorf("verify affiliate gate: %w", gateErr)
+		}
+		if !affiliateEnabled {
+			applied = false
+			return nil
+		}
+
 		// freezeHours > 0: add to frozen quota; == 0: add to available quota directly
 		var updateSQL string
 		if freezeHours > 0 {
@@ -160,6 +788,38 @@ VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, amount, inviteeUser
 		return false, err
 	}
 	return applied, nil
+}
+
+// queryAffiliateEnabledTx reads the canonical Affiliate rollout switch from
+// the transaction that will perform the quota mutation.  A missing row is a
+// deliberate disabled result; a query failure is returned so callers fail
+// closed rather than crediting a rebate they could not authorize.
+func queryAffiliateEnabledTx(ctx context.Context, client affiliateQueryExecer) (bool, error) {
+	if client == nil {
+		return false, errors.New("affiliate gate client unavailable")
+	}
+	rows, err := client.QueryContext(ctx,
+		`SELECT value FROM settings WHERE key = $1 FOR UPDATE`,
+		service.SettingKeyAffiliateEnabled,
+	)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var raw string
+	if err := rows.Scan(&raw); err != nil {
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	return raw == "true", nil
 }
 
 func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
@@ -908,6 +1568,104 @@ func queryUserBalance(ctx context.Context, client affiliateQueryExecer, userID i
 		return 0, err
 	}
 	return balance, nil
+}
+
+// querySubNexusSignupRewardExists checks the idempotency marker for a newly
+// registered invitee. Both recipient rows carry source_user_id, so checking
+// either action is sufficient even when only one side has a non-zero reward.
+func querySubNexusSignupRewardExists(ctx context.Context, client affiliateQueryExecer, inviteeUserID int64) (bool, error) {
+	rows, err := client.QueryContext(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM user_affiliate_ledger
+    WHERE source_user_id = $1
+      AND action IN ('signup_bonus_inviter', 'signup_bonus_invitee')
+)`, inviteeUserID)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var exists bool
+	if err := rows.Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, rows.Close()
+}
+
+// querySubNexusSignupRewardIPDailyCount counts distinct invitees rewarded by
+// one client IP since the database's current date. Counting invitees (rather
+// than ledger rows) keeps inviter+invitee pairs from consuming two slots.
+func querySubNexusSignupRewardIPDailyCount(ctx context.Context, client affiliateQueryExecer, clientIP string) (int, error) {
+	rows, err := client.QueryContext(ctx, `
+SELECT COUNT(DISTINCT source_user_id)
+FROM user_affiliate_ledger
+WHERE action IN ('signup_bonus_inviter', 'signup_bonus_invitee')
+  AND source_ip = $1
+  AND created_at >= CURRENT_DATE`, clientIP)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, rows.Close()
+}
+
+// grantSubNexusSignupBalanceTx updates a recipient and records the resulting
+// balance in the same transaction as the idempotency checks. A failed ledger
+// insert rolls the balance update back through the caller's transaction.
+func grantSubNexusSignupBalanceTx(ctx context.Context, client *dbent.Client, userID int64, amount float64, action string, sourceUserID int64, clientIP string) error {
+	affected, err := client.User.Update().
+		Where(user.IDEQ(userID)).
+		AddBalance(amount).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("grant SubNexus signup reward balance: %w", err)
+	}
+	if affected == 0 {
+		return service.ErrUserNotFound
+	}
+
+	balanceAfter, err := queryUserBalance(ctx, client, userID)
+	if err != nil {
+		return err
+	}
+	if _, err = client.ExecContext(ctx, `
+INSERT INTO user_affiliate_ledger (
+    user_id,
+    action,
+    amount,
+    source_user_id,
+    source_ip,
+    balance_after,
+    created_at,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+		userID,
+		action,
+		amount,
+		sourceUserID,
+		clientIP,
+		balanceAfter,
+	); err != nil {
+		return fmt.Errorf("insert SubNexus signup reward ledger: %w", err)
+	}
+	return nil
 }
 
 type affiliateTransferSnapshot struct {

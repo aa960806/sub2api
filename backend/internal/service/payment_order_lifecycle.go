@@ -136,6 +136,14 @@ func (s *PaymentService) cancelCore(ctx context.Context, o *dbent.PaymentOrder, 
 		if fs == OrderStatusExpired {
 			auditAction = "ORDER_EXPIRED"
 		}
+		if o.OrderType == payment.OrderTypeFirstRechargeGift {
+			if cleanupErr := s.releaseFirstRechargeGiftReservation(ctx, o.ID, fs); cleanupErr != nil {
+				// The payment order transition is already committed. Keep the
+				// cancellation result stable, but record a durable retry marker
+				// so the reservation can be repaired without reversing the order.
+				s.recordFirstRechargeReservationCleanupFailure(ctx, o.ID, fs, cleanupErr)
+			}
+		}
 		s.writeAuditLog(ctx, o.ID, auditAction, op, map[string]any{"detail": ad})
 	}
 	return checkPaidResultCancelled, nil

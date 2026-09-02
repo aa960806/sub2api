@@ -245,6 +245,21 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Status:       StatusActive,
 	}
 
+	// Reserve the trusted client IP immediately before the account write. The
+	// reservation is released on every error path and finalized as soon as the
+	// user row exists, so a token-generation failure cannot allow a duplicate
+	// signup while still leaving the account in place.
+	registrationClaim, err := s.claimRegistrationIPCooldown(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	registrationFinalized := false
+	defer func() {
+		if registrationClaim != nil && !registrationFinalized {
+			s.releaseRegistrationIPCooldownClaimBestEffort(ctx, registrationClaim, "email registration")
+		}
+	}()
+
 	if err := s.createUserAndClaimInvitation(ctx, user, invitationRedeemCode); err != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
 		switch {
@@ -259,6 +274,17 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 			return "", nil, ErrServiceUnavailable
 		}
 	}
+	if err := s.attachRegistrationIPCooldownClaim(ctx, registrationClaim, user.ID); err != nil {
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, false, wrapRegistrationCleanupError("attach registration IP cooldown claim", err))
+		registrationClaim = nil
+		return "", nil, cleanupErr
+	}
+	if err := s.finalizeRegistrationIPCooldown(ctx, registrationClaim, user.ID); err != nil {
+		cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, true, wrapRegistrationCleanupError("finalize registration IP cooldown", err))
+		registrationClaim = nil
+		return "", nil, cleanupErr
+	}
+	registrationFinalized = registrationClaim != nil
 	s.postAuthUserBootstrap(ctx, user, "email", true)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
@@ -584,11 +610,24 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 	}
 
 	user, err := s.userRepo.GetByEmail(ctx, email)
+	var registrationClaim *registrationIPCooldownClaim
+	registrationClaimAttached := false
+	defer func() {
+		if registrationClaim != nil && !registrationClaimAttached {
+			s.releaseRegistrationIPCooldownClaimBestEffort(ctx, registrationClaim, "legacy OAuth registration")
+		}
+	}()
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			// OAuth 首次登录视为注册（fail-close：settingService 未配置时不允许注册）
 			if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 				return "", nil, ErrRegDisabled
+			}
+
+			var claimErr error
+			registrationClaim, claimErr = s.claimRegistrationIPCooldown(ctx)
+			if claimErr != nil {
+				return "", nil, claimErr
 			}
 
 			randomPassword, err := randomHexString(32)
@@ -634,6 +673,17 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 				}
 			} else {
 				user = newUser
+				if err := s.attachRegistrationIPCooldownClaim(ctx, registrationClaim, user.ID); err != nil {
+					cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, "", registrationClaim, false, wrapRegistrationCleanupError("attach registration IP cooldown claim", err))
+					registrationClaim = nil
+					return "", nil, cleanupErr
+				}
+				registrationClaimAttached = registrationClaim != nil
+				if err := s.finalizeRegistrationIPCooldown(ctx, registrationClaim, user.ID); err != nil {
+					cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, "", registrationClaim, registrationClaimAttached, wrapRegistrationCleanupError("finalize registration IP cooldown", err))
+					registrationClaim = nil
+					return "", nil, cleanupErr
+				}
 				s.postAuthUserBootstrap(ctx, user, signupSource, false)
 				s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 				// snapshot user × platform quota（fail-open）
@@ -713,6 +763,13 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	created := false
+	var registrationClaim *registrationIPCooldownClaim
+	registrationFinalized := false
+	defer func() {
+		if registrationClaim != nil && !registrationFinalized {
+			s.releaseRegistrationIPCooldownClaimBestEffort(ctx, registrationClaim, "OAuth token-pair registration")
+		}
+	}()
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			// OAuth 首次登录视为注册
@@ -734,6 +791,11 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					return nil, nil, ErrInvitationCodeInvalid
 				}
 				invitationRedeemCode = redeemCode
+			}
+
+			registrationClaim, err = s.claimRegistrationIPCooldown(ctx)
+			if err != nil {
+				return nil, nil, err
 			}
 
 			randomPassword, err := randomHexString(32)
@@ -799,6 +861,17 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					}
 					user = newUser
 					created = true
+					if err := s.attachRegistrationIPCooldownClaim(ctx, registrationClaim, user.ID); err != nil {
+						cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, false, wrapRegistrationCleanupError("attach registration IP cooldown claim", err))
+						registrationClaim = nil
+						return nil, nil, cleanupErr
+					}
+					if err := s.finalizeRegistrationIPCooldown(ctx, registrationClaim, user.ID); err != nil {
+						cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, registrationClaim != nil, wrapRegistrationCleanupError("finalize registration IP cooldown", err))
+						registrationClaim = nil
+						return nil, nil, cleanupErr
+					}
+					registrationFinalized = registrationClaim != nil
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
@@ -820,16 +893,29 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				} else {
 					user = newUser
 					created = true
+					if err := s.attachRegistrationIPCooldownClaim(ctx, registrationClaim, user.ID); err != nil {
+						cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, false, wrapRegistrationCleanupError("attach registration IP cooldown claim", err))
+						registrationClaim = nil
+						return nil, nil, cleanupErr
+					}
+					if invitationRedeemCode != nil {
+						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
+							cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, registrationClaim != nil, ErrInvitationCodeInvalid)
+							registrationClaim = nil
+							return nil, nil, cleanupErr
+						}
+					}
+					if err := s.finalizeRegistrationIPCooldown(ctx, registrationClaim, user.ID); err != nil {
+						cleanupErr := s.rollbackRegistrationAccountCreation(ctx, user.ID, invitationCode, registrationClaim, registrationClaim != nil, wrapRegistrationCleanupError("finalize registration IP cooldown", err))
+						registrationClaim = nil
+						return nil, nil, cleanupErr
+					}
+					registrationFinalized = registrationClaim != nil
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
 					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
-					if invitationRedeemCode != nil {
-						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
-							return nil, nil, ErrInvitationCodeInvalid
-						}
-					}
 				}
 			}
 		} else {

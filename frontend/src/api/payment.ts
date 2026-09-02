@@ -11,6 +11,7 @@ import type {
   CheckoutInfoResponse,
   CreateOrderRequest,
   CreateOrderResult,
+  FirstRechargeGiftStatus,
   PaymentOrder
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
@@ -37,6 +38,11 @@ export const paymentAPI = {
   /** Get all checkout page data in a single call */
   getCheckoutInfo() {
     return apiClient.get<CheckoutInfoResponse>('/payment/checkout-info')
+  },
+
+  /** Get the isolated, fail-closed first-recharge offer for this user. */
+  getFirstRechargeGift() {
+    return apiClient.get<FirstRechargeGiftStatus>('/payment/first-recharge-gift')
   },
 
   /** Get payment method limits and fee rates */

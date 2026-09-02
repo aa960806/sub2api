@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+	availabilityBarClass,
+	availabilityTextClass,
   formatLatencyKpiSecondary,
   formatLatencyPrivacy,
   formatMonitorMs,
@@ -71,10 +73,21 @@ describe('monitorFormat accuracy', () => {
     expect(formatMonitorSuccessRate(1, 3)).toBe('33.3%')
   })
 
-  it('derives success rate from error_rate without absolute counts', () => {
+	it('derives success rate from error_rate without absolute counts', () => {
     expect(formatMonitorSuccessRateFromError(0.1)).toBe('90.0%')
     expect(formatMonitorSuccessRateFromError(0)).toBe('100.0%')
-  })
+	})
+
+	it('uses stable V3 availability thresholds for text and timeline bars', () => {
+		expect(availabilityTextClass(90)).toContain('emerald')
+		expect(availabilityBarClass(90)).toBe('bg-emerald-500')
+		expect(availabilityTextClass(89.99)).toContain('amber')
+		expect(availabilityBarClass(89.99)).toBe('bg-amber-500')
+		expect(availabilityTextClass(80)).toContain('amber')
+		expect(availabilityBarClass(80)).toBe('bg-amber-500')
+		expect(availabilityTextClass(79.99)).toContain('red')
+		expect(availabilityBarClass(79.99)).toBe('bg-red-500')
+	})
 
   it('maps continuous scores to multi-stop bands', () => {
     expect(scoreToBand(100)).toBe('score10')

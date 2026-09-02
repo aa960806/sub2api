@@ -106,6 +106,18 @@ func (s *PaymentOrderExpiryService) runOnce() {
 		slog.Info("[PaymentOrderExpiry] reconciled paid wxpay orders", "count", recovered)
 	}
 
+	// Reservation cleanup is independent of the offer switch. A transient
+	// database failure during cancellation/provider setup must not leave a
+	// first-recharge marker blocking the user forever.
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
+	cleaned, cleanupErr := s.paymentSvc.ReconcileFirstRechargeGiftReservations(cleanupCtx)
+	cleanupCancel()
+	if cleanupErr != nil {
+		slog.Warn("[PaymentOrderExpiry] failed to reconcile first recharge reservations", "cleaned", cleaned, "error", cleanupErr)
+	} else if cleaned > 0 {
+		slog.Info("[PaymentOrderExpiry] reconciled first recharge reservations", "count", cleaned)
+	}
+
 	expireCtx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
 	defer cancel()
 	expired, err := s.paymentSvc.ExpireTimedOutOrders(expireCtx)

@@ -140,6 +140,14 @@ func TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction(t *testing.T) {
 	require.NoError(t, err)
 	_, err = repo.EnsureUserAffiliate(txCtx, invitee.ID)
 	require.NoError(t, err)
+	// AccrueQuota now enforces the canonical Affiliate switch in the same
+	// transaction as the quota/ledger mutation.  Seed the enabled value inside
+	// this test transaction so the invariant test exercises the write path.
+	_, err = client.ExecContext(txCtx, `
+INSERT INTO settings (key, value, updated_at)
+VALUES ($1, 'true', NOW())
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, service.SettingKeyAffiliateEnabled)
+	require.NoError(t, err)
 
 	bound, err := repo.BindInviter(txCtx, invitee.ID, inviter.ID)
 	require.NoError(t, err)

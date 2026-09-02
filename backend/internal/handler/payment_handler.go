@@ -41,6 +41,23 @@ func (h *PaymentHandler) GetPaymentConfig(c *gin.Context) {
 	response.Success(c, cfg)
 }
 
+// GetFirstRechargeGift returns the authenticated user's first-recharge
+// eligibility snapshot. The service is fail-closed and returns a disabled
+// snapshot until the independent rollout switch is explicitly enabled.
+// GET /api/v1/activity/first-recharge-gift
+func (h *PaymentHandler) GetFirstRechargeGift(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	status, err := h.paymentService.GetFirstRechargeGiftStatus(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, status)
+}
+
 // GetPlans returns subscription plans available for sale.
 // GET /api/v1/payment/plans
 func (h *PaymentHandler) GetPlans(c *gin.Context) {
@@ -236,6 +253,7 @@ type CreateOrderRequest struct {
 	PaymentSource     string  `json:"payment_source"`
 	OrderType         string  `json:"order_type"`
 	PlanID            int64   `json:"plan_id"`
+	StudentBenefit    bool    `json:"student_benefit"`
 	// IsMobile lets the frontend declare its mobile status directly. When
 	// nil we fall back to User-Agent heuristics (which miss iPadOS / some
 	// embedded browsers that strip the "Mobile" keyword).
@@ -286,6 +304,7 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		OrderType:       req.OrderType,
 		PlanID:          req.PlanID,
 		Locale:          c.GetHeader("Accept-Language"),
+		StudentBenefit:  req.StudentBenefit,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -315,6 +334,7 @@ func applyWeChatPaymentResumeClaims(req *CreateOrderRequest, claims *service.WeC
 	}
 	req.PaymentType = paymentType
 	req.OpenID = openid
+	req.StudentBenefit = claims.StudentBenefit
 
 	if strings.TrimSpace(claims.Amount) != "" {
 		amount, err := strconv.ParseFloat(strings.TrimSpace(claims.Amount), 64)
