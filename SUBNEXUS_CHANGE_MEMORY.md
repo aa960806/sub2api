@@ -511,3 +511,9 @@
 - 风险：线上 B0-5 只读证据、B0-6 可恢复备份和 B0-7 隔离恢复/旧版本回归仍未取得；旧命令不得重试，Batch 1 业务迁移仍禁止创建或应用。
 - 回滚点：代码可回到父提交 `da04e0587105c4f1347c6060bdb7299961835c68`；数据库和生产状态无变化。旧脚本仅可作为审计参考，不得重新执行。
 - 下一步：推送当前提交和文档更新后，维护者使用新批准 SHA、显式容器 `subnexus-cutover` 的单行命令重新执行只读预检，并回传脱敏 `evidence.txt`。
+
+### 交接记录
+
+- 代码提交 `093163b2918fe15af8f909ae716531b9298f75b6` 与文档提交 `ba63facd0ae49dd0f508204af4b585d1e01490eb` 已推送到 `origin/feature/subnexus-migration`；远端当前 tip 为 `ba63facd0ae49dd0f508204af4b585d1e01490eb`，目标 `main`/`origin/main` 仍为 `d596d0844f274c3e7933c966231851f9f20b0d47`。
+- 服务器命令策略：在已存在的 `/root/subnexus-migration/preflight` 中只执行受限 `git fetch`，验证批准提交及脚本 SHA256，从 Git blob 复制 root-only 临时文件后执行；不 checkout、不检查未 checkout 工作树、不停止或重启任何容器。
+- 当前指定生产应用容器为 `subnexus-cutover`；`subnexus-bepusdt-test` 为测试容器，禁止自动选择或触碰。预检证据根目录为 `/srv/subnexus-migration/preflight`，公网 URL 暂留空，仅执行容器本地 health 检查。
