@@ -781,3 +781,8 @@
 - 将当前 311 个迁移代码、测试、SQL 和项目记忆文件固定为本地提交 `b26c42e08fb190f3915f08949aaaba48dbe61a26`（`feat: migrate SubNexus features to upstream baseline`）。提交前 `git diff --cached --check`、gofmt、敏感扫描、依赖校验和全量测试均已通过。
 - 提交后工作树干净，当前分支仍为 `feature/subnexus-migration`，相对 `origin/feature/subnexus-migration` 仅本地领先；未推送、未修改 `main`、旧项目或服务器。
 - 该提交是可回滚的本地候选，不代表 Release Gate 通过；所有迁移开关保持关闭，Docker/隔离 PostgreSQL/Redis/旧版本回归仍受本机 Docker daemon 故障阻塞。
+
+## 2026-09-03（Asia/Shanghai）— 提交后文档字段校准
+
+- 将上下文和台账中的“当前 HEAD”改为明确的“功能代码候选 SHA=`b26c42e08fb190f3915f08949aaaba48dbe61a26`”，并说明文档收尾提交应以 `git rev-parse HEAD` 实时获取，避免把文档提交误当作代码回滚点。
+- 本次仅修改迁移文档并提交；未改变业务代码、迁移 SQL、开关默认值或依赖，未访问旧项目可写路径、服务器、线上数据库/Redis，未推送。
