@@ -16,6 +16,8 @@
 
 最终发布清单必须同时记录预检脚本所在提交的完整 40 位 SHA 和该文件的 64 位 SHA256；脚本或其依赖环境每次变更后都必须重新生成这两个值，不能沿用历史固定值。服务器上的副本必须与维护者批准的发布清单逐项比对，不一致就停止，不要直接运行未校验副本。
 
+本轮 Batch 0 只读预检固定点（不代表生产发布授权）：提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29`；脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`。
+
 ```bash
 set -Eeuo pipefail
 repo_root='<approved-repo-root-from-live-inspect>'

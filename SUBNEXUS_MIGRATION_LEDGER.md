@@ -63,6 +63,7 @@
 | 迁移分支文档发布前固定点 | 2026-09-01 Asia/Shanghai | 通过 | 文档发布前 `origin/feature/subnexus-migration` 与本地均为 `7747627d5646b140e4b716463d5e6342673d343c`；`main` 保持 `d596d0844f274c3e7933c966231851f9f20b0d47`；当前 SHA 以 Git 实时查询为准 |
 | 线上预检脚本发布校验（历史固定提交） | 2026-09-01 Asia/Shanghai | 待维护者执行 | 历史提交脚本 SHA256=`ECB985233881E3C20BD20B8D394275D35F50AF1F344EBFADDB1BF13AA9A02E84`；本轮已更新脚本，以下一行是当前固定版本 |
 | 线上预检脚本发布校验（历史固定提交，已过期） | 2026-09-01 Asia/Shanghai | 已被本轮 supersede | 历史提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0` 的脚本 SHA256=`004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`；不得用于本轮线上执行 |
+| 线上预检脚本发布校验（本轮固定提交） | 2026-09-02 Asia/Shanghai | 待维护者执行 | 提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29`；`tools/production-deploy/subnexus-readonly-preflight.sh` SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`；服务器下载后先校验再运行 |
 | Go 后端编译级基线 | 2026-09-01 Asia/Shanghai | 通过 | 在 `backend` 模块执行 `go test ./... -run '^$' -count=1 -p=1`，退出码 0；专用 GOTMPDIR/GOCACHE 位于 `F:\MySub2` |
 | 前端冻结依赖与锁文件 | 2026-09-01 Asia/Shanghai | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` 完成；`frontend/pnpm-lock.yaml` SHA256 保持 `8DBD1876020E41B644D971414D29100C9F428F39EDE953C03D0442B834F6F3AF`，无 diff |
 | 前端 typecheck/Vitest/build | 2026-09-01 Asia/Shanghai | 通过 | `pnpm typecheck`、`pnpm test:run`（249 个文件/1804 个测试）、`pnpm build` 均退出码 0；仅有既有 Browserslist/Vite 警告 |
