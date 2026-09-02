@@ -16,7 +16,7 @@
 
 最终发布清单必须同时记录批准预检脚本发布提交的完整 40 位 SHA 和该文件的 64 位 SHA256；脚本或其依赖环境每次变更后都必须重新生成这两个值，不能沿用历史固定值。服务器上的副本必须与维护者批准的发布清单逐项比对，不一致就停止，不要直接运行未校验副本。
 
-本轮 Batch 0 只读预检脚本发布点（不代表生产发布授权）：批准提交 `7200e5ae1f48d8f78bce43565814378b636c842b`；脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`。该提交只补充固定点文档，脚本内容与父提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29` 相同；服务器工作树可以是该提交的后代，但必须同时校验批准提交中的脚本和当前执行文件。
+本轮 Batch 0 只读预检脚本发布点（不代表生产发布授权）：批准提交 `093163b2918fe15af8f909ae716531b9298f75b6`；脚本 SHA256=`42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6`。该提交修复 Docker `PortBinding` 模板字段名（使用 `.HostIp`），父提交为 `da04e0587105c4f1347c6060bdb7299961835c68`。此前批准提交 `7200e5ae1f48d8f78bce43565814378b636c842b` 及脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1` 已被本提交 supersede，仅用于历史追溯，禁止线上执行。服务器工作树可以是当前批准提交的后代，但必须同时校验批准提交中的脚本和当前执行文件。
 
 ```bash
 set -Eeuo pipefail
@@ -37,8 +37,8 @@ public_health_url="$3"
 evidence_root="$4"
 script_relative_path='tools/production-deploy/subnexus-readonly-preflight.sh'
 script_path="$repo_root/$script_relative_path"
-approved_script_commit_sha='7200e5ae1f48d8f78bce43565814378b636c842b'
-expected_script_sha256='D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1'
+approved_script_commit_sha='093163b2918fe15af8f909ae716531b9298f75b6'
+expected_script_sha256='42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6'
 [[ "$approved_script_commit_sha" =~ ^[0-9a-f]{40}$ ]]
 [[ "$expected_script_sha256" =~ ^[0-9A-F]{64}$ ]]
 [[ -d "$repo_root/.git" ]] || { printf 'ERROR: repo root is not a Git worktree: %s\n' "$repo_root" >&2; exit 1; }

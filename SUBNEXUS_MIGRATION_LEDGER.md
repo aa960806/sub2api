@@ -63,7 +63,8 @@
 | 迁移分支文档发布前固定点 | 2026-09-01 Asia/Shanghai | 通过 | 文档发布前 `origin/feature/subnexus-migration` 与本地均为 `7747627d5646b140e4b716463d5e6342673d343c`；`main` 保持 `d596d0844f274c3e7933c966231851f9f20b0d47`；当前 SHA 以 Git 实时查询为准 |
 | 线上预检脚本发布校验（历史固定提交） | 2026-09-01 Asia/Shanghai | 待维护者执行 | 历史提交脚本 SHA256=`ECB985233881E3C20BD20B8D394275D35F50AF1F344EBFADDB1BF13AA9A02E84`；本轮已更新脚本，以下一行是当前固定版本 |
 | 线上预检脚本发布校验（历史固定提交，已过期） | 2026-09-01 Asia/Shanghai | 已被本轮 supersede | 历史提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0` 的脚本 SHA256=`004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`；不得用于本轮线上执行 |
-| 线上预检脚本发布校验（本轮固定提交） | 2026-09-02 Asia/Shanghai | 待维护者执行 | 批准脚本提交 `7200e5ae1f48d8f78bce43565814378b636c842b`；`tools/production-deploy/subnexus-readonly-preflight.sh` SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`；脚本内容与父提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29` 相同；服务器工作树可为后代，但须校验批准提交中的脚本及当前文件后再运行 |
+| 线上预检脚本发布校验（历史固定提交，已 superseded） | 2026-09-02 Asia/Shanghai | 已被 `093163b291` supersede | 历史批准提交 `7200e5ae1f48d8f78bce43565814378b636c842b`；脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`；仅保留审计链，禁止线上执行 |
+| 线上预检脚本发布校验（当前批准提交） | 2026-09-02 Asia/Shanghai | 待维护者执行 | 批准脚本提交 `093163b2918fe15af8f909ae716531b9298f75b6`；`tools/production-deploy/subnexus-readonly-preflight.sh` SHA256=`42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6`；修复 Docker `PortBinding` 的 `.HostIp` 字段；服务器工作树可为后代，但须校验批准提交中的脚本及当前文件后再运行 |
 | Go 后端编译级基线 | 2026-09-01 Asia/Shanghai | 通过 | 在 `backend` 模块执行 `go test ./... -run '^$' -count=1 -p=1`，退出码 0；专用 GOTMPDIR/GOCACHE 位于 `F:\MySub2` |
 | 前端冻结依赖与锁文件 | 2026-09-01 Asia/Shanghai | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` 完成；`frontend/pnpm-lock.yaml` SHA256 保持 `8DBD1876020E41B644D971414D29100C9F428F39EDE953C03D0442B834F6F3AF`，无 diff |
 | 前端 typecheck/Vitest/build | 2026-09-01 Asia/Shanghai | 通过 | `pnpm typecheck`、`pnpm test:run`（249 个文件/1804 个测试）、`pnpm build` 均退出码 0；仅有既有 Browserslist/Vite 警告 |
@@ -104,3 +105,4 @@
 | 2026-09-02 Asia/Shanghai | 统一 Batch 0 预检批准脚本发布点 | 通过；线上待证据 | 手册和台账统一使用批准脚本提交 `7200e5ae1f48d8f78bce43565814378b636c842b`，并保留父提交关系与脚本 SHA256；`git diff --check` 通过 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
 | 2026-09-02 Asia/Shanghai | 收敛预检脚本校验与执行竞态 | 通过；线上待证据 | 手册改为 root shell 内校验批准 Git blob、生成 root-only 临时副本并执行；要求隔离仓库及 `.git` root-owned；脚本 SHA256 不变 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
 | 2026-09-02 Asia/Shanghai | 修正独立 clone 的 no-checkout 状态检查顺序 | 通过；线上待证据 | `git clone --no-checkout` 后先 checkout 固定提交，再检查 `git status --porcelain`；避免把暂未 checkout 的受跟踪文件误判为脏工作树 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
+| 2026-09-02 Asia/Shanghai | 修正 Docker PortBinding 字段并更新预检批准点 | 通过；线上待证据 | 提交 `093163b2918fe15af8f909ae716531b9298f75b6`；脚本 SHA256=`42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6`；旧批准值已标记 superseded；未访问线上，未执行 SQL、备份、部署、切流或开关修改 |

@@ -488,3 +488,26 @@
 - 风险：线上尚未执行预检；若存在非干净的既有隔离 clone，新命令会在 checkout 时停止，不覆盖其改动。
 - 回滚点：本次文档修正前 `d557599ec07543ef40d843e465873dd731fd6200`；无数据库或生产状态变化。
 - 下一步：推送修正后使用新的一行命令重新执行 B0-5。
+
+## 2026-09-02（Asia/Shanghai）— 修正 Docker HostIp 兼容性并轮换预检批准点
+
+### 目的与授权
+
+- 目的：修复线上只读预检在 Docker 端口绑定检查阶段因模板字段 `.HostIP` 拼写错误而退出的问题，并把可执行批准点更新到包含修复的不可变提交。
+- 是否得到维护者明确授权：是（迁移分支脚本、夹具和运行文档维护）；未获生产 SQL、备份、部署、重启、切流或线上开关修改授权。
+- 是否访问线上：否。此前用户执行旧脚本时仅在应用端口检查阶段失败，未进入 PostgreSQL/Redis 检查，也未修改业务状态。
+
+### 变更与验证
+
+- 代码提交：`093163b2918fe15af8f909ae716531b9298f75b6`（`fix: support Docker HostIp port binding field`），父提交为 `da04e0587105c4f1347c6060bdb7299961835c68`。
+- 触碰文件：`tools/production-deploy/subnexus-readonly-preflight.sh`、`tools/production-deploy/subnexus-readonly-preflight.test.sh`、`SUBNEXUS_CUTOVER_RUNBOOK.md`、`SUBNEXUS_MIGRATION_LEDGER.md`、`SUBNEXUS_CHANGE_MEMORY.md`。
+- 修复内容：`docker inspect --format` 使用 Docker 实际字段 `.HostIp`；夹具增加 `.HostIp` 正例、`.HostIP` 反例和端口绑定执行测试。
+- 当前批准预检资产：脚本提交 `093163b2918fe15af8f909ae716531b9298f75b6`；脚本 SHA256=`42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6`。
+- 旧批准资产 `7200e5ae1f48d8f78bce43565814378b636c842b` / `D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1` 已明确标记 superseded，历史记录未删除。
+- 本地验证：Git Bash `bash -n`（两份脚本）、预检夹具、`git diff --check` 均通过；当前工作树脚本 SHA 与批准值一致。
+
+### 风险、回滚与下一步
+
+- 风险：线上 B0-5 只读证据、B0-6 可恢复备份和 B0-7 隔离恢复/旧版本回归仍未取得；旧命令不得重试，Batch 1 业务迁移仍禁止创建或应用。
+- 回滚点：代码可回到父提交 `da04e0587105c4f1347c6060bdb7299961835c68`；数据库和生产状态无变化。旧脚本仅可作为审计参考，不得重新执行。
+- 下一步：推送当前提交和文档更新后，维护者使用新批准 SHA、显式容器 `subnexus-cutover` 的单行命令重新执行只读预检，并回传脱敏 `evidence.txt`。
