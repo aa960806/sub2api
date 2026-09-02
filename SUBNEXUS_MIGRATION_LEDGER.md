@@ -63,7 +63,7 @@
 | 迁移分支文档发布前固定点 | 2026-09-01 Asia/Shanghai | 通过 | 文档发布前 `origin/feature/subnexus-migration` 与本地均为 `7747627d5646b140e4b716463d5e6342673d343c`；`main` 保持 `d596d0844f274c3e7933c966231851f9f20b0d47`；当前 SHA 以 Git 实时查询为准 |
 | 线上预检脚本发布校验（历史固定提交） | 2026-09-01 Asia/Shanghai | 待维护者执行 | 历史提交脚本 SHA256=`ECB985233881E3C20BD20B8D394275D35F50AF1F344EBFADDB1BF13AA9A02E84`；本轮已更新脚本，以下一行是当前固定版本 |
 | 线上预检脚本发布校验（历史固定提交，已过期） | 2026-09-01 Asia/Shanghai | 已被本轮 supersede | 历史提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0` 的脚本 SHA256=`004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`；不得用于本轮线上执行 |
-| 线上预检脚本发布校验（本轮固定提交） | 2026-09-02 Asia/Shanghai | 待维护者执行 | 提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29`；`tools/production-deploy/subnexus-readonly-preflight.sh` SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`；服务器下载后先校验再运行 |
+| 线上预检脚本发布校验（本轮固定提交） | 2026-09-02 Asia/Shanghai | 待维护者执行 | 批准脚本提交 `7200e5ae1f48d8f78bce43565814378b636c842b`；`tools/production-deploy/subnexus-readonly-preflight.sh` SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`；脚本内容与父提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29` 相同；服务器工作树可为后代，但须校验批准提交中的脚本及当前文件后再运行 |
 | Go 后端编译级基线 | 2026-09-01 Asia/Shanghai | 通过 | 在 `backend` 模块执行 `go test ./... -run '^$' -count=1 -p=1`，退出码 0；专用 GOTMPDIR/GOCACHE 位于 `F:\MySub2` |
 | 前端冻结依赖与锁文件 | 2026-09-01 Asia/Shanghai | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` 完成；`frontend/pnpm-lock.yaml` SHA256 保持 `8DBD1876020E41B644D971414D29100C9F428F39EDE953C03D0442B834F6F3AF`，无 diff |
 | 前端 typecheck/Vitest/build | 2026-09-01 Asia/Shanghai | 通过 | `pnpm typecheck`、`pnpm test:run`（249 个文件/1804 个测试）、`pnpm build` 均退出码 0；仅有既有 Browserslist/Vite 警告 |
@@ -101,3 +101,4 @@
 | --- | --- | --- | --- |
 | 2026-09-02 Asia/Shanghai | 提交并推送文档固定点表述修正（`docs: clarify migration branch fixed points`） | 通过；脚本哈希、Shell 语法、差异检查和远端分支指向已复核 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
 | 2026-09-02 Asia/Shanghai | 25 组旧迁移接管与预检安全收尾复核 | 本地通过；线上待证据 | repository/migrations 单测、`go vet`、Shell 夹具和完整旧迁移隔离集成测试通过；后端全量仅保留 Windows service 基线测试残余（详见变更记忆） | 仅使用本机临时 PostgreSQL；未访问线上，未执行生产 SQL、备份、部署、切流或开关修改 |
+| 2026-09-02 Asia/Shanghai | 统一 Batch 0 预检固定点到当前 tip | 通过；线上待证据 | 手册和台账统一使用 `7200e5ae1f48d8f78bce43565814378b636c842b`，并保留父提交关系与脚本 SHA256；`git diff --check` 通过 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |

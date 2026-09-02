@@ -16,7 +16,7 @@
 
 最终发布清单必须同时记录预检脚本所在提交的完整 40 位 SHA 和该文件的 64 位 SHA256；脚本或其依赖环境每次变更后都必须重新生成这两个值，不能沿用历史固定值。服务器上的副本必须与维护者批准的发布清单逐项比对，不一致就停止，不要直接运行未校验副本。
 
-本轮 Batch 0 只读预检固定点（不代表生产发布授权）：提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29`；脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`。
+本轮 Batch 0 只读预检脚本发布点（不代表生产发布授权）：批准提交 `7200e5ae1f48d8f78bce43565814378b636c842b`；脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`。该提交只补充固定点文档，脚本内容与父提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29` 相同；服务器工作树可以是该提交的后代，但必须同时校验批准提交中的脚本和当前执行文件。
 
 ```bash
 set -Eeuo pipefail
@@ -24,12 +24,14 @@ repo_root='<approved-repo-root-from-live-inspect>'
 app_container='<actual-running-app-container-name>'
 public_health_url='<optional-public-health-url>'
 evidence_root='/srv/subnexus-migration/preflight'
-script_path="$repo_root/tools/production-deploy/subnexus-readonly-preflight.sh"
-expected_commit_sha='<approved-release-commit-sha>'
-expected_script_sha256='<approved-preflight-script-sha256>'
-[[ "$expected_commit_sha" =~ ^[0-9a-f]{40}$ ]]
+script_relative_path='tools/production-deploy/subnexus-readonly-preflight.sh'
+script_path="$repo_root/$script_relative_path"
+approved_script_commit_sha='7200e5ae1f48d8f78bce43565814378b636c842b'
+expected_script_sha256='D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1'
+[[ "$approved_script_commit_sha" =~ ^[0-9a-f]{40}$ ]]
 [[ "$expected_script_sha256" =~ ^[0-9A-F]{64}$ ]]
-test "$(git -C "$repo_root" rev-parse HEAD)" = "$expected_commit_sha"
+git -C "$repo_root" cat-file -e "$approved_script_commit_sha^{commit}"
+test "$(git -C "$repo_root" show "$approved_script_commit_sha:$script_relative_path" | sha256sum | awk '{print toupper($1)}')" = "$expected_script_sha256"
 test "$(sha256sum "$script_path" | awk '{print toupper($1)}')" = "$expected_script_sha256"
 sudo bash "$script_path" "$app_container" "$public_health_url" "$evidence_root"
 ```
