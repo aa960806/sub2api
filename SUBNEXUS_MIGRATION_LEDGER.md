@@ -103,3 +103,4 @@
 | 2026-09-02 Asia/Shanghai | 25 组旧迁移接管与预检安全收尾复核 | 本地通过；线上待证据 | repository/migrations 单测、`go vet`、Shell 夹具和完整旧迁移隔离集成测试通过；后端全量仅保留 Windows service 基线测试残余（详见变更记忆） | 仅使用本机临时 PostgreSQL；未访问线上，未执行生产 SQL、备份、部署、切流或开关修改 |
 | 2026-09-02 Asia/Shanghai | 统一 Batch 0 预检批准脚本发布点 | 通过；线上待证据 | 手册和台账统一使用批准脚本提交 `7200e5ae1f48d8f78bce43565814378b636c842b`，并保留父提交关系与脚本 SHA256；`git diff --check` 通过 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
 | 2026-09-02 Asia/Shanghai | 收敛预检脚本校验与执行竞态 | 通过；线上待证据 | 手册改为 root shell 内校验批准 Git blob、生成 root-only 临时副本并执行；要求隔离仓库及 `.git` root-owned；脚本 SHA256 不变 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |
+| 2026-09-02 Asia/Shanghai | 修正独立 clone 的 no-checkout 状态检查顺序 | 通过；线上待证据 | `git clone --no-checkout` 后先 checkout 固定提交，再检查 `git status --porcelain`；避免把暂未 checkout 的受跟踪文件误判为脏工作树 | 未访问线上；未执行 SQL、备份、部署、切流或开关修改 |

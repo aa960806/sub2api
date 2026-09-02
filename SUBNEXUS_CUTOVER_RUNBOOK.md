@@ -59,6 +59,7 @@ PREFLIGHT_VERIFY_AND_RUN
 ### 执行前置条件
 
 - 使用 root 运行；主机提供 GNU Bash 4+、GNU `timeout`（支持 `--foreground` 和 `--kill-after`）、`stat`、`realpath`、`flock`、`mktemp`，以及 `python3`、`curl`、`sha256sum` 等脚本依赖。用于校验的隔离仓库副本及其 `.git` 元数据必须由 root 持有；不要在旧版本正在使用的工作树上执行。
+- 若用 `git clone --no-checkout` 准备隔离仓库，必须先 `git checkout --detach <approved-commit>`，再执行 `git status --porcelain` 空工作树断言；未 checkout 的克隆会把全部受跟踪文件显示为删除，不能据此判定仓库损坏。
 - Docker CLI 必须连接本机默认 Docker context（Unix socket）；`DOCKER_HOST` 必须未设置。应用、PostgreSQL 和 Redis 容器必须正在运行并与应用加入同一 Docker 网络。脚本有意拒绝外部/托管数据库或 Redis 地址；仅有 IPv6 的 `8080/tcp` 发布也会被拒绝。
 - 应用环境必须提供可解析到该网络容器的 `DATABASE_HOST`、`DATABASE_USER` 和简单 `DATABASE_DBNAME`（最多 63 个 ASCII 字符，以字母开头且其余仅字母、数字和下划线，不能是 PostgreSQL conninfo/URI）；仅配置 `DATABASE_URL` 的实例不满足本预检输入合同。
 - PostgreSQL 容器内必须有可执行的 `psql`，Redis 容器内必须有 `redis-cli`。Redis 预检要求 standalone（Redis Cluster 不在本脚本支持范围），且 ACL 用户允许 `PING`、`INFO`、`DBSIZE` 和选择目标逻辑库（`-n` 会执行数据库选择）；建议 Redis server 与 CLI 使用 6.x 或更新的同一主版本。
