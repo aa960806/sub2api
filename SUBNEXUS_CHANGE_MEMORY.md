@@ -823,7 +823,7 @@
 - 旧版回归、回滚验证、临时 miniredis 和隔离 PostgreSQL 进程已按可执行路径/端口精确停止；停止前确认没有进程仍引用目标目录。
 - 受保护的本地业务进程 PID `79272`（端口 `18080`）和 Memurai PID `4644`（端口 `6379`）始终保持运行；旧项目 `F:\Sub2Api\SubNexus`、fork `main`、服务器和生产 PostgreSQL/Redis 均未触碰。
 - 本地编译级复核 `go test ./... -run '^$' -count=1 -p=1` 和前端 `pnpm typecheck` 通过；13 个目标迁移 checksum 复核无不匹配，`git diff --check` 通过。
-- 文档/矩阵收尾提交为 `95ac9f02044c25a1a681b516596ea2214b1fe8dc`；功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`。当前分支 `feature/subnexus-migration` 相对远端领先，未推送。
+- 文档/矩阵收尾提交链起点为 `95ac9f02044c25a1a681b516596ea2214b1fe8dc`，当前文档 tip=`1a3334a6bd0710f172f8504dcb2dd07ade149320`；功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`。当前分支 `feature/subnexus-migration` 相对远端领先，未推送。
 - `.old-version-regression-20260903`、`.rollback-validation-*`、`.subnexus-pg16-20260903`、`.runtime-*` 和本轮专用编译缓存已停止使用并保留在 `F:\MySub2` 作为本地审计材料；未纳入 Git。由于其中包含原始日志/数据库快照，本轮不做不可恢复删除，后续清理必须按绝对路径逐项确认后执行。
 - Release Gate 仍未通过：Docker daemon/候选镜像、持久化 Redis 恢复、生产 PostgreSQL 实际版本与备份隔离克隆、上游核心回归和维护者验收未完成；所有迁移开关继续默认关闭，禁止服务器拉取或执行服务器命令。
 - 应用回滚仍优先使用候选前代码 SHA，数据库不自动恢复；只有确认数据损坏且获得明确批准时才使用已验证备份。
