@@ -17,7 +17,7 @@
 | 旧项目参考 SHA | `ccffee6c6` |
 | 目标版本/Go | `0.1.185` / `1.27.0` |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
-| 生产数据库状态 | 待维护者执行实时只读 preflight |
+| 生产数据库状态 | 延后至本地 Batch 1-5 验收后的 Release Gate；当前禁止服务器操作 |
 
 ## Batch 0 门禁
 
@@ -28,17 +28,24 @@
 | B0-3 | 创建项目上下文、功能矩阵、台账 | 通过 | 上下文、功能矩阵、台账、变更记忆及切换/回滚手册已建立 |
 | B0-4 | 旧/新逐文件功能与迁移差异盘点 | 通过（本地） | 已完成保留/排除功能的后端、前端、路由、设置、迁移对象和目标接入点映射；线上表状态仍单独以 B0-5 为准 |
 | B0-4a | 同内容/语义改名迁移逐项审计 | 通过（本地静态） | 23 组 old filename→target filename 内容完全相同，另有 2 组已审计语义接管（共 25 组）；含 DML/索引/约束的重放风险已登记于规划 6.1.1；需隔离库和线上记录验证 adoption |
-| B0-4b | 改名迁移 alias/adoption runner 与对象契约 | 待证据（本地实现通过） | 当前工作树为 25 组显式映射；23 组元数据 adoption、`189/226` 事务 replay、checksum/对象/数据契约、同锁和 `_notx` 不重放均有测试；仍需 B0-7 隔离库及线上记录验证 |
-| B0-5 | 线上容器/数据库/Redis 只读状态 | 待证据 | 需维护者在当前 OVH 服务器执行命令 |
-| B0-6 | 线上 PostgreSQL 备份或可恢复副本 | 未开始 | 不得用生产库直接做本地测试 |
-| B0-7 | 隔离库跑候选迁移并启动旧版本回归 | 未开始 | 需 B0-4a、B0-5、B0-6 后执行；先验证改名迁移 adoption |
+| B0-4b | 改名迁移 alias/adoption runner 与对象契约 | 本地实现通过；发布证据待办 | 当前工作树为 25 组显式映射；本地测试不阻塞 Batch 1-5，生产备份隔离恢复仍是 Release Gate |
 | B0-8 | 新 fork 上游基线构建/测试 | 通过（本地基线） | 后端 `go test ./... -run '^$' -count=1 -p=1` 退出 0（GOTMPDIR/GOCACHE 指向 F 盘）；前端 `pnpm typecheck`、`pnpm test:run`（249 files/1804 tests）、`pnpm build` 均退出 0；未代表隔离库或生产通过 |
+
+## Release Gate（保留历史编号）
+
+以下项目只阻止上传后的生产发布，不阻止 Batch 1-5 本地开发：
+
+| 编号 | 门禁 | 状态 | 证据/备注 |
+| --- | --- | --- | --- |
+| B0-5 | 线上容器/数据库/Redis 只读状态 | 延后至 Release Gate | 本地 Batch 1-5 和维护者验收完成前禁止执行服务器预检 |
+| B0-6 | 线上 PostgreSQL 备份或可恢复副本 | 延后至 Release Gate | 本地开发不得连接生产库；最终候选使用备份恢复出的隔离副本 |
+| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 延后至 Release Gate | 维护者本地验收并固定 release SHA 后执行；不阻塞本地业务迁移 |
 
 ## 实施批次
 
 | 批次 | 范围 | 依赖 | 开关策略 | 状态 |
 | --- | --- | --- | --- | --- |
-| Batch 1 | 签到、排行榜、活动中心、公告扩展 | B0，目标设置/路由审计 | 每项独立默认关闭 | 未开始 |
+| Batch 1 | 签到、排行榜、活动中心、公告扩展 | 本地 B0-1 至 B0-4b/B0-8、最新上游同步 | 每项独立默认关闭 | 准备中 |
 | Batch 2 | 首充礼包、二开邀请奖励 | Batch 1 规则、订单/Affiliate 审计 | 默认关闭，奖励幂等 | 未开始 |
 | Batch 3 | 发票事务系统 | 数据目录、订单快照、邮件和权限审计 | `invoice_enabled=false` | 未开始 |
 | Batch 4 | Battle Pass | 用量/充值/邀请数据合同 | `battle_pass_enabled=false` | 未开始 |
@@ -64,13 +71,13 @@
 | 线上预检脚本发布校验（历史固定提交） | 2026-09-01 Asia/Shanghai | 待维护者执行 | 历史提交脚本 SHA256=`ECB985233881E3C20BD20B8D394275D35F50AF1F344EBFADDB1BF13AA9A02E84`；本轮已更新脚本，以下一行是当前固定版本 |
 | 线上预检脚本发布校验（历史固定提交，已过期） | 2026-09-01 Asia/Shanghai | 已被本轮 supersede | 历史提交 `dfec06ac1c939e07629d8c70b04c2a509f8007d0` 的脚本 SHA256=`004886DEF59C5AA1AB31B2A44FB482A997D40131575BCC60706390BA80A00F87`；不得用于本轮线上执行 |
 | 线上预检脚本发布校验（历史固定提交，已 superseded） | 2026-09-02 Asia/Shanghai | 已被 `093163b291` supersede | 历史批准提交 `7200e5ae1f48d8f78bce43565814378b636c842b`；脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`；仅保留审计链，禁止线上执行 |
-| 线上预检脚本发布校验（当前批准提交） | 2026-09-02 Asia/Shanghai | 待维护者执行 | 批准脚本提交 `093163b2918fe15af8f909ae716531b9298f75b6`；`tools/production-deploy/subnexus-readonly-preflight.sh` SHA256=`42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6`；修复 Docker `PortBinding` 的 `.HostIp` 字段；服务器工作树可为后代，但须校验批准提交中的脚本及当前文件后再运行 |
+| 线上预检脚本发布校验（历史 Batch 0 资产，已冻结） | 2026-09-02 Asia/Shanghai | 禁止当前执行 | 历史批准提交 `093163b2918fe15af8f909ae716531b9298f75b6`；脚本 SHA256=`42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6`；最终本地候选完成后必须重新审核并固定新值 |
 | Go 后端编译级基线 | 2026-09-01 Asia/Shanghai | 通过 | 在 `backend` 模块执行 `go test ./... -run '^$' -count=1 -p=1`，退出码 0；专用 GOTMPDIR/GOCACHE 位于 `F:\MySub2` |
 | 前端冻结依赖与锁文件 | 2026-09-01 Asia/Shanghai | 通过 | `pnpm install --frozen-lockfile --ignore-scripts` 完成；`frontend/pnpm-lock.yaml` SHA256 保持 `8DBD1876020E41B644D971414D29100C9F428F39EDE953C03D0442B834F6F3AF`，无 diff |
 | 前端 typecheck/Vitest/build | 2026-09-01 Asia/Shanghai | 通过 | `pnpm typecheck`、`pnpm test:run`（249 个文件/1804 个测试）、`pnpm build` 均退出码 0；仅有既有 Browserslist/Vite 警告 |
 | 同库切换手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_CUTOVER_RUNBOOK.md`；仅发布授权后使用 |
 | 回滚手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_ROLLBACK_RUNBOOK.md`；默认应用回滚，不自动恢复数据库 |
-| 线上实时预检 | 待维护者执行 | 待证据 | 需要脱敏回传脚本输出；脚本不执行迁移/备份/重启/切流 |
+| 线上实时预检 | 本地验收后执行 | 已延后 | 当前禁止服务器操作；最终候选固定后重新生成批准入口 |
 | 改名迁移静态审计 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧迁移按 `SHA256(TrimSpace(SQL))` 比较，确认 23 组同内容改名；另审计 2 组语义接管；含 DML 的文件不得在同库直接重跑 |
 | 改名迁移 adoption 本地 runner 验证 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧文件 checksum 23/23 一致；repository 单测、`go vet`、全后端编译级测试和 integration-only 编译通过；触发器规范化顺序与 `groups.platform NOT NULL` 契约已校正 |
 | 目标迁移 SQL 隔离目录验证 | 2026-09-01 Asia/Shanghai | 通过（本机 PostgreSQL 16） | 在临时隔离集群执行目标迁移集合，并读取列、索引有效性/定义、约束、函数、触发器；未使用生产数据库，集群已停止 |

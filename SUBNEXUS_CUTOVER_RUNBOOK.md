@@ -1,10 +1,10 @@
 # SubNexus 同库切换手册
 
-本手册只适用于所有 Batch 通过隔离库验收、候选 release 已固定为完整 40 位 SHA、且维护者明确批准发布之后。当前分支阶段不得执行生产迁移、切流或开启功能。
+本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。当前阶段禁止执行本手册中的服务器命令、生产迁移、备份、切流或功能开启。
 
 ## 1. 发布前硬门禁
 
-- 发布前必须确认 `feature/subnexus-migration` 已通过代码、后端、前端和 Docker 验证，并从目标 `main` 生成不可变 release SHA；当前分支状态不代表该门禁已满足。
+- 发布前必须确认 `feature/subnexus-migration` 已通过代码、后端、前端和 Docker 验证，经维护者验收后推送并固定不可变 release SHA；未经另行批准不修改 `main`。
 - 发布前必须在生产备份恢复出的隔离 PostgreSQL/Redis 上启动候选版本，确认目标自动迁移无 checksum mismatch，且旧版本连接迁移后克隆库仍可登录并读取核心数据。
 - 发布前必须保存并校验 PostgreSQL custom-format 备份、Redis 恢复点、应用镜像、旧容器 inspect、单独采集的 Nginx 有效配置和文件存储目录快照。
 - 发布前必须取得目标脚本 `tools/production-deploy/subnexus-readonly-preflight.sh` 的线上只读证据，并核对 `schema_migrations`、`atlas_schema_revisions`、真实网络、挂载和开关状态；当前阶段尚未取得这些证据。
@@ -12,11 +12,11 @@
 
 ## 2. 只读预检
 
-在生产服务器执行（替换容器名和公网健康 URL；不要把密码写进命令）：
+以下内容是历史 Batch 0 预检资产，仅用于审计，不是当前可执行入口。最终本地候选完成后必须重新审核脚本、生成新的提交 SHA 和 SHA256，并由维护者明确批准后才能在生产服务器执行。
 
 最终发布清单必须同时记录批准预检脚本发布提交的完整 40 位 SHA 和该文件的 64 位 SHA256；脚本或其依赖环境每次变更后都必须重新生成这两个值，不能沿用历史固定值。服务器上的副本必须与维护者批准的发布清单逐项比对，不一致就停止，不要直接运行未校验副本。
 
-本轮 Batch 0 只读预检脚本发布点（不代表生产发布授权）：批准提交 `093163b2918fe15af8f909ae716531b9298f75b6`；脚本 SHA256=`42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6`。该提交修复 Docker `PortBinding` 模板字段名（使用 `.HostIp`），父提交为 `da04e0587105c4f1347c6060bdb7299961835c68`。此前批准提交 `7200e5ae1f48d8f78bce43565814378b636c842b` 及脚本 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1` 已被本提交 supersede，仅用于历史追溯，禁止线上执行。服务器工作树可以是当前批准提交的后代，但必须同时校验批准提交中的脚本和当前执行文件。
+历史批准值已移入迁移台账并冻结。下方命令块只保留校验设计参考，批准提交和 SHA256 使用不可执行占位符；最终候选完成前不能填充或复制到服务器运行。
 
 ```bash
 set -Eeuo pipefail
@@ -37,8 +37,8 @@ public_health_url="$3"
 evidence_root="$4"
 script_relative_path='tools/production-deploy/subnexus-readonly-preflight.sh'
 script_path="$repo_root/$script_relative_path"
-approved_script_commit_sha='093163b2918fe15af8f909ae716531b9298f75b6'
-expected_script_sha256='42698FFF5751C8CF22724E065ABBC491D4D2192EA01895714F168DCEC76EF1C6'
+approved_script_commit_sha='<final-approved-commit-sha>'
+expected_script_sha256='<final-approved-script-sha256>'
 [[ "$approved_script_commit_sha" =~ ^[0-9a-f]{40}$ ]]
 [[ "$expected_script_sha256" =~ ^[0-9A-F]{64}$ ]]
 [[ -d "$repo_root/.git" ]] || { printf 'ERROR: repo root is not a Git worktree: %s\n' "$repo_root" >&2; exit 1; }

@@ -517,3 +517,22 @@
 - 代码提交 `093163b2918fe15af8f909ae716531b9298f75b6` 与文档提交 `ba63facd0ae49dd0f508204af4b585d1e01490eb` 已推送到 `origin/feature/subnexus-migration`；远端当前 tip 为 `ba63facd0ae49dd0f508204af4b585d1e01490eb`，目标 `main`/`origin/main` 仍为 `d596d0844f274c3e7933c966231851f9f20b0d47`。
 - 服务器命令策略：在已存在的 `/root/subnexus-migration/preflight` 中只执行受限 `git fetch`，验证批准提交及脚本 SHA256，从 Git blob 复制 root-only 临时文件后执行；不 checkout、不检查未 checkout 工作树、不停止或重启任何容器。
 - 当前指定生产应用容器为 `subnexus-cutover`；`subnexus-bepusdt-test` 为测试容器，禁止自动选择或触碰。预检证据根目录为 `/srv/subnexus-migration/preflight`，公网 URL 暂留空，仅执行容器本地 health 检查。
+
+## 2026-09-02（Asia/Shanghai）— 纠正为本地优先迁移并拉取最新上游
+
+### 最新授权与顺序
+
+- 维护者重申：只允许修改 fork `F:\MySub2\sub2api`；旧项目 `F:\Sub2Api\SubNexus` 永久只读。必须先在本地完成全部保留二开功能和测试，之后才推送，最后由服务器拉取固定版本。
+- 本条记录 supersede 此前所有“先执行服务器预检/B0-5/B0-6/B0-7，再开始 Batch 1”的下一步表述；历史记录保留用于审计，但不再是当前执行入口。
+- 生产 B0-5/B0-6/B0-7 改为本地 Batch 1-5 与维护者验收后的 Release Gate。旧预检批准 SHA/脚本 SHA 均冻结，当前禁止执行任何服务器命令。
+
+### 已执行与当前状态
+
+- 仅在 fork 添加只读上游远端 `upstream=https://github.com/Wei-Shaw/sub2api.git` 并执行 `git fetch --prune --no-tags upstream`；未修改旧项目、生产环境或 fork `main`，未推送。
+- 已抓取 `upstream/main`=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`，其应用版本为 `0.2.0`；当前迁移分支相对共同基线有 25 个本地提交和 57 个上游提交，待在本地分支合并并验证。
+- 当前开始修正规划、上下文、台账和切换手册；随后在本地迁移分支整合最新上游并启动 Batch 1。所有功能继续默认关闭，明确排除每日消耗转盘、红包雨、运行日历、Media Studio/Creative Workshop。
+
+### 安全边界与下一步
+
+- 维护者本地验收前只允许本地提交，不再 `git push`，不执行服务器预检、备份、部署、拉取、重启、切流或开关修改。
+- 下一步：提交本地顺序修正文档，合并 `upstream/main`，运行更新后的基线和 migration runner 测试，再实现 Batch 1 的首个默认关闭切片。

@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
-> 版本：v1.4（2026-09-02，完成 25 组改名迁移接管规则与预检安全收敛）
-> 状态：Batch 0 本地控制与 adoption 门禁已完成；等待线上只读预检和可恢复备份证据
+> 版本：v1.5（2026-09-02，本地优先完成全部二开功能，生产门禁后移）
+> 状态：Batch 0 本地控制与 adoption 门禁已完成；同步最新上游后进入 Batch 1，本地完成 Batch 1-5 前不再推送或操作服务器
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -16,8 +16,9 @@
 3. 不直接修改 `main`。全部工作在 `feature/subnexus-migration` 或其子分支完成，通过独立提交和评审合并。
 4. 已执行迁移文件不可修改、删除、改名或复用编号。所有新结构使用新且唯一的文件名，并由迁移 runner 的 SHA256 校验保护。
 5. 代码回滚默认不恢复数据库。只有确认数据库层损坏且得到明确批准时，才使用切换前的数据库备份恢复；新表和可选字段必须设计成旧版本可忽略。
-6. 本地候选实例不得直接连接生产库做常规启动测试：目标 runner 会自动执行迁移，后台任务也可能写库。先使用线上备份恢复出的隔离副本测试，最终切换时才连接线上库。
-7. 不执行生产 SQL、部署、切换或修改线上开关，除非进入单独的发布执行阶段并得到明确授权。
+6. 本地开发和功能验收不得直接连接生产库：先使用空库、目标上游迁移和旧项目迁移构造的本地隔离 PostgreSQL/Redis 夹具完成 Batch 1-5；全部本地功能完成后，才在发布阶段使用线上备份恢复出的隔离副本做最终同库验证。
+7. 本地 Batch 1-5 全部完成并经维护者验收前，不再推送新的中间提交，不要求服务器拉取，也不执行线上预检、备份、SQL、部署、切换或开关修改。
+8. `F:\Sub2Api\SubNexus` 永久作为只读迁移输入；所有文档、代码、提交和测试资产只写入 `F:\MySub2\sub2api`。
 
 ## 2. 已确认的基线事实
 
@@ -31,9 +32,9 @@
 | 迁移文件数量 | 268（含测试文件） | 273（含测试文件） |
 | 差异 | 两仓库共有 3131 个路径，其中 1335 个内容不同 | 不能整体覆盖或直接 cherry-pick 旧仓库 |
 
-新 fork 当前迁移文件存在历史编号重复（例如多个 `231_*.sql`）；runner 按文件名排序并以“文件名 + SHA256”记录，因此“下一个数字”不能单独作为唯一性依据。实施批次开始前必须从目标分支实际文件列表和线上 `schema_migrations` 查询结果计算可用名称。
+新 fork 当前迁移文件存在历史编号重复（例如多个 `231_*.sql`）；runner 按文件名排序并以“文件名 + SHA256”记录，因此“下一个数字”不能单独作为唯一性依据。本地实施时先从同步后的目标分支实际文件列表选择全局唯一名称并冻结 checksum；最终发布前再用线上 `schema_migrations` 只读证据验证不会冲突，证据不再阻塞本地业务实现。
 
-维护者已确认：Creative Workshop/创意工坊与 Media Studio 等同并排除；线上旧版本长期保留；本地先部署测试，最终只在切换阶段短暂关闭线上流量。这里的“本地部署测试”必须使用线上备份恢复出的隔离副本，不是生产数据库本身。
+维护者已确认：Creative Workshop/创意工坊与 Media Studio 等同并排除；线上旧版本长期保留；先在本地完成全部功能和测试，维护者验收后才推送并让服务器拉取，最终只在切换阶段短暂关闭线上流量。本地开发使用空库和旧迁移构造的隔离夹具；生产备份恢复出的隔离副本只用于本地候选完成后的最终发布验证，任何阶段都不得让本地候选直接连接生产库。
 
 ## 3. 功能裁决矩阵
 
@@ -91,13 +92,13 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 ## 5. 分批实施顺序
 
-### Batch 0：基线、盘点和数据库兼容性（只读）
+### Batch 0：本地基线、盘点和数据库兼容性
 
 - 固定目标分支基线、旧项目提交和版本清单。
 - 生成旧/新路径级差异索引，标注“上游同源、二开专属、排除项、未知”。
 - 对旧项目所有业务表、字段、索引、存储目录、Redis key、定时任务和 API 做清单。
-- 在生产只读窗口查询 `schema_migrations`、`atlas_schema_revisions`、表/列/索引存在性和应用版本；保存脱敏结果。若无法取得线上结果，不得进入同库切换。
-- 使用生产数据库脱敏克隆跑目标 fork 的完整迁移演练，并验证旧版本仍可启动。
+- 在本地空库、目标上游完整迁移和旧项目已知迁移组合上验证 runner、alias/adoption、重复启动及对象契约。
+- 生产 `schema_migrations`、真实对象和生产备份恢复验证移到全部本地批次完成后的 Release Gate；缺少这些证据只阻止发布，不阻止 Batch 1-5 的本地实现。
 
 ### Batch 1：活动基础能力
 
@@ -128,6 +129,12 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、后端全量/重点包测试、前端 typecheck/Vitest/build、Docker 候选镜像启动和健康检查。
 - 运行上游核心回归矩阵：认证、API Key、余额、订阅、订单、退款、用量计费、模型列表、Gateway 各协议、插件、Model Plaza、Grok、批量生图和安全设置。
 - 形成精简上下文、功能矩阵、迁移台账、切换手册和回滚手册，删除/归档只属于旧项目的长篇历史规划，不把历史记忆误当作当前实现状态。
+
+### Release Gate：维护者本地验收后的上传与生产验证
+
+- 维护者先验收本地 Batch 1-5 的功能矩阵、默认关闭行为、测试和候选镜像；验收前不推送新的迁移提交，不让服务器拉取。
+- 验收后推送迁移分支并固定不可变候选 SHA，再执行生产只读 preflight、可恢复 PostgreSQL/Redis 备份和线上备份隔离恢复。
+- 在隔离恢复库验证 adoption、候选启动和旧版本回归全部通过后，才允许服务器拉取固定 release SHA 并进入受控切换。
 
 每个 Batch 使用独立提交；提交信息包含功能名、开关、迁移文件、测试命令和回滚提交。未通过门禁的批次不得依赖后续批次继续开发或开启。
 
@@ -175,14 +182,14 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 | `194_add_group_allow_live.sql` | `189_add_group_allow_live.sql` | 旧 checksum 与目标 checksum 分别精确匹配；验证 `groups.allow_live` 为 `boolean NOT NULL` 且默认值仍为 `false` 后只补写目标元数据 |
 | `247_channel_monitor_quota_mode.sql` | `226_channel_monitor_quota_mode.sql` | 旧 checksum 与目标 checksum 分别精确匹配；在同一事务中删除已知重复 `channel_monitors_check_mode_check` 约束，执行完整目标 SQL，再验证 provider/check-mode/外键/设置契约 |
 
-在取得线上记录前，不得假设上述旧文件是否已执行，也不得直接让候选 runner 全量启动。隔离克隆必须先做以下验证：
+在取得线上记录前，不得假设上述旧文件是否已在生产执行，也不得让未验收候选直接连接生产库。开发阶段先用本地旧迁移组合夹具做以下验证；发布阶段再在生产备份隔离克隆上复跑同一矩阵：
 
 1. 以旧项目迁移记录和目标文件 checksum 建立逐项 `old_filename -> target_filename -> exact_checksum` 清单；23 组精确映射要求 checksum 相同，2 组语义接管分别要求旧/目标 checksum 与审计清单一致。
 2. 为目标 runner 增加显式、可审计的 alias/adoption 规则：旧记录存在且目标记录缺失时，在同一 advisory lock 下跳过目标 SQL，并仅记录目标文件名与精确 checksum；不得做全局“同 checksum 即跳过”。
 3. `_notx` 索引映射必须额外核对 `to_regclass` 和索引定义；DDL/DML 映射必须在克隆中比较行数、金额、设置和对象定义前后差异。任何 hash 不一致、未知旧文件或对象不匹配都必须硬失败。
 4. 在空库、旧库、部分采用、重复启动和旧版本回滚克隆各运行一次；确认旧二进制可忽略新增记录/表，且 alias 记录不会开启任何功能。
 
-这项采用门禁优先于 Batch 1-4 的业务迁移；在门禁未通过前，不得用手工 `INSERT INTO schema_migrations`、删除记录、改名历史文件或关闭 checksum 校验来“让启动通过”。
+这项采用门禁优先于生产候选启动和同库切换，但不阻塞 Batch 1-4 的本地业务实现；任何阶段都不得用手工 `INSERT INTO schema_migrations`、删除记录、改名历史文件或关闭 checksum 校验来“让启动通过”。
 
 #### 6.1.2 目标 runner 的 adoption 实现状态
 
@@ -192,9 +199,9 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 同时验证旧记录 checksum、目标文件 checksum，以及表/列/索引有效性与定义、约束、函数、触发器和关键数据契约；任一不符立即 fail-closed。
 - 23 组精确映射在同一 PostgreSQL advisory lock 下只补写目标 `schema_migrations` 元数据，不重新执行旧 SQL；`*_notx` 索引也不会重放 `CREATE INDEX CONCURRENTLY`。`189` 与 `226` 使用各自审计过的目标 SQL/后置契约，失败即回滚并拒绝启动。
 - Grok 图片开关和 long-context 定价开关属于可被管理员修改的运行时设置，adoption 只核对字段契约并记录当前观察值，不把当前关闭状态误判为迁移失败；Codex seed 和 rollup 单例等不可变数据契约仍严格校验。
-- alias 清单、PostgreSQL 规范化触发器事件顺序和完整目标迁移后的契约校验均有单测/integration-only 测试覆盖。线上数据库尚未执行 adoption；必须先取得实时记录和隔离恢复结果。
+- alias 清单、PostgreSQL 规范化触发器事件顺序和完整目标迁移后的契约校验均有单测/integration-only 测试覆盖。线上数据库尚未执行 adoption；实时记录和生产备份隔离恢复是 Release Gate，不是本地 Batch 1-5 的启动条件。
 
-### 6.2 同库前预检
+### 6.2 本地全部验收后的同库发布预检
 
 必须获得以下证据后才能切换：
 
@@ -232,7 +239,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 ### 6.5 生产发布工具边界
 
-旧项目的 `tools/production-deploy/remote-*.sh` 和 `Deploy-SubNexus.ps1` 是针对旧项目提交、迁移编号和生产分支编写的安全工具，不能直接部署本 fork。新 fork 应在 Batch 0/5 另行建立以下工具或等价脚本：
+旧项目的 `tools/production-deploy/remote-*.sh` 和 `Deploy-SubNexus.ps1` 是针对旧项目提交、迁移编号和生产分支编写的安全工具，不能直接部署本 fork。新 fork 的生产工具只在 Batch 5 完成并进入 Release Gate 后重新审核和固定：
 
 1. 只读 `preflight`：从 live app inspect 派生数据库容器、网络、端口、挂载和 health；数据库会话启用 `BEGIN READ ONLY` 与 `default_transaction_read_only=on`；不执行迁移、构建、重启或切流。
 2. 迁移 `apply`：只接受审核后的完整 40 位 release SHA；旧应用继续服务；先生成并验证 PostgreSQL custom-format 备份，再使用 advisory lock、语句超时、文件 checksum 和逐迁移事务执行。
@@ -240,7 +247,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 4. 手工回滚：保留服务器端 `/root/subnexus-rollback.sh` 或新命名的等价脚本；脚本必须作为子进程运行并通过 `bash -n`，不能把带有 `exit` 的长逻辑直接粘贴进交互式 SSH。
 5. 所有脚本都必须打印非敏感选择结果（SHA、容器名、网络、端口、备份路径）供人工复核，但绝不输出 `.env`、JWT/TOTP、数据库密码、API Key、Cookie 或私钥。
 
-代码迁移分支不直接作为生产发布分支。只有全部批次完成、验收记录齐全后，才从目标 `main` 合并形成独立的不可变 release ref，再按同一个完整 SHA 执行生产预检和切换。
+代码迁移分支在本地完成全部批次并经维护者验收后才推送；从已验收的迁移分支固定独立、不可变的 release ref，再按同一个完整 SHA 执行生产预检和切换。`main` 保持不直接修改，除非维护者另行批准合并。
 
 ## 7. 回滚门禁
 
@@ -290,12 +297,13 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 旧项目的 `AI_PROJECT_CONTEXT.md`、`AI_CHANGE_MEMORY.md` 和各类历史 Review/Plan 作为迁移输入，不整体复制。精简文档只记录已验证的当前事实；未验证的线上状态必须标注为“待查询”，不得从历史记忆推断。
 
-## 10. 开始实施前的硬门禁与待确认项
+## 10. 本地实施入口与最终发布硬门禁
 
-在 Batch 0 的线上证据门禁完成前不得迁移业务代码。需要维护者提供：
+本地实施按以下顺序执行，不等待服务器证据：
 
-1. 线上 PostgreSQL 的只读 `schema_migrations`/`atlas_schema_revisions` 脱敏结果，或可恢复的数据库备份；尤其确认旧项目 `254_battle_pass.sql` 是否已在生产执行。
-2. 线上 Redis 持久化/恢复方式和文件存储实际路径、挂载方式、运行 UID/GID。
-3. 功能开启顺序暂按本文建议执行：Batch 1 → Batch 2 → Batch 3 → Batch 4，即活动基础 → 首充/邀请 → 发票 → Battle Pass。每批单独验收和开启；这不是要求一次性开启全部功能。
+1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
+2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
+3. 完成 Batch 5 的后端、前端、本地 PostgreSQL/Redis、Docker 和旧版本回滚矩阵，向维护者提交本地验收报告。
+4. 维护者验收前只保留本地提交，不再推送，不要求服务器拉取或运行任何迁移资产。
 
-未满足上述门禁时，允许继续做只读盘点、代码映射和隔离测试，但不得连接线上执行迁移、打开开关或替换线上版本。
+维护者确认本地迁移完成后，Release Gate 仍必须取得线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑、可恢复备份和隔离恢复证据，尤其确认旧项目 `254_battle_pass.sql` 的真实状态。未满足 Release Gate 时可以继续本地修复和测试，但不得让服务器拉取候选、连接生产库启动、执行迁移、打开开关或替换线上版本。
