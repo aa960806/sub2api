@@ -405,3 +405,24 @@
 - 风险：B0-5/B0-6/B0-7 仍待线上证据，Batch 1 业务迁移继续禁止创建/应用。
 - 回滚点：本次为文档修正；脚本批准发布点仍为 `7200e5ae1f48d8f78bce43565814378b636c842b`，必要时可回到其父提交 `7d30a2faae10cc8910bd853f6e2d9282aebb7b29`；数据库无变化。
 - 下一步：推送后维护者只需替换实时 `repo_root`、应用容器名和公网健康 URL，执行手册中的固定 SHA 只读 preflight，并脱敏回传 `evidence.txt`。
+
+## 2026-09-02（Asia/Shanghai）— 预检门禁校验语义修正并推送
+
+### 目的与授权
+
+- 目的：完成 Batch 0 预检脚本发布点校验的不可变语义，允许维护文档继续前进而不改变已批准脚本资产。
+- 是否得到维护者明确授权：是（迁移分支文档、测试和推送）；未获生产 SQL、备份、部署、重启、切流或线上开关修改授权。
+- 是否访问线上：否。
+
+### 变更与验证
+
+- 提交：`7b3d3929c`（`docs: make preflight release verification immutable`），已推送 `origin/feature/subnexus-migration`。
+- 触碰文件：`SUBNEXUS_CUTOVER_RUNBOOK.md`、`SUBNEXUS_MIGRATION_LEDGER.md`、`SUBNEXUS_CHANGE_MEMORY.md`。
+- 校验语义：批准脚本提交固定为 `7200e5ae1f48d8f78bce43565814378b636c842b`；同时校验该提交中的脚本及当前执行文件的 SHA256=`D68B6BD54AF75B821257F42FC9A7360E0E9828AD0F561B9045B92137036255D1`，不再要求服务器工作树 HEAD 等于脚本发布提交。
+- 已通过：`git diff --check`、Git Bash `bash -n tools/production-deploy/subnexus-readonly-preflight.sh`、预检夹具、repository/migrations 测试、全仓编译级测试；`main`/`origin/main` 未修改，工作树提交后保持干净。
+
+### 风险、回滚与下一步
+
+- 风险：B0-5 线上只读证据、B0-6 可恢复备份和 B0-7 隔离恢复/旧版本回归仍未取得；不得启动候选或创建/应用 Batch 1 业务迁移。
+- 回滚点：文档提交前 `7200e5ae1f48d8f78bce43565814378b636c842b`；无数据库或生产状态变化。
+- 下一步：维护者从 `7b3d3929c`（或其后代）检出目标仓库，按 `SUBNEXUS_CUTOVER_RUNBOOK.md` 替换实时路径、容器名和健康 URL，执行只读 preflight 并回传脱敏证据。
