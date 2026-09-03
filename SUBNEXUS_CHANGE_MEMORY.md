@@ -928,3 +928,17 @@
 - 生产仍未迁移、未切流、未开启任何迁移功能；以上仅为基线，不代表 Release Gate 已通过。
 - 下一步由维护者在服务器终端手动执行经过提交 SHA 与脚本 SHA256 校验的只读 preflight。预检只写 root-only 证据目录，不改变业务状态；回传脱敏证据后再生成备份/隔离恢复/候选镜像命令。
 - 回滚原则不变：优先保留旧容器和旧镜像，通过应用/Nginx 切回，不恢复数据库；只有确认数据损坏并得到明确批准时才使用经校验的备份。
+
+## 2026-09-03（Asia/Shanghai）— 线上只读预检首次失败与脚本修复
+
+### 结果
+
+- 维护者手动执行发布提交 `f0c57c01a615748029758048674ef60cdc3c3a3d` 的只读 preflight。候选仓库已成功拉取并固定到该 SHA；现有生产应用、PostgreSQL、Redis、Nginx 和开关均未被修改。
+- 预检在 Redis 检查阶段停止：线上 Redis 未配置密码，脚本却把空值设置为 `REDISCLI_AUTH`，Redis 8 返回 `ERR AUTH <password> called without any password configured`。该错误是脚本认证处理缺陷，不代表 Redis 数据丢失或服务异常。
+- 服务器上失败的候选目录和证据目录均保留，未删除或覆盖；没有执行数据库迁移、备份、重启或切流。
+
+### 修复与验证
+
+- `tools/production-deploy/subnexus-readonly-preflight.sh` 现在仅在密码非空时导出 `REDISCLI_AUTH`，无密码时保持未设置；静态回归断言已补齐。
+- 使用 Git for Windows Bash 执行 `tools/production-deploy/subnexus-readonly-preflight.test.sh`，测试通过。
+- 修复后脚本 SHA256：`8B4B05D30E9E95D518F246CFCAA3F8B52AE2E2DA056A1744159CAF945C15D922`。待提交并推送新的发布 SHA 后重新执行只读 preflight。

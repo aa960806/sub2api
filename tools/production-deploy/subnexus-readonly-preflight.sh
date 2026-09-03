@@ -518,7 +518,7 @@ redis_cli() {
   assert_runtime_identities "before_redis_probe"
   if printf '%s\n' "$redis_password" |
     docker exec -i "$redis_container_id" sh -c \
-      'IFS= read -r password || exit 1; host="$1"; port="$2"; username="$3"; database="$4"; enable_tls="$5"; redis_path="$6"; shift 6; if [ -n "$username" ]; then set -- --user "$username" "$@"; fi; if [ "$enable_tls" = true ]; then set -- --tls "$@"; fi; unset REDISCLI_AUTH REDISCLI_HISTFILE; REDISCLI_AUTH="$password" exec "$redis_path" --raw -h "$host" -p "$port" -n "$database" "$@"' \
+      'IFS= read -r password || exit 1; host="$1"; port="$2"; username="$3"; database="$4"; enable_tls="$5"; redis_path="$6"; shift 6; if [ -n "$username" ]; then set -- --user "$username" "$@"; fi; if [ "$enable_tls" = true ]; then set -- --tls "$@"; fi; unset REDISCLI_AUTH REDISCLI_HISTFILE; if [ -n "$password" ]; then REDISCLI_AUTH="$password"; export REDISCLI_AUTH; fi; exec "$redis_path" --raw -h "$host" -p "$port" -n "$database" "$@"' \
       sh "$redis_connect_host" "$redis_port" "$redis_username" "$redis_db" "$redis_enable_tls" "$redis_cli_path" "$@"; then
     :
   else
