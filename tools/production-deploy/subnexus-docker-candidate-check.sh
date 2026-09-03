@@ -197,14 +197,24 @@ object_absent() {
         inspect_status=$?
       fi
       ;;
+    image)
+      if inspect_output="$(docker_rpc image inspect "$object_ref" 2>&1)"; then
+        return 1
+      else
+        inspect_status=$?
+      fi
+      ;;
     *) return 2 ;;
   esac
   # Timeout and all non-standard failures are unknown.  Only the normal
   # Docker CLI "not found" status can proceed to the corroborating query.
   [[ "$inspect_status" -eq 1 ]] || return 2
   inspect_error="${inspect_output,,}"
-  case "$inspect_error" in
-    *'no such object'*|*'no such container'*|*'no such network'*|*'no such volume'*|*'not found'*) ;;
+  case "$kind:$inspect_error" in
+    container:*'no such object'*|container:*'no such container'*) ;;
+    network:*'no such object'*|network:*'no such network'*) ;;
+    volume:*'no such object'*|volume:*'no such volume'*) ;;
+    image:*'no such object'*|image:*'no such image'*) ;;
     *) return 2 ;;
   esac
 
@@ -226,9 +236,13 @@ object_absent() {
     volume)
       listing="$(docker_rpc volume ls --filter "name=^${object_ref}$" --format '{{.Name}}' 2>/dev/null)" || return 2
       ;;
+    image)
+      listing="$(docker_rpc image ls --no-trunc --filter "reference=$object_ref" --format '{{.ID}}' 2>/dev/null)" || return 2
+      ;;
   esac
-  [[ -z "$(printf '%s' "$listing" | tr -d '\r\n')" ]] && return 0
-  return 1
+  [[ -z "$(printf '%s' "$listing" | tr -d '\r\n')" ]] || return 1
+  docker_rpc info >/dev/null 2>&1 || return 2
+  return 0
 }
 
 main() {
@@ -1301,7 +1315,7 @@ prepare_candidate_runtime_images() {
 }
 
 load_candidate_image() {
-  local load_status=0 observed_id=''
+  local load_status=0 observed_id='' absence_status=0
   # The archive was validated before the lifecycle starts. Re-check its exact
   # inode/hash immediately before either reusing a preloaded tag or loading it,
   # so a replaced archive cannot be paired with an approved image ID.
@@ -1310,7 +1324,15 @@ load_candidate_image() {
     candidate_image_preexisting='true'
     printf 'candidate image tag already loaded; exact approved ID will be reused\n' >"$image_load_log_file"
   else
-    docker_rpc info >/dev/null 2>&1 || fail 'cannot distinguish an absent candidate tag from Docker daemon failure'
+    if object_absent image "$candidate_image_tag"; then
+      :
+    else
+      absence_status=$?
+      if [[ "$absence_status" -eq 1 ]]; then
+        fail 'candidate image tag exists but its ID cannot be inspected'
+      fi
+      fail 'cannot distinguish an absent candidate tag from Docker daemon failure'
+    fi
     candidate_image_preexisting='false'
     set +e
     docker_checked candidate_image_load image load --input "$candidate_archive_path" >"$image_load_log_file" 2>&1

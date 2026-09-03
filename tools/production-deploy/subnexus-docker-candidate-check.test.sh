@@ -252,9 +252,11 @@ assert_contains 'cleanup_resources() {'
 assert_contains 'object_absent() {'
 assert_contains 'inspect_status'
 assert_contains "*'no such object'*"
+assert_not_contains "*'not found'*) ;;"
 assert_contains 'container ls --all --no-trunc --filter "id=$object_ref"'
 assert_contains 'network ls --no-trunc --filter "id=$object_ref"'
 assert_contains 'volume ls --filter "name=^${object_ref}$"'
+assert_contains 'image ls --no-trunc --filter "reference=$object_ref"'
 assert_contains 'observed_gate'
 assert_contains 'observed_token'
 assert_contains 'observed_role'
@@ -324,8 +326,19 @@ object_absent_source="$(awk '
             ;;
         esac
         ;;
+      cli-error-not-found)
+        case "$op:$arg1" in
+          inspect:*|network:inspect|volume:inspect)
+            printf 'Error response from daemon: dependency not found\n' >&2
+            return 1
+            ;;
+        esac
+        ;;
       not-found-empty|present)
         case "$op:$arg1" in
+          info:)
+            return 0
+            ;;
           inspect:*)
             printf 'Error: No such object: %s\n' "$arg1" >&2
             return 1
@@ -336,6 +349,10 @@ object_absent_source="$(awk '
             ;;
           volume:inspect)
             printf 'Error response from daemon: get %s: no such volume\n' "$arg2" >&2
+            return 1
+            ;;
+          image:inspect)
+            printf 'Error response from daemon: No such image: %s\n' "$arg2" >&2
             return 1
             ;;
           container:ls)
@@ -357,6 +374,13 @@ object_absent_source="$(awk '
               "$arg4" == '--format' && "$arg5" == '{{.Name}}' ]] || return 99
             printf '%s\n' volume >>"$list_log"
             [[ "$fixture" == present ]] && printf 'candidate-volume\n'
+            return 0
+            ;;
+          image:ls)
+            [[ "$arg2" == '--no-trunc' && "$arg3" == '--filter' && "$arg4" == 'reference=candidate-image' &&
+              "$arg5" == '--format' && "$arg6" == '{{.ID}}' ]] || return 99
+            printf '%s\n' image >>"$list_log"
+            [[ "$fixture" == present ]] && printf 'sha256:%s\n' "$container_id"
             return 0
             ;;
         esac
@@ -381,7 +405,8 @@ object_absent_source="$(awk '
   expect_status 0 container candidate
   expect_status 0 network candidate-net
   expect_status 0 volume candidate-volume
-  [[ "$(wc -l <"$list_log" | tr -d '[:space:]')" == 3 ]] || fail 'not-found fixture did not perform all exact list corroborations'
+  expect_status 0 image candidate-image
+  [[ "$(wc -l <"$list_log" | tr -d '[:space:]')" == 4 ]] || fail 'not-found fixture did not perform all exact list corroborations'
 
   fixture='timeout'
   : >"$list_log"
@@ -393,12 +418,18 @@ object_absent_source="$(awk '
   expect_status 2 network candidate-net
   [[ ! -s "$list_log" ]] || fail 'daemon-error fixture performed a list query'
 
+  fixture='cli-error-not-found'
+  : >"$list_log"
+  expect_status 2 volume candidate-volume
+  [[ ! -s "$list_log" ]] || fail 'misleading not-found fixture performed a list query'
+
   fixture='present'
   : >"$list_log"
   expect_status 1 container candidate
   expect_status 1 network candidate-net
   expect_status 1 volume candidate-volume
-  [[ "$(wc -l <"$list_log" | tr -d '[:space:]')" == 3 ]] || fail 'present fixture did not detect listed objects'
+  expect_status 1 image candidate-image
+  [[ "$(wc -l <"$list_log" | tr -d '[:space:]')" == 4 ]] || fail 'present fixture did not detect listed objects'
 )
 
 # Image references must compare Docker's canonical RepoDigests (which omit a
@@ -407,6 +438,7 @@ object_absent_source="$(awk '
 assert_contains 'requested_repo="${requested_name%:*}"'
 assert_contains 'repo_digests="$(docker_rpc image inspect --format '\''{{range .RepoDigests}}{{println .}}{{end}}'\'' "$requested")"'
 assert_contains 'grep -Fqx -- "$candidate"'
+assert_contains 'object_absent image "$candidate_image_tag"'
 load_function_source="$(extract_function load_candidate_image)"
 [[ "$load_function_source" == *'assert_candidate_archive_unchanged'* ]] || fail 'load path does not re-check archive integrity'
 load_fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-load-test.XXXXXX")"
@@ -430,6 +462,76 @@ printf '%s\n' approved >"$load_fixture_root/approved.tar"
   [[ "$archive_checks" -eq 1 ]] || fail 'preloaded candidate tag skipped archive revalidation'
 )
 rm -rf -- "$load_fixture_root"
+
+# A failed image ID inspection may proceed only after the strict image-absence
+# helper proves the tag is genuinely missing.  Present and unknown states must
+# terminate before docker image load can touch the tag.
+(
+  eval "$load_function_source"
+  candidate_image_tag='subnexus-release:absence-fixture'
+  candidate_archive_path='/fixture/approved.tar'
+  image_load_log_file="$(mktemp "${TMPDIR:-/tmp}/subnexus-load-absence.XXXXXX")"
+  trap 'rm -f -- "$image_load_log_file"' EXIT
+  expected_candidate_image_id="$(printf 'f%.0s' {1..64})"
+  candidate_image_preexisting='false'
+  candidate_image_retained='false'
+  archive_checks=0
+  load_done='false'
+  absence_mode='missing'
+  assert_candidate_archive_unchanged() { archive_checks=$((archive_checks + 1)); }
+  capture_image_id() {
+    if [[ "$load_done" == 'true' ]]; then
+      printf '%s\n' "$expected_candidate_image_id"
+    else
+      return 1
+    fi
+  }
+  object_absent() {
+    [[ "$1" == image && "$2" == "$candidate_image_tag" ]] || return 2
+    case "$absence_mode" in
+      missing) return 0 ;;
+      present) return 1 ;;
+      unknown) return 2 ;;
+      *) return 2 ;;
+    esac
+  }
+  docker_checked() {
+    [[ "$1" == candidate_image_load && "$2" == image && "$3" == load && "$4" == '--input' ]] || return 1
+    load_done='true'
+    return 0
+  }
+  valid_full_id() { [[ "$1" =~ ^[0-9a-f]{64}$ ]]; }
+  load_candidate_image
+  [[ "$candidate_image_preexisting" == 'false' && "$candidate_image_retained" == 'true' ]] ||
+    fail 'strictly absent candidate tag was not loaded'
+  [[ "$archive_checks" -eq 2 ]] || fail 'candidate archive was not checked before and after loading'
+)
+
+for absence_mode in present unknown; do
+  if (
+    eval "$load_function_source"
+    candidate_image_tag='subnexus-release:absence-fixture'
+    candidate_archive_path='/fixture/approved.tar'
+    image_load_log_file="$(mktemp "${TMPDIR:-/tmp}/subnexus-load-failure.XXXXXX")"
+    trap 'rm -f -- "$image_load_log_file"' EXIT
+    expected_candidate_image_id="$(printf 'f%.0s' {1..64})"
+    candidate_image_preexisting='false'
+    candidate_image_retained='false'
+    assert_candidate_archive_unchanged() { :; }
+    capture_image_id() { return 1; }
+    object_absent() {
+      if [[ "$absence_mode" == present ]]; then
+        return 1
+      fi
+      return 2
+    }
+    docker_checked() { fail 'image load was attempted after a non-absent result'; }
+    valid_full_id() { return 0; }
+    load_candidate_image
+  ); then
+    fail "candidate image load accepted object_absent=$absence_mode"
+  fi
+done
 
 if grep -n $'\r' "$subject" >/dev/null; then
   fail 'candidate gate script must use LF line endings'

@@ -289,11 +289,11 @@ assert_exact_absent() {
       [[ "$inspect_status" -eq 1 ]] || return 1
       inspect_error="${inspect_output,,}"
       case "$inspect_error" in
-        *'no such object'*|*'no such image'*|*'not found'*) ;;
+        *'no such object'*|*'no such image'*) ;;
         *) return 1 ;;
       esac
       listing="$(docker_call image ls --no-trunc --filter "reference=$name" --format '{{.ID}}')" || return 1
-      [[ -z "$listing" ]] || return 1
+      [[ -z "$(printf '%s' "$listing" | tr -d '\r\n')" ]] || return 1
       docker_call info >/dev/null 2>&1 || return 1
       return 0
       ;;

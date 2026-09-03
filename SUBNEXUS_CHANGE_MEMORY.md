@@ -1062,3 +1062,10 @@
 - 两个脚本现将可选的 Registry 主机/1–5 位数字端口与仓库路径分开校验；仍拒绝可变 tag、非数字/空/超长端口、短或大写 digest。两个测试脚本增加带端口（带/不带 tag）及非法端口夹具。
 - 主线程复跑 `bash -n`（4 个发布脚本）、`subnexus-docker-candidate-check.test.sh`、`subnexus-isolated-image-build.test.sh` 均退出码 0；未运行真实 Docker build/gate（本地 Docker daemon 仍不可用），因此 Release Gate 仍未通过。
 - 本轮只修改 `F:\MySub2\sub2api` 迁移分支和记忆文档；未修改旧项目、`main`、服务器、生产数据库/Redis/Nginx，未部署、重启、切流或修改开关。
+
+## 2026-09-04（Asia/Shanghai）— 清理错误诊断匹配收紧
+
+- 提交边界复核发现清理辅助函数仍会把任意包含 `not found` 的 Docker CLI 错误误判为“对象不存在”，可能在权限/daemon 故障时继续执行清理。候选 gate 与隔离构建脚本现只接受明确的 `no such object/container/network/volume`（或 image 的 `no such image`）诊断，并要求精确列表为空且 daemon 健康；其他错误硬失败。
+- 两套脚本测试新增误导性 `dependency not found` 夹具，并断言缺失 image 必须执行精确列表查询、其他错误不得查询；四个发布脚本语法及四套夹具在主线程复跑通过。
+- 这是已推送提交后的独立后续修复，将以新提交发布，不重写远端历史；真实 Docker build/gate 仍未运行，本地 daemon 故障状态不变。
+- 本轮仍只修改 `F:\MySub2\sub2api` 迁移分支和记忆文档；未修改旧项目、`main`、服务器、生产数据库/Redis/Nginx，未部署、重启、切流或修改开关。

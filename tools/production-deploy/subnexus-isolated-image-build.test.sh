@@ -70,6 +70,7 @@ assert_contains 'submodule status --recursive'
 assert_contains "submodules=\"\$(git -C \"\$source_root\" submodule status --recursive 2>/dev/null)\" ||"
 assert_contains "fail 'cannot inspect Git submodules'"
 assert_not_contains 'submodule status --recursive 2>/dev/null) || true'
+assert_not_contains "*'not found'*) ;;"
 assert_contains 'rev-parse "$approved_sha^{tree}"'
 assert_contains 'archive --format=tar "$approved_sha"'
 assert_contains 'symlink or Git submodule is not allowed'
@@ -95,6 +96,7 @@ assert_contains '--pull=false'
 assert_contains '--platform linux/amd64'
 assert_contains 'validate_base_image() {'
 assert_contains 'image inspect'
+assert_contains 'docker_call image ls --no-trunc --filter "reference=$name"'
 assert_contains 'inspect_status'
 assert_contains "*'no such image'*"
 assert_contains 'image ls --no-trunc --filter "reference=$name"'
@@ -193,16 +195,21 @@ absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
 (
   eval "$absence_source"
   fixture='missing'
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-image-absence-test.XXXXXX")"
+  list_log="$fixture_root/list.log"
+  trap 'rm -rf -- "$fixture_root"' EXIT
   docker_call() {
     if [[ "$1" == image && "$2" == inspect ]]; then
       case "$fixture" in
         missing) printf 'Error: No such image: candidate\n' >&2; return 1 ;;
         present) return 0 ;;
         transient) printf 'Error: daemon timeout\n' >&2; return 124 ;;
+        misleading) printf 'Error: dependency not found\n' >&2; return 1 ;;
         *) return 1 ;;
       esac
     fi
     if [[ "$1" == image && "$2" == ls ]]; then
+      printf '%s\n' image >>"$list_log"
       [[ "$fixture" == missing ]] && return 0
       printf '%s\n' 'sha256:existing'
       return 0
@@ -210,11 +217,21 @@ absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
     if [[ "$1" == info ]]; then return 0; fi
     return 1
   }
+  : >"$list_log"
   assert_exact_absent image candidate
+  [[ "$(wc -l <"$list_log" | tr -d '[:space:]')" == 1 ]] || fail 'missing image was not corroborated with an exact list query'
   fixture='present'
+  : >"$list_log"
   if assert_exact_absent image candidate; then fail 'existing image accepted as absent'; fi
+  [[ ! -s "$list_log" ]] || fail 'present image unexpectedly performed an absence list query'
   fixture='transient'
+  : >"$list_log"
   if assert_exact_absent image candidate; then fail 'transient image inspect error accepted as absent'; fi
+  [[ ! -s "$list_log" ]] || fail 'timeout image unexpectedly performed an absence list query'
+  fixture='misleading'
+  : >"$list_log"
+  if assert_exact_absent image candidate; then fail 'misleading not-found error accepted as absent'; fi
+  [[ ! -s "$list_log" ]] || fail 'misleading image unexpectedly performed an absence list query'
 )
 
 # Ensure line endings do not make the shell contract platform-dependent.
