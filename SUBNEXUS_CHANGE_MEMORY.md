@@ -977,3 +977,10 @@
 - B0-7 仍在进行中：必须把备份下载到本机 `F:` 盘，先核对 `SHA256SUMS`，再用 PostgreSQL 18 和 Redis 8 隔离实例完成实际恢复、候选 adoption/迁移、关闭态 smoke 与旧版本回归。
 - 生产服务器只剩约 `38G`，而源数据库约 `67 GB`，禁止在当前生产磁盘直接创建完整恢复副本。隔离恢复通过前不得启动连接生产库的候选、执行生产迁移、构建/替换生产容器、切流或开启任何迁移功能。
 - 本次证据同步只修改 fork 内的迁移记忆、台账、上下文、规划、功能矩阵和切换手册，并创建本地文档提交；暂不推送。服务器已验证的远端发布指针继续固定为 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`。
+
+## 2026-09-03（Asia/Shanghai）— 生产备份本地隔离恢复准备
+
+- 本机 `F:` 盘可用空间约 `196 GiB`，足够保存约 `4.6G` 的备份并恢复约 `67 GB` 的数据库；生产服务器只剩约 `38G`，继续禁止在生产盘创建完整恢复副本。
+- Docker Desktop client 为 29.2.1，但 daemon 未运行。一次本地启动请求在 30 秒内未就绪，日志仍指向既有 Inference manager socket/path 初始化错误；没有修改 Docker 配置、镜像、卷或现有本地服务，也不再反复启动。
+- 从 EnterpriseDB 官方 HTTPS 地址下载 PostgreSQL 18.4 Windows x64 便携二进制包到 `F:\MySub2\.tools`，本地 SHA256 为 `7EFFE34C0BF89027B3F171447D351CBC460F4566C8D0F643DAEC67F140787858`；已解压并确认 `pg_restore`、`postgres` 均为 18.4。该运行时不安装 Windows 服务、不修改注册表，也不使用本机现有 PostgreSQL 16 数据目录。
+- 下一步对服务器 root-only 备份目录保存 ACL 快照，只临时授予现有 `ubuntu` SSH 账号读取/遍历权限；通过 SCP 下载到 `F:\MySub2\production-backups\20260903T073714Z` 并验证 SHA256 后立即按快照恢复 ACL。
