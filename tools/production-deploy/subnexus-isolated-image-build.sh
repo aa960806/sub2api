@@ -464,14 +464,17 @@ with tarfile.open(archive, mode="r:") as bundle:
             raise SystemExit("archive extraction would overwrite or follow a link")
         if member.isdir():
             target.mkdir()
-            target.chmod(member.mode & 0o777)
+            # GNU tar records Git's 0644/0755 entries as 0664/0775 on some
+            # WSL filesystems.  Keep the owner bits and executable bit, but
+            # never carry group/other write permission into the fixed context.
+            target.chmod((member.mode & 0o777) & ~0o022)
             continue
         source = bundle.extractfile(member)
         if source is None:
             raise SystemExit("archive member cannot be read")
         with target.open("xb") as output:
             shutil.copyfileobj(source, output, length=1024 * 1024)
-        target.chmod(member.mode & 0o777)
+        target.chmod((member.mode & 0o777) & ~0o022)
 PY
   rm -- "$context_tar"
   source_tar=''

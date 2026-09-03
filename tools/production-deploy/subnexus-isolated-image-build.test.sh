@@ -73,6 +73,8 @@ assert_not_contains 'submodule status --recursive 2>/dev/null) || true'
 assert_not_contains "*'not found'*) ;;"
 assert_contains 'rev-parse "$approved_sha^{tree}"'
 assert_contains 'archive --format=tar "$approved_sha"'
+assert_contains 'target.chmod((member.mode & 0o777) & ~0o022)'
+assert_contains 'never carry group/other write permission'
 assert_contains 'symlink or Git submodule is not allowed'
 assert_contains 'sensitive tracked file is not allowed'
 assert_contains 'is_safe_env_example_path() {'
