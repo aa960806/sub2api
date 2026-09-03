@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 最后更新：2026-09-03。台账记录每个批次的基线、状态、证据、迁移文件和回滚点。状态只能向前追加，不删除历史状态。
+> 最后更新：2026-09-04。台账记录每个批次的基线、状态、证据、迁移文件和回滚点。状态只能向前追加，不删除历史状态。
 
 ## 状态定义
 
@@ -159,3 +159,4 @@
 | 2026-09-04 Asia/Shanghai | Registry 端口镜像引用校验回归修复 | 通过（本地静态/夹具；真实 Docker 待办） | 修正候选 gate 与隔离构建脚本的不可变引用校验，支持 `registry.example:5000/repo[:tag]@sha256:<64hex>`，并拒绝非数字/空/超长端口；新增两套正负夹具。四个脚本 `bash -n`、candidate-check 和 isolated-image-build 测试由主线程复跑通过 | 仅修改 fork 迁移分支和记忆文档；未运行真实 Docker build/gate，未修改旧项目、`main`、服务器或生产数据，未部署、重启、切流或修改开关 |
 | 2026-09-04 Asia/Shanghai | 清理错误诊断匹配收紧 | 通过（本地静态/夹具；真实 Docker 待办） | 清理仅接受明确 `no such object/container/network/volume`（隔离构建 image 为 `no such image`）诊断，并要求精确列表为空且 daemon 健康；移除宽泛 `not found` 匹配，新增误导性错误与缺失 image 列表查询夹具，主线程复跑四个脚本语法及四套夹具 | 仅修改 fork 迁移分支；未运行真实 Docker build/gate，未修改旧项目、`main`、服务器或生产数据，未部署、重启、切流或修改开关 |
 | 2026-09-04 Asia/Shanghai | 本地隔离 Docker 构建首次运行与安全扫描修复 | 进行中（真实 Docker 待重跑） | 首次真实构建在源树安全扫描阶段拒绝合法 `deploy/.env.example`，未创建任何 builder/镜像/卷/网络；新增 `is_safe_env_example_path` 统一允许嵌套 `.env.example`/`.env.sample`，并增加正负夹具；`bash -n`、isolated-image-build 静态测试、`git diff --check` 通过。创建独立 WSL daemon `SubNexusBuild20260904`，预加载五个固定 digest 基础镜像，未共享/清理 Docker Desktop 资产 | 仅修改 fork 迁移分支及本地隔离运行时；未修改旧项目、`main`、服务器、生产数据、部署或开关；修复提交后重新构建并校验归档 |
+| 2026-09-04 Asia/Shanghai | 隔离 Docker context 权限归一化修复 | 进行中（真实 Docker 待重跑） | 复现确认 `git archive` 在 WSL 将 Git `100644/100755` 记录为 `0664/0775`，导致固定 context 门禁正确拒绝；提交 `3a095f8a534cb93d176d9147114ddbb1e0cec446` 在解包时统一移除 group/other 写权限并保留执行位；脚本 SHA256=`a01527dbb91de2b7dbd0c4ce7a3b17ee7a6b6ceff4eaf44c4026edcfbdce2ec5`；静态/语法/差异测试通过，并以合成 tar 实际验证 `0777→0755`、`0664→0644`、`0775→0755` | 仅修改 fork 迁移分支及本地隔离运行时；未修改旧项目、`main`、服务器、生产数据，未创建候选镜像/容器/卷/网络；待同步 detached clone 后重跑真实构建 |

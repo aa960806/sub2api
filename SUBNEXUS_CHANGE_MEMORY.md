@@ -1080,3 +1080,12 @@
 - 已在该 daemon 预加载并核对五个固定 digest 基础镜像：BuildKit `28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`、Node `e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf`、Go `4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc`、Alpine `48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d`、PostgreSQL `9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15`；短仓库名用于匹配 Docker canonical `RepoDigests`。
 - 当前状态：本地候选镜像尚未成功构建，Release Gate 仍未通过；未执行生产 SQL/迁移、部署、重启、切流或开关修改。下一步为提交该门禁修复、更新 Linux detached clone，并在同一独立 daemon 重新运行构建；成功后再校验归档、元数据和镜像 ID。
 - 回滚点：修复前分支提交 `79ce84dfd976002134500f27bbf8d0df75a19ca4`；本地 WSL 发行版和其 `/work` 数据均为新建隔离资产，可单独停止/注销，不触碰 Docker Desktop 或生产资产。
+
+## 2026-09-04（Asia/Shanghai）— 隔离构建 context 权限归一化
+
+- 第二次真实隔离构建在 `validate_context_tree` 阶段停止，错误为 `fixed Docker context entry is writable by group/other`。独立 WSL daemon 仍保持空闲：没有创建候选镜像、容器、卷或自定义网络，生产 Docker Desktop 和服务器未访问。
+- 根因已复现并确认：`git archive --format=tar` 在该 WSL 环境中将 Git 的 `100644/100755` 条目记录为 tar 的 `0664/0775`（GNU tar 输出为 `-rw-rw-r--`/`drwxrwxr-x`），而固定 context 门禁必须拒绝 group/other 写权限。源 Git 树本身没有异常模式。
+- 在提交 `3a095f8a534cb93d176d9147114ddbb1e0cec446` 中修复 `extract_fixed_context`：解包文件和目录统一使用 `(member.mode & 0o777) & ~0o022`，保留 owner 权限和执行位，明确丢弃 group/other 写权限；没有放宽 `validate_context_tree`。
+- 测试脚本新增权限归一化断言，并用合成 tar 实际执行内嵌解包器，确认目录 `0777→0755`、普通文件 `0664→0644`、可执行文件 `0775→0755`；`bash -n`、`subnexus-isolated-image-build.test.sh` 和 `git diff --check` 均通过。修复脚本 SHA256=`a01527dbb91de2b7dbd0c4ce7a3b17ee7a6b6ceff4eaf44c4026edcfbdce2ec5`。
+- 下一步：把该提交同步到 `/work/sub2api` 的 detached clone，确认独立 daemon 仍无残留对象后重跑真实镜像构建；成功前不得运行候选 gate，更不得连接生产数据库或执行线上切换。
+- 回滚点：`79ce84dfd976002134500f27bbf8d0df75a19ca4`（仅回退本地构建脚本修复，不涉及生产资产）。
