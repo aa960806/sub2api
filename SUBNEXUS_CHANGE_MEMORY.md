@@ -949,3 +949,7 @@
 - 维护者重跑 `745ec2a7fd2a92549e74e86151a9e0c19c15ceb9` 后，Redis 无密码认证已不再报错，但脚本把 `INFO server` 返回的 `redis_mode:standalone`（含隐藏 CR/空白）判定为非 standalone；预检因此安全停止，未执行迁移、备份、重启、切流或开关修改。
 - 已将模式解析改为先去除 CR、再 trim 空白后严格比较 `standalone`，并在 `tools/production-deploy/subnexus-readonly-preflight.test.sh` 增加回归断言；Git for Windows Bash 静态测试通过。
 - 当前服务器上的两个候选仓库/证据目录均保留；修复提交待生成并推送后，必须使用新的 release SHA 和脚本 SHA256 重跑预检。
+
+### 只读确认
+
+- 通过 SSH 在 Redis 容器内读取 `INFO server` 并以十六进制/可见字符检查，确认线上返回值为 `redis_mode:standalone\\r\\n`；问题确实是 CRLF 解析而非 Redis 模式异常。该检查未改变 Redis 状态。
