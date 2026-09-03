@@ -41,7 +41,7 @@
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
 | B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建与结构校验） | `/srv/subnexus-migration/backups/20260903T073714Z`；PG custom dump/list、globals、Redis RDB/check、应用 tar 和全量 SHA256 均通过 |
-| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 进行中 | PostgreSQL 18.4 实际恢复及 `FILE_COPY` 候选克隆已通过；候选 migration/adoption、Redis 8 RDB 加载、关闭态 smoke 和该克隆上的旧版回归仍待完成 |
+| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 进行中 | PostgreSQL 18.4 恢复、真实克隆 migration/adoption、关闭态候选启动和旧版 0.1.135 回归均通过；Redis 8 RDB 实际加载仍待完成 |
 
 ## 实施批次
 
@@ -51,7 +51,7 @@
 | Batch 2 | 首充礼包、二开邀请奖励、学生充值优惠、注册 IP 冷却 | Batch 1 规则、订单/Affiliate/Auth 审计 | 默认关闭，奖励/注册 reservation 幂等 | 本地实现完成，待最终证据/维护者验收 |
 | Batch 3 | 发票事务系统 | 数据目录、订单快照、邮件和权限审计 | `subnexus_invoice_enabled=false`（public 映射 `invoice_enabled`） | 本地实现完成，待最终证据/维护者验收 |
 | Batch 4 | Battle Pass、Channel Monitor V3、默认语言、客服按钮 | 用量/充值/邀请数据合同；上游监控基础 | 所有功能/模式默认关闭或回退安全默认 | 本地实现完成，待最终证据/维护者验收 |
-| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | 合成夹具的 PostgreSQL 接管、miniredis/候选主机 smoke、旧版回归已通过；生产备份的 PostgreSQL 18.4 恢复及候选克隆已通过，真实克隆 migration/adoption、Redis RDB、关闭态/旧版回归和 Docker 候选仍待办 |
+| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | 合成夹具及真实生产克隆的 PostgreSQL 接管、候选关闭态 smoke、旧版 0.1.135 回归均通过；Redis 8 RDB 实际加载和 Docker 候选仍待办 |
 
 ## 主审第二轮剩余项收口（2026-09-03）
 
@@ -115,7 +115,9 @@
 | Nginx 有效配置/端口 | 2026-09-03 | `nginx -T` / inspect | 通过；备份后 `nginx -t` 和 active 状态再次确认 |
 | PostgreSQL/Redis/应用备份 | 2026-09-03 | `/srv/subnexus-migration/backups/20260903T073714Z` | 创建与结构校验通过；全部 SHA256 为 `OK` |
 | PostgreSQL 隔离恢复验证 | 2026-09-03 | `127.0.0.1:56418` / PostgreSQL 18.4 | 通过；原始恢复库 `sub2api` 保留，`FILE_COPY` 克隆 `subnexus_candidate`；两库 `schema_migrations=268`、核心计数/金额一致、invalid index=0 |
-| Redis RDB 隔离恢复验证 | 待执行 | 本地独立 Redis 8 | 未开始；禁止加载到本机现有 Memurai 或生产 Redis |
+| Redis RDB 隔离恢复验证 | 待执行 | 无网络/无端口映射的独立 Redis 8 | 未开始；禁止加载到本机现有 Memurai 或生产 Redis |
+| 真实克隆 migration/adoption | 2026-09-03 | `subnexus_candidate` | 通过；268→371，13/13 SubNexus、27/27 alias、28/28 目标表、45/45 目标索引，二次幂等及 checksum 契约通过，invalid index=0 |
+| 真实克隆候选/旧版回归 | 2026-09-03 | `127.0.0.1:18184` / `18185` | 通过；候选全部迁移功能公开开关 false，旧版 0.1.135 可读取迁移后同库；所有进程和临时防火墙已清理 |
 
 ## 回滚点登记
 

@@ -1004,3 +1004,21 @@
 
 - PostgreSQL 实际恢复子门禁已通过，但 `subnexus_candidate` 尚未运行当前 fork 的 migration/adoption runner；当前仍是未迁移的生产备份克隆。
 - 生产 Redis RDB 尚未在独立 Redis 8 环境实际加载，候选关闭态 smoke、生产备份克隆上的旧版回归和 Docker 候选仍待完成。上述门禁通过前继续禁止生产迁移、候选连接生产数据库、切流或开启任何迁移功能。
+
+## 2026-09-03（Asia/Shanghai）— 真实生产克隆 migration/adoption、候选启动与旧版回归
+
+### 候选迁移与数据对账
+
+- 从本地 HEAD `5286c950e2da6a2d83a580b6cb98e9542a7e8e90` 构建 Windows 候选 `0.2.0`，二进制 SHA256=`9E805ED1192420BA2D8A43E53AF507E3AAEA038C14CE818E9EDCA1DB21CE53D6`；构建产物位于 Git 仓库外的 `.production-candidate-20260903T073714Z`。
+- 生产备份中 `channel_monitor_enabled=true`、`channel_monitor_mode=v3`，其余迁移开关不存在或为 false。为满足统一关闭门禁，仅在 `subnexus_candidate` 克隆把 `channel_monitor_enabled` 改为 false；`channel_monitor_mode=v3` 保留，原始恢复库仍为 true/v3。生产切换必须保存旧值后执行同类关闭，应用回滚时才能显式恢复旧运维状态。
+- 使用候选代码自身的 `repository.ApplyMigrations` 在数据库名精确门禁为 `subnexus_candidate` 的临时构建标签测试中执行首次 migration/adoption 和第二次幂等运行，均通过；临时测试文件已删除且未进入 Git。
+- 克隆迁移记录从 268 增至 371；`9001`–`9013` 共 13 条全部存在，27 个 alias 目标全部存在，第二次启动再次通过 checksum/对象契约校验，invalid index=0。由冻结 SQL 自动提取的 28 张表和 45 个索引全部存在。
+- 迁移和候选/旧版启动后，users=1670、user_subscriptions=24、payment_orders=3214、api_keys=3628、channels=14、redeem_codes=3691，余额合计 `159869.99893570`、累计充值 `1016953.07800000`，均与原始恢复库一致。用户旧列、订单、订阅、API Key、渠道和兑换码整表摘要一致；users 仅新增 `frozen_balance`/`restrict_public_groups`，accounts 仅新增 `parent_account_id`/`quota_dimension`。
+
+### 隔离启动与回滚结果
+
+- 本机 Memurai 4.1.2（Redis API 7.2.5）对生产 RDB 执行只读检查时明确拒绝 RDB format 14，因此不把它作为 Redis 8 恢复证据。候选 HTTP smoke 只使用空白 Memurai `127.0.0.1:56419`，没有触碰本机已有 `6379`。
+- 候选与旧版副本均绑定只允许 `127.0.0.0/8` 的临时出站防火墙规则；候选读取隔离应用数据，并通过非空环境变量把数据库固定到 `127.0.0.1:56418/subnexus_candidate`、Redis 固定到 `127.0.0.1:56419`。Windows 缺少 `Asia/Shanghai` zoneinfo 的首次启动在监听前退出，改用仅限本地测试的 `TZ=UTC` 后成功；不影响 Linux 生产镜像。
+- 候选 `/health=ok`、`/setup/status needs_setup=false`；公开设置确认活动中心、签到、排行榜、跑马灯、邀请活动、首充、学生优惠、发票、Battle Pass、渠道监控全部为 false。生产克隆中 4 个到期的计划任务曾尝试外联，均被防火墙拒绝，并只在候选克隆产生 12 条失败测试结果；80 个 accounts 行只变化 `extra.upstream_billing_probe` 和 `updated_at`，核心业务值与生产无关且未外发。
+- 旧版副本 `0.1.135`（SHA256=`B2B0862AEF79B63EB6DBB9B44B092780CCB12B21C0DCB16AAF3D5B1914720936`）连接迁移后的同一克隆成功启动，`/health=ok`、`needs_setup=false`；旧版可识别的 Battle Pass/渠道监控均为 false，旧版缺失新公开字段为预期兼容差异。停止旧版后仍为 371 条迁移、13 条 SubNexus 迁移、invalid index=0，28 表/45 索引完整，核心计数和金额不变。
+- 候选、旧版副本、隔离 Memurai 均已按端口和可执行路径精确停止，四条临时防火墙规则已删除；PostgreSQL 18 原始恢复库、候选克隆、下载备份和运行日志保留用于审计。下一门禁是使用 Redis 8.8.0 实际加载 production RDB；Docker 候选镜像仍待完成。
