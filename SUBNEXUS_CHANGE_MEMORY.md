@@ -1022,3 +1022,11 @@
 - 候选 `/health=ok`、`/setup/status needs_setup=false`；公开设置确认活动中心、签到、排行榜、跑马灯、邀请活动、首充、学生优惠、发票、Battle Pass、渠道监控全部为 false。生产克隆中 4 个到期的计划任务曾尝试外联，均被防火墙拒绝，并只在候选克隆产生 12 条失败测试结果；80 个 accounts 行只变化 `extra.upstream_billing_probe` 和 `updated_at`，核心业务值与生产无关且未外发。
 - 旧版副本 `0.1.135`（SHA256=`B2B0862AEF79B63EB6DBB9B44B092780CCB12B21C0DCB16AAF3D5B1914720936`）连接迁移后的同一克隆成功启动，`/health=ok`、`needs_setup=false`；旧版可识别的 Battle Pass/渠道监控均为 false，旧版缺失新公开字段为预期兼容差异。停止旧版后仍为 371 条迁移、13 条 SubNexus 迁移、invalid index=0，28 表/45 索引完整，核心计数和金额不变。
 - 候选、旧版副本、隔离 Memurai 均已按端口和可执行路径精确停止，四条临时防火墙规则已删除；PostgreSQL 18 原始恢复库、候选克隆、下载备份和运行日志保留用于审计。下一门禁是使用 Redis 8.8.0 实际加载 production RDB；Docker 候选镜像仍待完成。
+
+## 2026-09-03（Asia/Shanghai）— 线上 Redis 8 RDB 隔离恢复门禁通过
+
+- 维护者在本地 PowerShell 通过一次性 SSH 命令运行服务器脚本；PowerShell 仅是 SSH 客户端，实际脚本由服务器上的 root `/bin/bash --noprofile --norc` 执行。首次 SSH 密码输入失败后重新认证成功，没有产生服务变更。
+- 已安装脚本 `/srv/subnexus-migration/tools/subnexus-redis-restore-check.sh` 的 SHA256 与本地批准值一致：`21491AF439DB9EB4A89A71390776DCF13FBCDFFFC2AD596D6A4A659EEB2FC3A6`。
+- 脚本使用生产 Redis `sub2api-redis` 的不可变镜像 ID，在 `--network none`、无端口发布、只读 RDB bind mount、受限资源的临时 Redis 8.8.0 容器中加载 RDB；输出 `PING=PONG`、`DBSIZE=18520`、`RDB_LOADED=18520`、`RDB_EXPIRED=20506`、`RDB_TOTAL=39026`。
+- 临时容器在脚本结束时按完整容器 ID 自动清理；脚本输出 `REDIS_8_RESTORE_VALIDATED_PRODUCTION_UNCHANGED`。证据文件：`/srv/subnexus-migration/redis-restore/20260903T131430Z-3144728-6273df02-cf80-4b5e-9901-1b5f08c7b008/evidence.txt`；证据 SHA256：`f7f524028f2bacadff58efa669e5a4f91fc7c4b3dd38e09a4f17b1324b0e319a`。
+- 本次未停止、重启或修改生产应用、PostgreSQL、Redis、Nginx；未执行生产迁移、DDL/DML、部署、切流或功能开关修改。Redis 持久化恢复子门禁现为通过，下一门禁为 Docker 候选镜像运行验证。

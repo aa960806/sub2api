@@ -30,7 +30,7 @@
 | B0-3 | 创建项目上下文、功能矩阵、台账 | 通过 | 上下文、功能矩阵、台账、变更记忆及切换/回滚手册已建立 |
 | B0-4 | 旧/新逐文件功能与迁移差异盘点 | 通过（本地） | 已完成保留/排除功能的后端、前端、路由、设置、迁移对象和目标接入点映射；线上表状态仍单独以 B0-5 为准 |
 | B0-4a | 同内容/语义改名迁移逐项审计 | 通过（本地静态） | 共 27 组显式 alias：历史 23 组内容相同、2 组语义接管，另有学生优惠/注册冷却 2 组独立表接管；含 DML/索引/约束的重放风险已登记于规划 6.1.1；需隔离库和线上记录验证 adoption |
-| B0-4b | 改名迁移 alias/adoption runner 与对象契约 | 本地实现通过；发布证据待办 | 当前工作树为 27 组显式映射；本地测试不阻塞 Batch 1-5，生产备份隔离恢复仍是 Release Gate |
+| B0-4b | 改名迁移 alias/adoption runner 与对象契约 | 本地与生产备份隔离验证通过 | 当前工作树为 27 组显式映射；真实生产备份克隆首次接管、二次幂等和对象契约均通过；生产库仍未执行迁移 |
 | B0-8 | 新 fork 上游基线构建/测试 | 通过（本地候选） | 后端默认构建与 `unit` 标签全量测试、`go vet` 通过；前端 `pnpm typecheck`、Vitest（282 个文件/1954 个测试）、`pnpm build` 通过；主机进程 smoke 通过不代表 Docker、持久化 Redis 或生产通过 |
 
 ## Release Gate（保留历史编号）
@@ -41,7 +41,7 @@
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
 | B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建与结构校验） | `/srv/subnexus-migration/backups/20260903T073714Z`；PG custom dump/list、globals、Redis RDB/check、应用 tar 和全量 SHA256 均通过 |
-| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 进行中 | PostgreSQL 18.4 恢复、真实克隆 migration/adoption、关闭态候选启动和旧版 0.1.135 回归均通过；Redis 8 RDB 实际加载仍待完成 |
+| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 部分通过；Docker 待办 | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动和旧版 0.1.135 回归均通过；Docker 候选镜像运行证据仍待完成 |
 
 ## 实施批次
 
@@ -51,7 +51,7 @@
 | Batch 2 | 首充礼包、二开邀请奖励、学生充值优惠、注册 IP 冷却 | Batch 1 规则、订单/Affiliate/Auth 审计 | 默认关闭，奖励/注册 reservation 幂等 | 本地实现完成，待最终证据/维护者验收 |
 | Batch 3 | 发票事务系统 | 数据目录、订单快照、邮件和权限审计 | `subnexus_invoice_enabled=false`（public 映射 `invoice_enabled`） | 本地实现完成，待最终证据/维护者验收 |
 | Batch 4 | Battle Pass、Channel Monitor V3、默认语言、客服按钮 | 用量/充值/邀请数据合同；上游监控基础 | 所有功能/模式默认关闭或回退安全默认 | 本地实现完成，待最终证据/维护者验收 |
-| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | 合成夹具及真实生产克隆的 PostgreSQL 接管、候选关闭态 smoke、旧版 0.1.135 回归均通过；Redis 8 RDB 实际加载和 Docker 候选仍待办 |
+| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | 合成夹具及真实生产克隆的 PostgreSQL 接管、候选关闭态 smoke、旧版 0.1.135 回归、Redis 8 RDB 实际加载均通过；Docker 候选仍待办 |
 
 ## 主审第二轮剩余项收口（2026-09-03）
 
@@ -115,7 +115,7 @@
 | Nginx 有效配置/端口 | 2026-09-03 | `nginx -T` / inspect | 通过；备份后 `nginx -t` 和 active 状态再次确认 |
 | PostgreSQL/Redis/应用备份 | 2026-09-03 | `/srv/subnexus-migration/backups/20260903T073714Z` | 创建与结构校验通过；全部 SHA256 为 `OK` |
 | PostgreSQL 隔离恢复验证 | 2026-09-03 | `127.0.0.1:56418` / PostgreSQL 18.4 | 通过；原始恢复库 `sub2api` 保留，`FILE_COPY` 克隆 `subnexus_candidate`；两库 `schema_migrations=268`、核心计数/金额一致、invalid index=0 |
-| Redis RDB 隔离恢复验证 | 待执行 | 无网络/无端口映射的独立 Redis 8 | 未开始；禁止加载到本机现有 Memurai 或生产 Redis |
+| Redis RDB 隔离恢复验证 | 通过 | 生产 Redis 镜像 ID 的无网络/无端口独立 Redis 8 候选 | `PING=PONG`、`RDB_TOTAL=39026`、`DBSIZE=18520`；RDB 加载 18520、过期 20506；候选容器已自动清理，生产 Redis 身份未变化；证据 `/srv/subnexus-migration/redis-restore/20260903T131430Z-3144728-6273df02-cf80-4b5e-9901-1b5f08c7b008/evidence.txt`，证据 SHA256=`f7f524028f2bacadff58efa669e5a4f91fc7c4b3dd38e09a4f17b1324b0e319a` |
 | 真实克隆 migration/adoption | 2026-09-03 | `subnexus_candidate` | 通过；268→371，13/13 SubNexus、27/27 alias、28/28 目标表、45/45 目标索引，二次幂等及 checksum 契约通过，invalid index=0 |
 | 真实克隆候选/旧版回归 | 2026-09-03 | `127.0.0.1:18184` / `18185` | 通过；候选全部迁移功能公开开关 false，旧版 0.1.135 可读取迁移后同库；所有进程和临时防火墙已清理 |
 
@@ -146,9 +146,10 @@
 | 2026-09-03 Asia/Shanghai | 前端 feature flag stale-cache fail-closed | 本地专项通过 | `isFeatureFlagEnabled` 在 `publicSettingsLoaded` 非 true 时强制关闭；registry 补齐 marquee、first recharge、student benefit、invite activities；新增 `featureFlags.spec.ts` 4 个测试 | 未访问线上；所有迁移功能仍默认关闭 |
 | 2026-09-03 Asia/Shanghai | Batch 5 Docker 能力检查 | Docker daemon 阻塞（静态 config 通过） | `docker compose version` 可用，但 Docker daemon 未运行（Windows named pipe 不存在）；未创建容器或镜像，Docker 运行时门禁保留待办 | 未访问线上；未启动/修改 Docker 服务 |
 | 2026-09-03 Asia/Shanghai | 本地候选最终代码复核与 Docker 再检查 | 代码门禁通过；Docker 运行时阻塞 | `go generate ./cmd/server`、Go 默认/`unit` 全量、`go vet`、迁移契约、gofmt、敏感扫描、`pnpm lint:check`、typecheck、Vitest 280/1950、build 通过；修复 `InvoicesView.vue` 3 处 ESLint 多余分号；compose 静态 config 通过。Docker Desktop 启动后 Inference manager 路径错误，未创建容器 | 仅本地操作；未访问旧项目可写路径、线上、生产数据库/Redis，未推送、部署或修改开关 |
-| 2026-09-03 Asia/Shanghai | Batch 5 隔离 PostgreSQL 接管和幂等验证 | 通过（PostgreSQL 子门禁） | 在 `F:\MySub2\.subnexus-pg16-20260903`（仅监听 `127.0.0.1:56000`）复核目标 290 条迁移、旧版 268 条迁移、旧库向当前 runner 的首次接管/第二次幂等/旧集合重复执行；接管后 `schema_migrations=371`，目标 checksum（兼容白名单除外）匹配且无 invalid index。Redis 持久化恢复、Docker 镜像运行和生产备份克隆仍待办 | 未访问线上；未执行生产 SQL、备份、部署、重启、切流或开关修改 |
+| 2026-09-03 Asia/Shanghai | Batch 5 隔离 PostgreSQL 接管和幂等验证 | 通过（PostgreSQL 子门禁） | 在 `F:\MySub2\.subnexus-pg16-20260903`（仅监听 `127.0.0.1:56000`）复核目标 290 条迁移、旧版 268 条迁移、旧库向当前 runner 的首次接管/第二次幂等/旧集合重复执行；接管后 `schema_migrations=371`，目标 checksum（兼容白名单除外）匹配且无 invalid index。Docker 镜像运行仍待办 | 未访问线上；未执行生产 SQL、备份、部署、重启、切流或开关修改 |
 | 2026-09-03 Asia/Shanghai | Batch 5 隔离 miniredis 与候选主机 smoke | 通过（轻量运行时子门禁） | miniredis 仅监听 `127.0.0.1:56379`；候选主机进程 `18180` 的 health、setup、管理员登录、关闭态响应和二次启动通过；不代表 Redis 持久化、Docker 镜像或生产通过 | 未访问线上；Redis 数据仅为本地临时测试 |
 | 2026-09-03 Asia/Shanghai | 旧版 0.1.135 同库回滚克隆回归 | 通过（隔离克隆） | 在 `subnexus_old_regression_login_20260903`（`schema_migrations=371`、users=1、settings=52）首轮及重启后验证 health/setup/public settings、有效管理员登录、`auth/me`、管理员只读 GET；旧版不存在的新迁移路由按预期 404，data-management deprecated 按预期 503；用户/迁移计数不变，仅第二次登录产生预期审计记录，无 checksum 错误 | 未访问线上；旧版进程和 Redis 均使用本机隔离资源 |
 | 2026-09-03 Asia/Shanghai | 再次复核旧项目渠道监控 V3 修正 `62ea35e1c` | 通过（无需代码重放） | 7 个源码/测试文件中 5 个逐字节一致，2 个仅注释/排版/测试位置差异；V3 时间线、尾部空桶、90/80 可用性阈值行为一致；目标专项 Vitest 2 文件/16 测试和受影响文件 ESLint 通过 | 仅读旧项目、只写目标记忆文档；未访问线上、未修改 `main`、未部署、未执行 SQL 或开关变更 |
 | 2026-09-03 Asia/Shanghai | 主审报告独立复核与确认问题修复 | 通过（本地代码/文档门禁；待维护者复审） | 补齐 F01 签到管理页/路由/侧栏/i18n；公开设置与 runtime 对非法 channel monitor mode 统一 fail-closed；客服 Markdown 白名单/协议/blank-target 防护；签到冲突目标收紧；活动中心/跑马灯写入在事务内锁定开关；注册冷却设置读取异常拒绝待定 OAuth 完成；发票和学生优惠写操作接入 step-up 及前端 TOTP 重试；校正旧项目参考 SHA；前端全量 282/1954，后端定向 service/repository/routes 测试通过 | 仅修改目标迁移分支；未修改旧项目、`main`、服务器、线上 PostgreSQL/Redis，未推送、部署或修改生产开关 |
 | 2026-09-03 Asia/Shanghai | 主审复核后的后端全量门禁收尾 | 通过（本地；待维护者复审） | `go test ./... -run '^$' -count=1 -p=1 -timeout=45m`、`go vet ./...`、`go test -tags unit ./... -count=1 -p=1 -timeout=30m` 均退出码 0；全仓编译、静态分析和 unit 测试通过。前端全量 282/1954、typecheck、lint、build 仍保持通过 | 未访问线上、未连接生产 PostgreSQL/Redis；未修改旧项目、fork `main`、生产开关；未推送或部署 |
+| 2026-09-03 Asia/Shanghai | Batch 5 Redis 8 RDB 隔离恢复门禁 | 通过（线上备份的隔离恢复证据） | 通过服务器已安装脚本 `/srv/subnexus-migration/tools/subnexus-redis-restore-check.sh` 执行；候选使用生产 Redis 不可变镜像 ID、`--network none`、无端口发布、只读 RDB 挂载；`PING=PONG`、`DBSIZE=18520`、`RDB_LOADED=18520`、`RDB_EXPIRED=20506`、`RDB_TOTAL=39026`；临时容器自动清理，生产 Redis 身份未变化。证据文件为 `/srv/subnexus-migration/redis-restore/20260903T131430Z-3144728-6273df02-cf80-4b5e-9901-1b5f08c7b008/evidence.txt`，SHA256=`f7f524028f2bacadff58efa669e5a4f91fc7c4b3dd38e09a4f17b1324b0e319a` | 服务器仅读取备份并创建/删除隔离候选容器；未停止、重启或修改生产 Redis、应用、PostgreSQL、Nginx，未迁移、部署、切流或修改开关 |
