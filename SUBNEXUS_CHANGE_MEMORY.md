@@ -942,3 +942,4 @@
 - `tools/production-deploy/subnexus-readonly-preflight.sh` 现在仅在密码非空时导出 `REDISCLI_AUTH`，无密码时保持未设置；静态回归断言已补齐。
 - 使用 Git for Windows Bash 执行 `tools/production-deploy/subnexus-readonly-preflight.test.sh`，测试通过。
 - 修复后脚本 SHA256：`8B4B05D30E9E95D518F246CFCAA3F8B52AE2E2DA056A1744159CAF945C15D922`。待提交并推送新的发布 SHA 后重新执行只读 preflight。
+- 修复已提交并推送：`745ec2a7fd2a92549e74e86151a9e0c19c15ceb9`；服务器重跑必须校验该 SHA 和上述脚本 SHA256。此前失败的候选目录继续保留，不作为新版本使用。

@@ -12,7 +12,7 @@
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新上游基线：`upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`（版本 `0.2.0`）
-- 当前迁移分支：`feature/subnexus-migration`；功能代码候选提交：`b26c42e08fb190f3915f08949aaaba48dbe61a26`（已合并最新上游）；当前发布提交：`90d7d4b502fd88bc853b4dd9c4b1cd1fbf659838`
+- 当前迁移分支：`feature/subnexus-migration`；功能代码候选提交：`b26c42e08fb190f3915f08949aaaba48dbe61a26`（已合并最新上游）；当前发布提交：`745ec2a7fd2a92549e74e86151a9e0c19c15ceb9`
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -26,7 +26,7 @@
 | 生产数据库访问 | 仅执行只读盘点；未执行生产 SQL/DDL/DML，未修改数据 |
 | 生产部署/切换 | 未执行 |
 | 生产开关 | 未修改 |
-| 工作区 | `feature/subnexus-migration` 已推送 fork；当前发布提交 `90d7d4b502fd88bc853b4dd9c4b1cd1fbf659838`，功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；业务依赖、前端 lockfile 和 VERSION 未改 |
+| 工作区 | `feature/subnexus-migration` 已推送 fork；当前发布提交 `745ec2a7fd2a92549e74e86151a9e0c19c15ceb9`，功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；业务依赖、前端 lockfile 和 VERSION 未改 |
 | 本地测试产物 | 隔离日志、数据库快照和缓存位于 `F:\MySub2`，已停止使用、未纳入 Git；不属于生产资产 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
