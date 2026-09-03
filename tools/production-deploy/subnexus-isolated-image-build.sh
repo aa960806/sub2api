@@ -165,6 +165,13 @@ valid_tag() {
   [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]]
 }
 
+is_safe_env_example_path() {
+  case "${1:-}" in
+    .env.example|*/.env.example|.env.sample|*/.env.sample) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 valid_positive_integer() {
   [[ "${1:-}" =~ ^[0-9]+$ ]] && (( 10#${1:-0} > 0 ))
 }
@@ -404,7 +411,7 @@ validate_source_tree() {
   while IFS= read -r -d '' path; do
     case "$path" in
       .env|*/.env|.env.*|*/.env.*|*.pem|*.key|*.p12|*.pfx|*.jks)
-        [[ "$path" == '.env.example' || "$path" == '.env.sample' ]] ||
+        is_safe_env_example_path "$path" ||
           fail "sensitive tracked file is not allowed in the build source: $path" || return 1
         ;;
     esac
@@ -488,7 +495,7 @@ validate_context_tree() {
     basename="${relative##*/}"
     case "$relative" in
       .env|.env.*|*.pem|*.key|*.p12|*.pfx|*.jks)
-        [[ "$relative" == '.env.example' || "$relative" == '.env.sample' ]] ||
+        is_safe_env_example_path "$relative" ||
           fail "sensitive file found in fixed Docker context: $relative" || return 1
         ;;
     esac

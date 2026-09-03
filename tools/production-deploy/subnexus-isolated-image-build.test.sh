@@ -75,6 +75,8 @@ assert_contains 'rev-parse "$approved_sha^{tree}"'
 assert_contains 'archive --format=tar "$approved_sha"'
 assert_contains 'symlink or Git submodule is not allowed'
 assert_contains 'sensitive tracked file is not allowed'
+assert_contains 'is_safe_env_example_path() {'
+assert_contains '.env.example|*/.env.example|.env.sample|*/.env.sample'
 assert_contains 'validate_dockerfile_pin_contract() {'
 assert_contains 'ARG NODE_IMAGE='
 assert_contains 'ARG GOLANG_IMAGE='
@@ -156,8 +158,9 @@ validator_source="$(sed -n '/^valid_immutable_image_ref() {$/,/^}$/p' "$subject"
 repository_validator_source="$(sed -n '/^valid_repository_digest_ref() {$/,/^}$/p' "$subject")"
 context_source="$(sed -n '/^valid_context_name() {$/,/^}$/p' "$subject")"
 tag_source="$(sed -n '/^valid_tag() {$/,/^}$/p' "$subject")"
+env_example_source="$(sed -n '/^is_safe_env_example_path() {$/,/^}$/p' "$subject")"
 absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
-[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$absence_source" ]] || fail 'validator functions not found'
+[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$absence_source" ]] || fail 'validator functions not found'
 (
   eval "$validator_source"
   eval "$repository_validator_source"
@@ -188,6 +191,12 @@ absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
   valid_tag "$(printf 'a%.0s' {1..128})"
   if valid_tag "$(printf 'a%.0s' {1..129})"; then fail 'overlong Docker tag accepted'; fi
   if valid_tag 'bad/tag'; then fail 'tag with slash accepted'; fi
+  eval "$env_example_source"
+  is_safe_env_example_path '.env.example'
+  is_safe_env_example_path 'deploy/.env.example'
+  is_safe_env_example_path 'nested/path/.env.sample'
+  if is_safe_env_example_path '.env.production'; then fail 'non-example env file accepted'; fi
+  if is_safe_env_example_path 'deploy/.env.local'; then fail 'nested non-example env file accepted'; fi
 )
 
 # Image absence fixture: transient inspect failures and unrelated errors must

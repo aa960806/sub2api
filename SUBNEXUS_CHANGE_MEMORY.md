@@ -1069,3 +1069,14 @@
 - 两套脚本测试新增误导性 `dependency not found` 夹具，并断言缺失 image 必须执行精确列表查询、其他错误不得查询；四个发布脚本语法及四套夹具在主线程复跑通过。
 - 这是已推送提交后的独立后续修复，将以新提交发布，不重写远端历史；真实 Docker build/gate 仍未运行，本地 daemon 故障状态不变。
 - 本轮仍只修改 `F:\MySub2\sub2api` 迁移分支和记忆文档；未修改旧项目、`main`、服务器、生产数据库/Redis/Nginx，未部署、重启、切流或修改开关。
+
+## 2026-09-04（Asia/Shanghai）— 本地隔离 Docker 构建门禁修复与运行时准备
+
+- 本轮仅访问 `F:\MySub2\sub2api` 及新建的本地 WSL 隔离发行版；未读取或修改 `F:\Sub2Api\SubNexus`，未连接服务器、生产 Docker、PostgreSQL、Redis 或 Nginx。
+- 真实隔离构建首次在源树安全检查阶段停止：批准提交包含合法模板 `deploy/.env.example`，构建脚本原先只允许仓库根目录 `.env.example`/`.env.sample`，错误拒绝嵌套模板；当时未创建 BuildKit builder、镜像、卷、网络或候选容器。
+- 修复 `tools/production-deploy/subnexus-isolated-image-build.sh`：新增 `is_safe_env_example_path`，仅允许任意目录下 basename 为 `.env.example` 或 `.env.sample` 的模板，其他 `.env*`、证书和密钥文件继续硬失败；源树与解包 context 两处统一使用该规则。测试脚本新增嵌套模板正例和非模板反例。
+- 本地验证：两个脚本 `bash -n`、`subnexus-isolated-image-build.test.sh`、`git diff --check` 通过；修复尚未进入批准构建提交，待提交后重新计算提交/脚本 SHA。
+- 为避免共享 Docker Desktop 的既有 20 个容器、24 个卷和 4 个自定义网络，创建全新 WSL2 发行版 `SubNexusBuild20260904`（Ubuntu base，运行时目录位于 `F:\MySub2\\.subnexus-isolated-runtime`），安装仅限该发行版的 Docker 29.1.3、Buildx 0.30.1，并启动独立 `/var/lib/subnexus-docker` 与 Unix socket；daemon ID 为 `eb03fe50-80ad-4194-a28e-7ad5a786368c`，初始仅有默认网络，无容器/卷/自定义网络。Docker Desktop daemon 未停止、清理或修改。
+- 已在该 daemon 预加载并核对五个固定 digest 基础镜像：BuildKit `28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`、Node `e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf`、Go `4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc`、Alpine `48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d`、PostgreSQL `9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15`；短仓库名用于匹配 Docker canonical `RepoDigests`。
+- 当前状态：本地候选镜像尚未成功构建，Release Gate 仍未通过；未执行生产 SQL/迁移、部署、重启、切流或开关修改。下一步为提交该门禁修复、更新 Linux detached clone，并在同一独立 daemon 重新运行构建；成功后再校验归档、元数据和镜像 ID。
+- 回滚点：修复前分支提交 `79ce84dfd976002134500f27bbf8d0df75a19ca4`；本地 WSL 发行版和其 `/work` 数据均为新建隔离资产，可单独停止/注销，不触碰 Docker Desktop 或生产资产。
