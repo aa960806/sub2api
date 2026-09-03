@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-03（本地 Batch 1-5、线上只读预检及生产备份结构校验通过；生产备份隔离恢复、Docker 候选和切换仍待完成）
+> 最后更新：2026-09-03（生产 PostgreSQL 18.4 备份已隔离恢复并克隆；候选迁移、Redis、Docker 和切换仍待完成）
 
 ## 项目身份
 
@@ -20,14 +20,14 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | Batch 0 控制和 adoption 门禁、Batch 1-5 本地验证、线上只读预检和生产备份结构校验已完成；生产备份隔离恢复、Docker 候选镜像和受控切换仍待完成 |
+| 迁移阶段 | Batch 0 控制和合成夹具门禁、Batch 1-5 本地验证、线上只读预检、生产备份结构校验及 PostgreSQL 18.4 实际恢复/克隆已完成；真实克隆候选迁移、Redis、Docker 和受控切换仍待完成 |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 已执行只读盘点和 `pg_dump` 备份；未执行生产 SQL DDL/DML、迁移或候选连接，Redis 仅执行 `BGSAVE` 生成恢复点 |
 | 生产部署/切换 | 未执行 |
 | 生产开关 | 未修改 |
 | 工作区 | `feature/subnexus-migration` 已推送 fork；当前远端发布指针 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`，功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；业务依赖、前端 lockfile 和 VERSION 未改 |
-| 本地测试产物 | 隔离日志、数据库快照和缓存位于 `F:\MySub2`，已停止使用、未纳入 Git；不属于生产资产 |
+| 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
 
@@ -105,5 +105,5 @@ registration_ip_cooldown_enabled
 ## 下一步入口
 
 1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
-2. 将备份下载到本机 `F:` 盘并复核 SHA256；使用 PostgreSQL 18/Redis 8 隔离实例完成实际恢复、候选 adoption/迁移、全部关闭态 smoke 和旧版本回归。服务器剩余空间不足，禁止在生产盘直接恢复完整副本。
+2. 备份已下载到本机并通过 20 个文件 SHA256 校验；PostgreSQL 18.4 已恢复原始库并创建 `subnexus_candidate` 克隆。下一步只在该克隆运行候选 migration/adoption，再隔离加载 Redis 8 RDB，完成全部关闭态 smoke 和旧版本回归。
 3. B0-7 和 Docker 候选门禁通过后才进入短维护窗口切换；在此之前不得让候选连接生产库、执行生产迁移、切流或开启任何功能。

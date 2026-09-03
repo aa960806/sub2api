@@ -984,3 +984,23 @@
 - Docker Desktop client 为 29.2.1，但 daemon 未运行。一次本地启动请求在 30 秒内未就绪，日志仍指向既有 Inference manager socket/path 初始化错误；没有修改 Docker 配置、镜像、卷或现有本地服务，也不再反复启动。
 - 从 EnterpriseDB 官方 HTTPS 地址下载 PostgreSQL 18.4 Windows x64 便携二进制包到 `F:\MySub2\.tools`，本地 SHA256 为 `7EFFE34C0BF89027B3F171447D351CBC460F4566C8D0F643DAEC67F140787858`；已解压并确认 `pg_restore`、`postgres` 均为 18.4。该运行时不安装 Windows 服务、不修改注册表，也不使用本机现有 PostgreSQL 16 数据目录。
 - 下一步对服务器 root-only 备份目录保存 ACL 快照，只临时授予现有 `ubuntu` SSH 账号读取/遍历权限；通过 SCP 下载到 `F:\MySub2\production-backups\20260903T073714Z` 并验证 SHA256 后立即按快照恢复 ACL。
+
+## 2026-09-03（Asia/Shanghai）— 生产备份下载、PostgreSQL 18 隔离恢复与候选克隆
+
+### 下载与完整性
+
+- 生产备份通过一次性传输目录下载到 `F:\MySub2\production-backups\subnexus-backup-transfer-20260903T073714Z`；服务器 `SHA256SUMS` 登记的 20 个文件在本机全部匹配。
+- 下载后的 `postgres-sub2api.dump` 可由 PostgreSQL 18.4 `pg_restore --list` 读取，`subnexus-data.tar.gz` 通过归档列表校验；没有把备份中的密钥、密码或完整配置写入 Git/记忆文档。
+- 维护者确认原始 root-only 备份 `/srv/subnexus-migration/backups/20260903T073714Z` 仍存在后，精确删除 `/home/ubuntu/subnexus-backup-transfer-20260903T073714Z` 临时传输副本；终端返回 `TRANSFER_COPY_REMOVED_ORIGINAL_BACKUP_PRESERVED`。生产应用、PostgreSQL、Redis 和 Nginx 未停止或修改。
+
+### PostgreSQL 18.4 隔离恢复
+
+- 便携 PostgreSQL 18.4 集群位于 `F:\MySub2\.production-restore-20260903T073714Z\pgdata`，仅监听 `127.0.0.1:56418`；没有安装系统服务，也没有停止或复用本机现有 PostgreSQL 16/Memurai。
+- custom dump 已完整恢复到只供对照的 `sub2api` 数据库，`pg_restore` 退出码为 0；随后使用 PostgreSQL `FILE_COPY` 克隆为可变更的 `subnexus_candidate`，原始恢复库保持不动。
+- 两库迁移前均为 `schema_migrations=268`，最新记录 `254_battle_pass.sql`，无 invalid index；数据库大小约 `57 GB`。核心计数一致：users=1670、user_subscriptions=24、payment_orders=3214、channels=14、redeem_codes=3691、api_keys=3628。
+- 两库余额合计均为 `159869.99893570`，累计充值均为 `1016953.07800000`。备份命令执行前的在线基线余额为 `159870.30972372`，相差约 `0.31078802`；这是持续营业期间基线查询与 `pg_dump` 一致性快照时点不同造成，其他核心计数及累计充值均与备份元数据一致，不作为恢复损坏。
+
+### 当前门禁
+
+- PostgreSQL 实际恢复子门禁已通过，但 `subnexus_candidate` 尚未运行当前 fork 的 migration/adoption runner；当前仍是未迁移的生产备份克隆。
+- 生产 Redis RDB 尚未在独立 Redis 8 环境实际加载，候选关闭态 smoke、生产备份克隆上的旧版回归和 Docker 候选仍待完成。上述门禁通过前继续禁止生产迁移、候选连接生产数据库、切流或开启任何迁移功能。

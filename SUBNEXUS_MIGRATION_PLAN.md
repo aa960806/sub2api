@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
-> 版本：v1.7（2026-09-03，已同步最新上游，本地优先完成全部二开功能，生产门禁后移）
-> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4 本地实现、隔离 PostgreSQL、miniredis/候选主机 smoke、旧版回滚克隆、线上只读预检及生产备份结构校验已通过。生产备份实际隔离恢复、持久化 Redis 恢复和 Docker 候选仍待完成；通过前禁止生产迁移、候选连接生产库、切流或开启功能
+> 版本：v1.8（2026-09-03，生产备份 PostgreSQL 18.4 隔离恢复已通过）
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4 本地实现、合成夹具验证、线上只读预检、生产备份结构校验以及 PostgreSQL 18.4 实际恢复/候选克隆已通过。真实克隆 migration/adoption、Redis RDB 恢复、关闭态与旧版回归和 Docker 候选仍待完成；通过前禁止生产迁移、候选连接生产库、切流或开启功能
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -333,4 +333,4 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/miniredis、候选主机和旧版本回滚矩阵，向维护者提交本地验收报告；Docker 镜像与持久化 Redis 恢复仍需运行环境可用后补齐。
 4. 维护者验收前只保留本地提交，不再推送，不要求服务器拉取或运行任何迁移资产。
 
-线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和切换前备份证据已经取得；Release Gate 仍缺生产备份在 PostgreSQL 18/Redis 8 隔离环境中的实际恢复、候选 adoption/启动、旧版本回归和 Docker 候选证据。未满足剩余门禁时可以继续本地修复和测试，但不得让候选连接生产库启动、执行生产迁移、打开开关、切流或替换线上版本。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和切换前备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，并通过 `FILE_COPY` 保留原始恢复库、创建候选克隆。Release Gate 仍缺候选克隆 adoption/启动、Redis 8 RDB 实际加载、关闭态 smoke、该克隆上的旧版本回归和 Docker 候选证据。未满足剩余门禁时可以继续本地修复和测试，但不得让候选连接生产库启动、执行生产迁移、打开开关、切流或替换线上版本。
