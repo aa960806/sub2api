@@ -1169,7 +1169,7 @@ fi
 redis_ping="$(redis_cli ping)" || fail "Redis PING failed"
 [[ "$redis_ping" == "PONG" ]] || fail "Redis PING returned an unexpected response"
 redis_server_info="$(redis_cli info server)" || fail "Redis server INFO failed"
-redis_mode="$(printf '%s\n' "$redis_server_info" | awk -F: '/^redis_mode:/{print $2; exit}')"
+redis_mode="$(printf '%s\n' "$redis_server_info" | tr -d '\r' | awk -F: '/^redis_mode:/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}')"
 [[ "$redis_mode" == "standalone" ]] || fail "Redis must run in standalone mode (reported: ${redis_mode:-unknown})"
 redis_persistence="$(redis_cli info persistence)" || fail "Redis persistence inspection failed"
 redis_dbsize="$(redis_cli dbsize)" || fail "Redis DBSIZE failed"

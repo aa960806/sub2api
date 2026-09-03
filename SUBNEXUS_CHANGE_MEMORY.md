@@ -943,3 +943,9 @@
 - 使用 Git for Windows Bash 执行 `tools/production-deploy/subnexus-readonly-preflight.test.sh`，测试通过。
 - 修复后脚本 SHA256：`8B4B05D30E9E95D518F246CFCAA3F8B52AE2E2DA056A1744159CAF945C15D922`。待提交并推送新的发布 SHA 后重新执行只读 preflight。
 - 修复已提交并推送：`745ec2a7fd2a92549e74e86151a9e0c19c15ceb9`；服务器重跑必须校验该 SHA 和上述脚本 SHA256。此前失败的候选目录继续保留，不作为新版本使用。
+
+## 2026-09-03（Asia/Shanghai）— 线上只读预检第二次失败与 Redis 模式解析修复
+
+- 维护者重跑 `745ec2a7fd2a92549e74e86151a9e0c19c15ceb9` 后，Redis 无密码认证已不再报错，但脚本把 `INFO server` 返回的 `redis_mode:standalone`（含隐藏 CR/空白）判定为非 standalone；预检因此安全停止，未执行迁移、备份、重启、切流或开关修改。
+- 已将模式解析改为先去除 CR、再 trim 空白后严格比较 `standalone`，并在 `tools/production-deploy/subnexus-readonly-preflight.test.sh` 增加回归断言；Git for Windows Bash 静态测试通过。
+- 当前服务器上的两个候选仓库/证据目录均保留；修复提交待生成并推送后，必须使用新的 release SHA 和脚本 SHA256 重跑预检。

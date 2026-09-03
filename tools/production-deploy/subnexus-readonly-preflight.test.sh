@@ -158,6 +158,7 @@ assert_contains 'PGPASSFILE=/dev/null'
 assert_contains 'trigger_definition_md5'
 assert_contains 'SETTINGS_TABLE_SHAPE=MISMATCH'
 assert_contains 'Redis must run in standalone mode'
+assert_contains "tr -d '\\r'"
 assert_not_contains 'PGSERVICE='
 assert_not_contains 'READ_ONLY_PREFLIGHT_OK'
 assert_not_contains 'sh "$database_password"'
