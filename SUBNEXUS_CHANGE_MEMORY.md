@@ -911,3 +911,20 @@
 - `feature/subnexus-migration` 已创建本地提交 `fix: close remaining SubNexus migration review items`；最终提交 SHA 以 `git rev-parse HEAD` 为准（本次记忆更新随同提交 amend）。
 - 提交范围为第二轮主审剩余项的实现、回归测试及迁移文档；未包含构建产物、密钥、环境文件或线上证据。
 - 提交后仍不推送、不部署；维护者验收和 Release Gate 完成前，服务器不得拉取该分支。
+
+## 2026-09-03（Asia/Shanghai）— Release Gate 线上只读基线与候选分支发布
+
+### 本轮操作
+
+- 通过 SSH 只读连接 `ubuntu@51.81.211.97`，未执行服务器拉代码、SQL/DDL/DML、备份、配置写入、重启、切流或生产开关修改。
+- 目标分支 `feature/subnexus-migration` 已推送到 fork `origin`，当前候选提交为 `90d7d4b502fd88bc853b4dd9c4b1cd1fbf659838`；`main` 和旧项目保持不变。
+- 线上只读事实：应用容器 `subnexus-cutover`，镜像 `subnexus-git:62ea35e1-20260901135157`，健康，绑定 `127.0.0.1:18083 -> 8080`，数据目录 `/srv/subnexus-migration/runtime/subnexus-data -> /app/data`；PostgreSQL 容器 `sub2api-postgres`（18.4）和 Redis 容器 `sub2api-redis`（8.8.0）均运行中。
+- Nginx `subnexus_backend` 当前指向 `127.0.0.1:18083`。线上 PostgreSQL 数据库 `sub2api` 约 `67 GB`，只读基线计数：users=1670、accounts=1677、user_subscriptions=24、payment_orders=3210、channels=14、redeem_codes=3688、usage_logs=11343932、activity_reward_logs=13697、hourly_red_packet_rounds=85。
+- 线上 `schema_migrations` 最新可见记录为 `254_battle_pass.sql`；`atlas_schema_revisions` 存在历史基线记录。Redis 为 standalone、AOF 关闭、db0 约 50848 keys。`ops_preaggregation_hourly`、`ops_preaggregation_daily`、`ops_metrics_collector`、`ops_alert_evaluator` 有近期成功心跳，切换前需再次确认无运行中的结算/迁移任务。
+- 服务器已有旧镜像、旧容器和历史备份资产；磁盘约 193G/150G（78%），可用约 43G。新备份前必须先检查空间和备份恢复策略，禁止 `prune` 或删除旧回滚资产。
+
+### 当前门禁与下一步
+
+- 生产仍未迁移、未切流、未开启任何迁移功能；以上仅为基线，不代表 Release Gate 已通过。
+- 下一步由维护者在服务器终端手动执行经过提交 SHA 与脚本 SHA256 校验的只读 preflight。预检只写 root-only 证据目录，不改变业务状态；回传脱敏证据后再生成备份/隔离恢复/候选镜像命令。
+- 回滚原则不变：优先保留旧容器和旧镜像，通过应用/Nginx 切回，不恢复数据库；只有确认数据损坏并得到明确批准时才使用经校验的备份。
