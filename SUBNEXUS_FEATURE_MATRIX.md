@@ -95,4 +95,4 @@
 - 排行查询只能读取目标 `usage_logs`/`users`，不得改变网关计费；调度器在排行/周期开关关闭时必须 no-op。
 - 签到写入须在事务内锁定/创建 streak，重复日期、并发请求和 IP 限制必须幂等；关闭时不写任何活动表或余额。
 - 活动中心使用独立新开关，不继承旧 `ACTIVITY_CENTER_CONFIG`；用户列表关闭时返回 `{enabled:false,items:[]}` 且不查表，管理列表关闭时为空且不查表，管理写操作返回禁用错误。管理员配置接口始终保留用于显式开启。
-- 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（280 个文件/1950 个测试）/build、迁移契约及重点并发/关闭态测试；隔离 PostgreSQL、Redis 8 RDB、miniredis/候选主机 smoke、生产备份克隆和旧版回滚克隆已通过，仍待 Docker 候选镜像证据。前端只在 flag 开启后加载活动 API。
+- 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（282 个文件/1954 个测试）/build、迁移契约及重点并发/关闭态测试；隔离 PostgreSQL、Redis 8 RDB、miniredis/候选主机 smoke、生产备份克隆和旧版回滚克隆已通过，仍待 Docker 候选镜像证据。前端只在 flag 开启后加载活动 API。

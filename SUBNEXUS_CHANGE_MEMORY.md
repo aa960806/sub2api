@@ -1030,3 +1030,35 @@
 - 脚本使用生产 Redis `sub2api-redis` 的不可变镜像 ID，在 `--network none`、无端口发布、只读 RDB bind mount、受限资源的临时 Redis 8.8.0 容器中加载 RDB；输出 `PING=PONG`、`DBSIZE=18520`、`RDB_LOADED=18520`、`RDB_EXPIRED=20506`、`RDB_TOTAL=39026`。
 - 临时容器在脚本结束时按完整容器 ID 自动清理；脚本输出 `REDIS_8_RESTORE_VALIDATED_PRODUCTION_UNCHANGED`。证据文件：`/srv/subnexus-migration/redis-restore/20260903T131430Z-3144728-6273df02-cf80-4b5e-9901-1b5f08c7b008/evidence.txt`；证据 SHA256：`f7f524028f2bacadff58efa669e5a4f91fc7c4b3dd38e09a4f17b1324b0e319a`。
 - 本次未停止、重启或修改生产应用、PostgreSQL、Redis、Nginx；未执行生产迁移、DDL/DML、部署、切流或功能开关修改。Redis 持久化恢复子门禁现为通过，下一门禁为 Docker 候选镜像运行验证。
+
+## 2026-09-03（Asia/Shanghai）— Docker 候选门禁主机准备
+
+- 经维护者明确授权，后续发布前置工作改由 AI 通过 SSH 执行；执行边界止于生产切换前。任何生产迁移、生产开关修改、旧应用停止/重启、候选连接生产 PostgreSQL/Redis、Nginx 切流仍须停止并由维护者手动执行。
+- 服务器资源只读快照：8 vCPU、约 22 GiB 内存（约 17 GiB available）、4 GiB swap、根分区约 193 GiB/剩余 38 GiB。禁止在服务器恢复约 67 GB 的生产数据库，禁止 Docker prune 或删除旧镜像/回滚资产。
+- Docker 29.1.3 原先缺少 Buildx。`apt-get -s` 确认只新增一个包后，安装 Ubuntu 官方 `docker-buildx 0.30.1-0ubuntu1`，占用约 71 MB；安装过程明确延后 `docker.service` 重启并报告无需重启容器。未升级其他包，未执行系统或 Docker 重启。
+- 安装后验证 Buildx 0.30.1、BuildKit 0.26.2 可用。按 registry digest 依次预拉 BuildKit、Node 24 Alpine 和 Go 1.27 Alpine 构建镜像；PostgreSQL 18、Redis 8 和 Alpine 3.21 使用服务器已存在的不可变镜像。预拉只增加镜像层，不修改生产容器或生产 tag。
+- BuildKit digest=`28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8`；Node digest=`e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf`；Go digest=`4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc`；Alpine image ID=`48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d`；PostgreSQL image ID=`9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15`；Redis image ID=`9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005`。
+- 准备前后生产容器 ID 保持为应用 `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、Redis `5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e`、PostgreSQL `8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf`；应用持续 `running/healthy` 且 restart count 为 0。
+- 当前尚未构建候选镜像、创建候选运行容器、执行生产 SQL/迁移、修改生产设置、停止服务或切流。Docker 候选脚本仍须完成本地双重审查、测试、提交和固定 SHA 后方可运行。
+
+## 2026-09-04（Asia/Shanghai）— Docker 候选门禁脚本独立复核修正
+
+- 在 fork 的 `feature/subnexus-migration` 工作树独立复核 `subnexus-docker-candidate-check.sh`；未读取或修改 `F:\Sub2Api\SubNexus`，未连接服务器、生产 Docker、PostgreSQL 或 Redis。
+- 修复带 tag 的 repository digest 规范化：比较 Docker 实际记录的 `repository@sha256:digest`，保留 registry 端口并使用逐行精确匹配；修复预加载候选 tag 路径在复用前未重新校验归档的问题。
+- 修复候选归档路径校验顺序：先使用 `realpath -m -s` 的不跟随符号链接形式与物理路径比较，再执行归档完整性检查，拒绝文件或父目录的符号链接路径；同时把客服 namespaced/legacy 两个开关都强制写入并验证为 false。
+- 新增 repository digest、预加载 tag 和归档夹具断言；`bash -n`、isolated-image-build 静态测试、Docker candidate-check 静态/夹具测试均通过。未完成真实 Docker 构建，不能将本次结果视为候选运行门禁通过。
+
+## 2026-09-04（Asia/Shanghai）— 发布门禁安全复核二次加固
+
+- 对候选 Docker 门禁进行独立安全复核后，清理逻辑改为只有明确的“对象不存在”诊断和精确列表查询才允许继续；Docker 超时、信号、CLI/daemon 未知错误一律标记清理失败并保留现场，禁止发布通过证据。
+- 候选证据目录和镜像归档在任何创建、读取或写入前，均以物理路径检查与生产应用/PostgreSQL/Redis 的所有挂载源不重叠；同时拒绝受控路径及其父路径中的符号链接，避免把证据写入生产数据目录或从生产挂载读取归档。
+- 候选 gate 要求 Docker Unix socket 本身不是符号链接；候选与本地构建脚本对 `git submodule status --recursive` 的读取错误均改为硬失败，不再将检查错误当作“无子模块”。
+- 更新 `subnexus-docker-candidate-check.test.sh` 与 `subnexus-isolated-image-build.test.sh` 的静态断言；四个发布脚本全部 `bash -n` 通过，Docker candidate-check、isolated-image-build、readonly-preflight、Redis restore-check 夹具测试均通过。Docker Desktop 本地 daemon 仍不可用，因此尚未生成候选镜像归档或运行 Docker 候选门禁。
+- 本轮仍只修改 `F:\MySub2\sub2api` 的迁移分支；未修改 `F:\Sub2Api\SubNexus`、fork `main`、生产服务器、生产 PostgreSQL/Redis/Nginx，也未执行部署、迁移、切流或开关变更。
+
+## 2026-09-04（Asia/Shanghai）— Registry 端口校验回归修复
+
+- 独立审查发现候选 gate 与本地隔离构建的不可变镜像正则此前拒绝合法的私有 Registry 端口引用（例如 `registry.example:5000/postgres:18@sha256:<64hex>`），与后续 `RepoDigests` 解析逻辑不一致。
+- 两个脚本现将可选的 Registry 主机/1–5 位数字端口与仓库路径分开校验；仍拒绝可变 tag、非数字/空/超长端口、短或大写 digest。两个测试脚本增加带端口（带/不带 tag）及非法端口夹具。
+- 主线程复跑 `bash -n`（4 个发布脚本）、`subnexus-docker-candidate-check.test.sh`、`subnexus-isolated-image-build.test.sh` 均退出码 0；未运行真实 Docker build/gate（本地 Docker daemon 仍不可用），因此 Release Gate 仍未通过。
+- 本轮只修改 `F:\MySub2\sub2api` 迁移分支和记忆文档；未修改旧项目、`main`、服务器、生产数据库/Redis/Nginx，未部署、重启、切流或修改开关。
