@@ -248,12 +248,13 @@ absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
 # Exercise the embedded tar extractor against the modes emitted by Git/tar on
 # WSL.  This keeps the permission normalization contract executable instead of
 # relying only on source-text assertions.
-extractor_source="$(awk '/^  python3 - /{capture=1; next} capture && /^PY$/{exit} capture{print}' "$subject")"
-[[ -n "$extractor_source" ]] || fail 'embedded context extractor was not found'
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-context-mode-test.XXXXXX")"
-trap 'rm -rf -- "$fixture_root"' EXIT
-printf '%s\n' "$extractor_source" >"$fixture_root/extractor.py"
-python3 - "$fixture_root/source.tar" <<'PY'
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; print(sys.version_info[:2])' >/dev/null 2>&1; then
+  extractor_source="$(awk '/^  python3 - "[^"]*context_tar" "[^"]*context_root"/{capture=1; next} capture && /^PY$/{exit} capture{print}' "$subject")"
+  [[ -n "$extractor_source" ]] || fail 'embedded context extractor was not found'
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-context-mode-test.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  printf '%s\n' "$extractor_source" >"$fixture_root/extractor.py"
+  python3 - "$fixture_root/source.tar" <<'PY'
 import io
 import pathlib
 import sys
@@ -274,10 +275,13 @@ with tarfile.open(archive, mode="w:") as bundle:
     executable.size = 2
     bundle.addfile(executable, io.BytesIO(b"x\n"))
 PY
-python3 "$fixture_root/extractor.py" "$fixture_root/source.tar" "$fixture_root/context" 134217728
-[[ "$(stat -c '%a' "$fixture_root/context/nested")" == 755 ]] || fail 'directory mode was not normalized to 0755'
-[[ "$(stat -c '%a' "$fixture_root/context/nested/regular")" == 644 ]] || fail 'regular file mode was not normalized to 0644'
-[[ "$(stat -c '%a' "$fixture_root/context/nested/exec.sh")" == 755 ]] || fail 'executable file mode was not normalized to 0755'
+  python3 "$fixture_root/extractor.py" "$fixture_root/source.tar" "$fixture_root/context" 134217728
+  [[ "$(stat -c '%a' "$fixture_root/context/nested")" == 755 ]] || fail 'directory mode was not normalized to 0755'
+  [[ "$(stat -c '%a' "$fixture_root/context/nested/regular")" == 644 ]] || fail 'regular file mode was not normalized to 0644'
+  [[ "$(stat -c '%a' "$fixture_root/context/nested/exec.sh")" == 755 ]] || fail 'executable file mode was not normalized to 0755'
+else
+  printf 'context mode dynamic fixture skipped: usable python3 is unavailable\n'
+fi
 
 # Ensure line endings do not make the shell contract platform-dependent.
 if grep -n $'\r' "$subject" >/dev/null; then
