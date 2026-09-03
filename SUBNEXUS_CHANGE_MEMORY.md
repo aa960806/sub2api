@@ -832,3 +832,22 @@
 
 - 在 `SUBNEXUS_PROJECT_CONTEXT.md` 的当前状态表新增本地测试产物说明：隔离日志、数据库快照和缓存已停止使用，保留在 `F:\MySub2`、未纳入 Git，也不是生产资产。
 - 本次仅修改项目记忆文档；功能代码候选、迁移 SQL、默认关闭开关、fork `main`、旧项目和线上服务均未改变。
+
+## 2026-09-03（Asia/Shanghai）— 再次复核 SubNexus 渠道监控同步状态
+
+### 复核范围与结论
+
+- 只读检查旧项目 `F:\Sub2Api\SubNexus` 当前分支 `alignment/v0.1.181-local` / HEAD `62ea35e1c78416fd83e1e41bbb310b307941811a`（`fix(monitor): improve V3 availability timeline`）。该提交除旧项目自己的 `AI_CHANGE_MEMORY.md` 外，只涉及 7 个前端渠道监控源码/测试文件。
+- 对照目标 fork `F:\MySub2\sub2api` 的 `feature/subnexus-migration`：7 个源码/测试文件中 5 个与旧提交逐字节一致；`monitorFormat.ts` 仅注释不同，`monitorFormat.spec.ts` 仅测试位置/缩进不同，V3 阈值（90/80）和全部断言行为一致。后端、迁移 SQL、配置、路由没有该提交新增差异。
+- 结论：这次旧项目的渠道监控 V3 时间线修正已经包含在目标候选 `b26c42e08fb190f3915f08949aaaba48dbe61a26` 中，无需重复 cherry-pick 或覆盖代码；保持目标现有实现，避免引入只为追求字节一致的无行为改动。
+
+### 本地验证与安全边界
+
+- 在目标 fork `frontend` 执行 `pnpm exec vitest run src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts src/features/channel-monitor-v2/__tests__/monitorTimeline.spec.ts`：2 个文件、16 个测试全部通过。
+- 对 7 个受影响文件执行 ESLint：通过；仅有现有 TypeScript 版本兼容性提示，无 lint 错误。`git diff --check` 通过，目标工作树在记录前无业务源码差异。
+- 本次全程只读旧项目；未修改旧项目文件、fork `main`、服务器、线上 PostgreSQL/Redis、生产开关或部署状态，未推送任何新提交。所有迁移功能继续默认关闭。
+
+### 当前回滚点与下一步
+
+- 功能代码回滚点仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；本次只新增审计记忆，不改变代码回滚点。
+- Docker、持久化 Redis 恢复、生产备份隔离克隆、维护者验收等 Release Gate 仍未完成；在这些门禁通过前不得让服务器拉取或切流。
