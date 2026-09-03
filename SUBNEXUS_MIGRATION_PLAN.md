@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v1.7（2026-09-03，已同步最新上游，本地优先完成全部二开功能，生产门禁后移）
-> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4 本地实现、隔离 PostgreSQL、miniredis/候选主机 smoke 和旧版回滚克隆已通过，持久化 Redis/Docker/生产备份克隆仍待完成。本地候选完成并经维护者验收前不推送、不让服务器拉取、不执行任何生产命令
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4 本地实现、隔离 PostgreSQL、miniredis/候选主机 smoke、旧版回滚克隆、线上只读预检及生产备份结构校验已通过。生产备份实际隔离恢复、持久化 Redis 恢复和 Docker 候选仍待完成；通过前禁止生产迁移、候选连接生产库、切流或开启功能
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -142,8 +142,8 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 ### Release Gate：维护者本地验收后的上传与生产验证
 
 - 维护者先验收本地 Batch 1-5 的功能矩阵、默认关闭行为、测试和候选镜像；验收前不推送新的迁移提交，不让服务器拉取。
-- 验收后推送迁移分支并固定不可变候选 SHA，再执行生产只读 preflight、可恢复 PostgreSQL/Redis 备份和线上备份隔离恢复。
-- 在隔离恢复库验证 adoption、候选启动和旧版本回归全部通过后，才允许服务器拉取固定 release SHA 并进入受控切换。
+- 迁移分支已推送并固定远端发布指针，生产只读 preflight 和 PostgreSQL/Redis/应用数据备份创建及结构校验已经完成；实际恢复能力仍必须由下一步隔离恢复证明。
+- 在本机 PostgreSQL 18/Redis 8 隔离恢复库验证 restore、adoption、候选启动和旧版本回归全部通过后，才允许服务器构建固定 release SHA 并进入受控切换。
 
 每个 Batch 使用独立提交；提交信息包含功能名、开关、迁移文件、测试命令和回滚提交。当前先完成 Batch 1 的签到、排行榜、活动中心和公告扩展，再按顺序进入 Batch 2-4；未通过门禁的批次不得依赖后续批次继续开发或开启。维护者验收前只允许本地代码/测试/文档操作，禁止向 `origin` 推送、禁止服务器拉取和任何线上数据库或开关操作。
 
@@ -256,7 +256,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 | 生产主机 | OVH `51.81.211.97`，SSH 用户 `ubuntu` | 只使用当前主机实时状态；不假设历史 IP/主机仍未变化 |
 | 源码工作树 | `/srv/subnexus-repo` | 仅用于 fetch/构建；不覆盖 `/srv/subnexus-migration` 证据和回滚资产 |
 | 生产应用 | `subnexus-cutover`，`127.0.0.1:18083 -> 8080` | 从运行容器实时派生网络、端口、挂载、环境和 healthcheck |
-| PostgreSQL | 历史记录为 `sub2api-postgres`、PostgreSQL 18（未实时确认） | Release Gate 从应用 `DATABASE_HOST` 验证实际版本、容器和共享网络；不打印密码 |
+| PostgreSQL | `sub2api-postgres`、PostgreSQL 18.4（2026-09-03 只读预检确认） | Release Gate 已验证实际版本、容器和共享网络；后续命令不得打印密码 |
 | Redis | `sub2api-redis`，Redis 8，AOF 关闭、RDB 开启 | 以运行实例配置为准，禁止被仓库 Compose 默认值覆盖 |
 | Docker 网络 | `sub2api-net`（历史记录另有 CPA 网络） | 不使用曾导致事故的 `sub2api_net` 硬编码；CPA 依赖单独审计 |
 | 部署证据/备份 | `/srv/subnexus-migration` | 只追加带时间戳的证据；不得当作 Git 工作树覆盖 |
@@ -333,4 +333,4 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/miniredis、候选主机和旧版本回滚矩阵，向维护者提交本地验收报告；Docker 镜像与持久化 Redis 恢复仍需运行环境可用后补齐。
 4. 维护者验收前只保留本地提交，不再推送，不要求服务器拉取或运行任何迁移资产。
 
-维护者确认本地迁移完成后，Release Gate 仍必须取得线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑、可恢复备份和隔离恢复证据，尤其确认旧项目 `254_battle_pass.sql` 的真实状态。未满足 Release Gate 时可以继续本地修复和测试，但不得让服务器拉取候选、连接生产库启动、执行迁移、打开开关或替换线上版本。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和切换前备份证据已经取得；Release Gate 仍缺生产备份在 PostgreSQL 18/Redis 8 隔离环境中的实际恢复、候选 adoption/启动、旧版本回归和 Docker 候选证据。未满足剩余门禁时可以继续本地修复和测试，但不得让候选连接生产库启动、执行生产迁移、打开开关、切流或替换线上版本。

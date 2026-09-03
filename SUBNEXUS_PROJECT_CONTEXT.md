@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-03（本地 Batch 1-5 门禁通过；已完成线上只读基线，持久化 Redis/Docker/生产备份隔离恢复和切换仍待完成）
+> 最后更新：2026-09-03（本地 Batch 1-5、线上只读预检及生产备份结构校验通过；生产备份隔离恢复、Docker 候选和切换仍待完成）
 
 ## 项目身份
 
@@ -12,7 +12,7 @@
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新上游基线：`upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`（版本 `0.2.0`）
-- 当前迁移分支：`feature/subnexus-migration`；功能代码候选提交：`b26c42e08fb190f3915f08949aaaba48dbe61a26`（已合并最新上游）；当前发布提交：`d40a3c43c48c94d3a26a800bcd9415f94a8c192f`
+- 当前迁移分支：`feature/subnexus-migration`；功能代码候选提交：`b26c42e08fb190f3915f08949aaaba48dbe61a26`（已合并最新上游）；当前远端发布指针：`1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -20,13 +20,13 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | Batch 0 控制和 adoption 门禁、Batch 1-5 本地验证已完成；线上只读基线已取得，持久化 Redis、Docker 候选镜像、生产备份隔离恢复和受控切换仍待完成 |
+| 迁移阶段 | Batch 0 控制和 adoption 门禁、Batch 1-5 本地验证、线上只读预检和生产备份结构校验已完成；生产备份隔离恢复、Docker 候选镜像和受控切换仍待完成 |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
-| 生产数据库访问 | 仅执行只读盘点；未执行生产 SQL/DDL/DML，未修改数据 |
+| 生产数据库访问 | 已执行只读盘点和 `pg_dump` 备份；未执行生产 SQL DDL/DML、迁移或候选连接，Redis 仅执行 `BGSAVE` 生成恢复点 |
 | 生产部署/切换 | 未执行 |
 | 生产开关 | 未修改 |
-| 工作区 | `feature/subnexus-migration` 已推送 fork；当前发布提交 `d40a3c43c48c94d3a26a800bcd9415f94a8c192f`，功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；业务依赖、前端 lockfile 和 VERSION 未改 |
+| 工作区 | `feature/subnexus-migration` 已推送 fork；当前远端发布指针 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`，功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；业务依赖、前端 lockfile 和 VERSION 未改 |
 | 本地测试产物 | 隔离日志、数据库快照和缓存位于 `F:\MySub2`，已停止使用、未纳入 Git；不属于生产资产 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
@@ -104,6 +104,6 @@ registration_ip_cooldown_enabled
 
 ## 下一步入口
 
-1. 在本地完成 Batch 5：已通过隔离 PostgreSQL、miniredis/候选主机 smoke 和旧版回滚克隆；仍需在 Docker daemon 可用时完成持久化 Redis/容器验证，并补齐上游核心回归、关闭态/开启态验收；所有开关继续关闭。
-2. 已推送迁移分支并固定当前发布提交；维护者需先在服务器执行经 SHA 校验的只读 preflight，并回传脱敏证据。
-3. Release Gate 取得可恢复 PostgreSQL/Redis 备份并完成隔离恢复、adoption 和旧版本回归后，才进入受控切换；在此之前不得执行生产迁移或开关开启。
+1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
+2. 将备份下载到本机 `F:` 盘并复核 SHA256；使用 PostgreSQL 18/Redis 8 隔离实例完成实际恢复、候选 adoption/迁移、全部关闭态 smoke 和旧版本回归。服务器剩余空间不足，禁止在生产盘直接恢复完整副本。
+3. B0-7 和 Docker 候选门禁通过后才进入短维护窗口切换；在此之前不得让候选连接生产库、执行生产迁移、切流或开启任何功能。

@@ -1,18 +1,18 @@
 # SubNexus 同库切换手册
 
-本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。当前阶段禁止执行本手册中的服务器命令、生产迁移、备份、切流或功能开启。
+本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。当前已完成线上只读 preflight 和切换前备份结构校验；生产备份隔离恢复、候选 Docker 验证和维护窗口切换尚未完成，因此仍禁止生产迁移、候选连接生产库、替换容器、切流或功能开启。
 
 ## 1. 发布前硬门禁
 
 - 发布前必须确认 `feature/subnexus-migration` 已通过代码、后端、前端和 Docker 验证，经维护者验收后推送并固定不可变 release SHA；未经另行批准不修改 `main`。
 - 发布前必须在生产备份恢复出的隔离 PostgreSQL/Redis 上启动候选版本，确认目标自动迁移无 checksum mismatch，且旧版本连接迁移后克隆库仍可登录并读取核心数据。
 - 发布前必须保存并校验 PostgreSQL custom-format 备份、Redis 恢复点、应用镜像、旧容器 inspect、单独采集的 Nginx 有效配置和文件存储目录快照。
-- 发布前必须取得目标脚本 `tools/production-deploy/subnexus-readonly-preflight.sh` 的线上只读证据，并核对 `schema_migrations`、`atlas_schema_revisions`、真实网络、挂载和开关状态；当前阶段尚未取得这些证据。
+- 已取得目标脚本 `tools/production-deploy/subnexus-readonly-preflight.sh` 的线上只读证据，并核对 `schema_migrations`、`atlas_schema_revisions`、真实网络、挂载和开关状态；证据和 SHA256 固定点记录在迁移台账与变更记忆中。
 - 所有迁移功能仍为关闭态；逐项开启顺序固定为 Batch 1 → Batch 2 → Batch 3 → Batch 4，并为每项保留验收记录。
 
 ## 2. 只读预检
 
-以下内容是历史 Batch 0 预检资产，仅用于审计，不是当前可执行入口。最终本地候选完成后必须重新审核脚本、生成新的提交 SHA 和 SHA256，并由维护者明确批准后才能在生产服务器执行。
+以下命令块是历史 Batch 0 预检设计参考，不是可重复执行入口。当前预检已经完成，其实际发布提交、脚本 SHA256 和 root-only 证据路径记录在迁移台账与变更记忆中；环境或脚本变化后必须重新审核，不得直接重跑历史命令。
 
 最终发布清单必须同时记录批准预检脚本发布提交的完整 40 位 SHA 和该文件的 64 位 SHA256；脚本或其依赖环境每次变更后都必须重新生成这两个值，不能沿用历史固定值。服务器上的副本必须与维护者批准的发布清单逐项比对，不一致就停止，不要直接运行未校验副本。
 

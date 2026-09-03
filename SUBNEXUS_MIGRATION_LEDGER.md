@@ -15,11 +15,11 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支功能候选 SHA | `b26c42e08fb190f3915f08949aaaba48dbe61a26`（上游同步父提交为 `23d6e8ec0`；当前发布提交为 `d40a3c43c48c94d3a26a800bcd9415f94a8c192f`） |
+| 迁移分支功能候选 SHA | `b26c42e08fb190f3915f08949aaaba48dbe61a26`（上游同步父提交为 `23d6e8ec0`；当前远端发布指针为 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
-| 生产数据库状态 | 延后至本地 Batch 1-5 验收后的 Release Gate；当前禁止服务器操作 |
+| 生产数据库状态 | 只读预检与切换前备份已完成；未执行迁移/DDL/DML，隔离恢复前禁止候选连接生产库 |
 
 ## Batch 0 门禁
 
@@ -39,9 +39,9 @@
 
 | 编号 | 门禁 | 状态 | 证据/备注 |
 | --- | --- | --- | --- |
-| B0-5 | 线上容器/数据库/Redis 只读状态 | 进行中 | 已通过 SSH 完成实时只读盘点；待维护者执行固定脚本并回传 root-only 脱敏证据 |
-| B0-6 | 线上 PostgreSQL 备份或可恢复副本 | 延后至 Release Gate | 本地开发不得连接生产库；最终候选使用备份恢复出的隔离副本 |
-| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 延后至 Release Gate | 维护者本地验收并固定 release SHA 后执行；不阻塞本地业务迁移 |
+| B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
+| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建与结构校验） | `/srv/subnexus-migration/backups/20260903T073714Z`；PG custom dump/list、globals、Redis RDB/check、应用 tar 和全量 SHA256 均通过 |
+| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 进行中 | 服务器空间不足以安全恢复约 67 GB 副本；下一步下载到本机 `F:` 盘，用 PostgreSQL 18/Redis 8 隔离恢复，未通过前禁止生产迁移/候选启动/切流 |
 
 ## 实施批次
 
@@ -51,7 +51,7 @@
 | Batch 2 | 首充礼包、二开邀请奖励、学生充值优惠、注册 IP 冷却 | Batch 1 规则、订单/Affiliate/Auth 审计 | 默认关闭，奖励/注册 reservation 幂等 | 本地实现完成，待最终证据/维护者验收 |
 | Batch 3 | 发票事务系统 | 数据目录、订单快照、邮件和权限审计 | `subnexus_invoice_enabled=false`（public 映射 `invoice_enabled`） | 本地实现完成，待最终证据/维护者验收 |
 | Batch 4 | Battle Pass、Channel Monitor V3、默认语言、客服按钮 | 用量/充值/邀请数据合同；上游监控基础 | 所有功能/模式默认关闭或回退安全默认 | 本地实现完成，待最终证据/维护者验收 |
-| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | PostgreSQL 隔离迁移/接管、miniredis 主机 smoke、候选主机进程 smoke、旧版 0.1.135 回滚克隆已通过；持久化 Redis 恢复、Docker 镜像运行和生产备份克隆仍待办 |
+| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | PostgreSQL 隔离迁移/接管、miniredis 主机 smoke、候选主机进程 smoke、旧版 0.1.135 回滚克隆已通过；生产 PG/Redis/应用备份及结构校验已通过，生产备份实际隔离恢复和 Docker 候选镜像仍待办 |
 
 ## 主审第二轮剩余项收口（2026-09-03）
 
@@ -98,7 +98,7 @@
 | 前端 typecheck/Vitest/build | 2026-09-01 Asia/Shanghai | 通过（历史基线） | 当时 `pnpm typecheck`、`pnpm test:run`（249 个文件/1804 个测试）、`pnpm build` 均退出码 0；当前候选的更新结果见 2026-09-03 记录 |
 | 同库切换手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_CUTOVER_RUNBOOK.md`；仅发布授权后使用 |
 | 回滚手册 | 2026-09-01 Asia/Shanghai | 已建立 | `SUBNEXUS_ROLLBACK_RUNBOOK.md`；默认应用回滚，不自动恢复数据库 |
-| 线上实时预检 | 本地验收后执行 | 已延后 | 当前禁止服务器操作；最终候选固定后重新生成批准入口 |
+| 线上实时预检 | 2026-09-03 Asia/Shanghai | 通过 | 固定提交与脚本 SHA256 校验、root-only 证据 SHA256、运行时身份和只读标记均通过；详见 B0-5 与线上证据登记 |
 | 改名迁移静态审计 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧迁移按 `SHA256(TrimSpace(SQL))` 比较，确认 23 组同内容改名；另审计 2 组语义接管；含 DML 的文件不得在同库直接重跑 |
 | 改名迁移 adoption 本地 runner 验证 | 2026-09-01 Asia/Shanghai | 通过（本地） | 目标/旧文件 checksum 23/23 一致；repository 单测、`go vet`、全后端编译级测试和 integration-only 编译通过；触发器规范化顺序与 `groups.platform NOT NULL` 契约已校正 |
 | 目标迁移 SQL 隔离目录验证 | 2026-09-01 Asia/Shanghai | 通过（本机 PostgreSQL 16） | 在临时隔离集群执行目标迁移集合，并读取列、索引有效性/定义、约束、函数、触发器；未使用生产数据库，历史集群已停止 |
@@ -109,11 +109,11 @@
 
 | 证据 | 时间 | 来源 | 状态 |
 | --- | --- | --- | --- |
-| `schema_migrations` / `atlas_schema_revisions` | 待采集 | 当前 OVH PostgreSQL | 待证据 |
-| 应用容器实时 inspect | 待采集 | `subnexus-cutover` | 待证据 |
-| PostgreSQL/Redis 拓扑 | 待采集 | Docker 网络与环境 | 待证据 |
-| Nginx 有效配置/端口 | 待采集 | `nginx -T` / inspect | 待证据 |
-| PostgreSQL custom-format 备份 | 待创建 | 线上服务器 root-only 路径 | 未开始 |
+| `schema_migrations` / `atlas_schema_revisions` | 2026-09-03 | 只读预检证据 | 通过；生产未执行 adoption/迁移 |
+| 应用容器实时 inspect | 2026-09-03 | `subnexus-cutover` | 通过；healthy，`127.0.0.1:18083 -> 8080` |
+| PostgreSQL/Redis 拓扑 | 2026-09-03 | Docker 网络与环境 | 通过；PostgreSQL 18.4、Redis 8.8.0 standalone |
+| Nginx 有效配置/端口 | 2026-09-03 | `nginx -T` / inspect | 通过；备份后 `nginx -t` 和 active 状态再次确认 |
+| PostgreSQL/Redis/应用备份 | 2026-09-03 | `/srv/subnexus-migration/backups/20260903T073714Z` | 创建与结构校验通过；全部 SHA256 为 `OK` |
 | 隔离恢复验证 | 待执行 | 本地/隔离 PostgreSQL | 未开始 |
 
 ## 回滚点登记

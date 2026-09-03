@@ -954,3 +954,26 @@
 
 - 通过 SSH 在 Redis 容器内读取 `INFO server` 并以十六进制/可见字符检查，确认线上返回值为 `redis_mode:standalone\\r\\n`；问题确实是 CRLF 解析而非 Redis 模式异常。该检查未改变 Redis 状态。
 - 最终预检发布提交：`d40a3c43c48c94d3a26a800bcd9415f94a8c192f`；预检脚本 SHA256：`F02D5CB4A5F454E78663F56CD023ACE0EB8FEA5A978CAC8E4155805A697B6E87`。
+
+## 2026-09-03（Asia/Shanghai）— 线上只读预检与生产备份门禁通过
+
+### 预检证据
+
+- 当前远端发布指针为 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`；预检脚本 SHA256 为 `F02D5CB4A5F454E78663F56CD023ACE0EB8FEA5A978CAC8E4155805A697B6E87`。
+- 维护者在生产服务器手动执行只读预检；证据位于 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，同目录 SHA256 校验通过。最终标记为 `FINAL_RUNTIME_IDENTITIES=passed`、`FINAL_SCRIPT_INTEGRITY=passed`、`NO_MIGRATION_OR_DEPLOYMENT_PERFORMED=true`。
+- 预检确认生产应用 `subnexus-cutover` 仍健康并绑定 `127.0.0.1:18083 -> 8080`，Nginx 上游仍为该端口；PostgreSQL `sub2api-postgres` 为 18.4，Redis `sub2api-redis` 为 8.8.0 standalone、无密码、AOF 关闭。
+
+### 备份结果与修正记录
+
+- 维护者在生产服务器手动创建 root-only 备份目录 `/srv/subnexus-migration/backups/20260903T073714Z`。没有停止、重启或替换应用、PostgreSQL、Redis、Nginx，也没有执行 SQL DDL/DML、数据库迁移、切流或功能开关修改。
+- PostgreSQL custom dump 为 `postgres-sub2api.dump`，精确大小 `4,881,209,204` bytes（终端汇总约 `4.6G`），文件头为 `PGDMP`，`file` 识别为 PostgreSQL custom database dump v1.16-0。由于 `pg_restore` 经 `docker exec` 标准输入读取失败，改用无网络临时容器和只读 bind mount 执行 `pg_restore --list`；`postgres-restore-list.txt` 最终非空且命令退出成功，未重新导出数据库。
+- 已生成并验证 `postgres-globals.sql`、排除 `subnexus-data/logs` 的 `subnexus-data.tar.gz`（约 `968K`）、Redis `BGSAVE` 后的 `redis-dump.rdb`（约 `7.7M`）。Redis RDB 使用同镜像、无网络临时容器运行 `redis-check-rdb` 成功；应用数据归档通过 `tar -tzf`。
+- `COMPLETE`、`backup-metadata.txt`、`disk-after.txt` 和 `SHA256SUMS` 已生成，清单内全部文件逐项返回 `OK`，最终输出 `BACKUP_COMPLETE`。备份完成后应用健康、PostgreSQL/Redis 运行、Nginx 配置与服务状态均通过；服务器磁盘约 `193G/156G`，剩余约 `38G`。
+- 首次进度检查使用 `pgrep -af`，把运行命令中的数据库密码显示在终端。敏感值未写入仓库或本地迁移文档；后续禁止采集/传播完整进程参数，相关密码只允许通过标准输入传给容器内客户端。当前不轮换密码以免打断生产，受控切换完成后必须安排轮换。
+
+### 门禁与下一步
+
+- B0-5 线上只读状态门禁通过；B0-6 生产 PostgreSQL/Redis/应用数据备份创建及结构完整性校验通过。该结论不等于恢复演练通过。
+- B0-7 仍在进行中：必须把备份下载到本机 `F:` 盘，先核对 `SHA256SUMS`，再用 PostgreSQL 18 和 Redis 8 隔离实例完成实际恢复、候选 adoption/迁移、关闭态 smoke 与旧版本回归。
+- 生产服务器只剩约 `38G`，而源数据库约 `67 GB`，禁止在当前生产磁盘直接创建完整恢复副本。隔离恢复通过前不得启动连接生产库的候选、执行生产迁移、构建/替换生产容器、切流或开启任何迁移功能。
+- 本次证据同步只修改 fork 内的迁移记忆、台账、上下文、规划、功能矩阵和切换手册，并创建本地文档提交；暂不推送。服务器已验证的远端发布指针继续固定为 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`。
