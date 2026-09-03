@@ -69,6 +69,7 @@ function mountView() {
         AppLayout: { template: '<div><slot /></div>' },
         Icon: true,
         Toggle: true,
+        TotpStepUpDialog: true,
       },
     },
   })

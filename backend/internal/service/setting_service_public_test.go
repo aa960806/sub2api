@@ -137,6 +137,17 @@ func TestSettingService_ChannelMonitorRuntimeFailsClosedOnReadOrModeError(t *tes
 	}
 }
 
+func TestSettingService_GetPublicSettings_ChannelMonitorInvalidModeFailsClosed(t *testing.T) {
+	for _, rawMode := range []string{"garbage", "V9", " true "} {
+		settings, err := NewSettingService(&settingPublicRepoStub{values: map[string]string{
+			SettingKeyChannelMonitorEnabled: "true",
+			SettingKeyChannelMonitorMode:    rawMode,
+		}}, &config.Config{}).GetPublicSettings(context.Background())
+		require.NoError(t, err)
+		require.False(t, settings.ChannelMonitorEnabled, "invalid mode %q must not expose an enabled monitor", rawMode)
+	}
+}
+
 func TestSettingService_ChannelMonitorShowQuotaFailsClosed(t *testing.T) {
 	// 缺省（迁移插入 'false' / 老库无行）一律不展示。
 	missingRuntime := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{}).GetChannelMonitorRuntime(context.Background())

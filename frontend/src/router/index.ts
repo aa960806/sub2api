@@ -679,6 +679,18 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/admin/checkin',
+    name: 'AdminCheckIn',
+    component: () => import('@/views/admin/CheckInSettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Daily Check-in Settings',
+      titleKey: 'admin.checkin.title',
+      descriptionKey: 'admin.checkin.description',
+    },
+  },
+  {
     path: '/admin/invite-activities',
     name: 'AdminInviteActivities',
     component: () => import('@/views/admin/InviteActivitiesView.vue'),
@@ -1261,6 +1273,8 @@ router.beforeEach(async (to, _from, next) => {
       '/admin/invite-activities',
       '/admin/first-recharge-gift',
       '/admin/marquee',
+      '/admin/checkin',
+      '/admin/leaderboard',
       '/admin/student-recharge'
     ]
 

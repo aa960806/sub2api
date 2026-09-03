@@ -25,7 +25,7 @@
 | 项目 | 旧二开 `SubNexus` | 新 fork `sub2api` |
 | --- | --- | --- |
 | 分支 | `alignment/v0.1.181-local` | `main`（本规划从此创建迁移分支） |
-| HEAD | `ccffee6c6` | fork `main`=`d596d0844`；最新上游=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`；迁移分支本地候选=`b26c42e08fb190f3915f08949aaaba48dbe61a26`（上游同步父提交=`23d6e8ec0`） |
+| HEAD | `62ea35e1c78416fd83e1e41bbb310b307941811a` | fork `main`=`d596d0844`；最新上游=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`；迁移分支本地候选=`b26c42e08fb190f3915f08949aaaba48dbe61a26`（上游同步父提交=`23d6e8ec0`） |
 | 应用版本 | `0.1.135` | `0.2.0`（最新上游） |
 | Go 版本 | `1.26.6` | `1.27.0` |
 | Git merge-base | 无 | 无 |
@@ -48,7 +48,7 @@
 | 排行榜 | 保留排行计算、展示和权限边界；重新接入目标项目的用量读取 | `subnexus_leaderboard_enabled=false` | 中 |
 | 活动中心 | 仅迁移 `custom` 活动卡片、管理 CRUD 和用户入口；旧库中的转盘、红包、邀请、充值、Battle Pass 等非 `custom` 卡片保留但新用户端永不读取；上游已有活动以上游为准 | `subnexus_activity_center_enabled=false` | 中 |
 | 广播/滚动公告扩展 | 保留二开字段、展示和发送策略；不覆盖上游公告实现 | `subnexus_marquee_enabled=false` | 低/中 |
-| 首充礼包 | 保留资格、订单确认、幂等发放和管理端配置 | `subnexus_first_recharge_enabled=false` | 高（余额/订单） |
+| 首充礼包 | 保留资格、订单确认、幂等发放和管理端配置；退款后不恢复首充资格，关闭态继续清理 terminal reservation | `subnexus_first_recharge_enabled=false` | 高（余额/订单） |
 | 邀请活动与奖励 | 只迁移二开活动奖励层、注册奖励重试队列；基础 Affiliate/邀请能力以上游为准，奖励必须幂等 | `subnexus_invite_rewards_enabled=false`；`subnexus_invite_activities_enabled=false`（子开关默认关闭） | 高（余额/返利） |
 | 发票事务系统 | 迁移用户申请、管理员处理、文件存储、对账和审计闭环 | `subnexus_invoice_enabled=false`（public 映射为 `invoice_enabled`） | 高 |
 | Battle Pass | 迁移赛季、任务进度、经验发放和活动中心联动；保持独立表 | `battle_pass_enabled=false` | 高（用量/奖励） |
@@ -119,7 +119,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 范围：首充礼包资格和发放、二开邀请活动奖励/注册奖励重试、学生充值优惠和注册 IP 冷却。复用目标项目 payment、affiliate、balance、subscription、Auth 服务，不复制旧支付结算实现。
 
-门禁：订单状态变化、退款/部分退款、并发回调、重复 webhook、重复邀请确认都不能重复发放；奖励流水与余额变动可审计；开关关闭时不改变订单结算和 Affiliate 基础行为。
+门禁：订单状态变化、退款/部分退款、并发回调、重复 webhook、重复邀请确认都不能重复发放；退款后的首充资格不得恢复；关闭态 terminal reservation 清理只处理后台补偿，不发奖、不写用户业务数据；奖励流水与余额变动可审计；开关关闭时不改变订单结算和 Affiliate 基础行为。
 
 ### Batch 3：发票事务系统（本地实现完成，待最终证据/维护者验收）
 
@@ -135,7 +135,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 ### Batch 5：集成验收和文档收敛（PG、主机候选 smoke 与旧版回滚通过；持久化 Redis/Docker 待办）
 
-- 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、Docker 候选镜像启动和健康检查；后端全量/重点包测试、前端 typecheck/Vitest/build 已完成。隔离 PostgreSQL 16 的目标迁移、旧迁移和同库接管矩阵已通过（目标 290、旧版 268、接管后 371 条记录）。使用本机 miniredis（`127.0.0.1:56379`）完成非持久化候选主机进程 smoke（`18180`，health、setup、管理员登录、关闭态和二次启动）；旧版 `0.1.135` 在同一 371-record 克隆（`18183`）完成 health、setup、公共设置、有效管理员登录、`auth/me`、管理员只读接口及重启幂等回归。持久化 Redis 恢复、Docker daemon/候选镜像运行仍待办；本机 Docker Desktop 当前因 Inference manager 路径错误不可用，不得为此连接线上服务或执行生产命令。
+- 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、Docker 候选镜像启动和健康检查；后端全量/重点包测试、前端 typecheck/Vitest/build 已完成。隔离 PostgreSQL 16 的目标迁移、旧迁移和同库接管矩阵已通过（目标 290、旧版 268、接管后 371 条记录）。使用本机 miniredis（`127.0.0.1:56379`）完成非持久化候选主机进程 smoke（`18180`，health、setup、管理员登录、关闭态和二次启动）；旧版 `0.1.135` 在同一 371-record 克隆（`18183`）完成 health、setup、公共设置、有效管理员登录、`auth/me`、管理员只读接口及重启幂等回归。当前前端全量为 282 个测试文件/1954 个测试。持久化 Redis 恢复、Docker daemon/候选镜像运行仍待办；本机 Docker Desktop 当前因 Inference manager 路径错误不可用，不得为此连接线上服务或执行生产命令。
 - 运行上游核心回归矩阵：认证、API Key、余额、订阅、订单、退款、用量计费、模型列表、Gateway 各协议、插件、Model Plaza、Grok、批量生图和安全设置。
 - 形成并持续维护精简上下文、功能矩阵、迁移台账、切换手册和回滚手册；当前文档已同步本地候选状态，不把历史记忆误当作当前实现状态。
 

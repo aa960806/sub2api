@@ -130,3 +130,58 @@ func TestActivityCenterRepositoryUpdateMapsNoRowsWithoutChangingQueryScope(t *te
 	require.ErrorIs(t, err, sql.ErrNoRows)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestActivityCenterRepositoryGatedCreateLocksSwitchBeforeMutation(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewActivityCenterRepository(db)
+	gated, ok := repo.(interface {
+		CreateWithGate(context.Context, service.ActivityCenterItemInput, int64) (*service.ActivityCenterItem, error)
+	})
+	require.True(t, ok)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT value FROM settings\s+WHERE key = \$1 FOR SHARE`).
+		WithArgs(service.SettingKeySubNexusActivityCenterEnabled).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("true"))
+	mock.ExpectQuery(`(?s)INSERT INTO activity_center_items.*RETURNING`).
+		WithArgs(
+			"custom-card", "Title", "", "", "gift", "", "", "", "Open",
+			service.ActivityCenterTypeCustom, true, 0, nil, nil, "{}", int64(5),
+		).
+		WillReturnRows(activityCenterTestRows())
+	mock.ExpectCommit()
+
+	item, err := gated.CreateWithGate(context.Background(), service.ActivityCenterItemInput{
+		Slug: "custom-card", Title: "Title", Icon: "gift", ActionLabel: "Open", Enabled: true,
+		Metadata: []byte(`{}`),
+	}, 5)
+	require.NoError(t, err)
+	require.NotNil(t, item)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestActivityCenterRepositoryGatedCreateRejectsDisabledSwitch(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewActivityCenterRepository(db)
+	gated, ok := repo.(interface {
+		CreateWithGate(context.Context, service.ActivityCenterItemInput, int64) (*service.ActivityCenterItem, error)
+	})
+	require.True(t, ok)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT value FROM settings\s+WHERE key = \$1 FOR SHARE`).
+		WithArgs(service.SettingKeySubNexusActivityCenterEnabled).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("false"))
+	mock.ExpectRollback()
+
+	item, err := gated.CreateWithGate(context.Background(), service.ActivityCenterItemInput{Slug: "custom-card", Title: "Title"}, 5)
+	require.ErrorIs(t, err, service.ErrActivityCenterDisabled)
+	require.Nil(t, item)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

@@ -122,6 +122,7 @@ function simulateGuard(
       '/admin/redeem',
       '/subscriptions',
       '/redeem',
+      '/admin/checkin',
     ]
     if (restrictedPaths.some((path) => toPath.startsWith(path))) {
       return authState.isAdmin ? '/admin/dashboard' : '/dashboard'

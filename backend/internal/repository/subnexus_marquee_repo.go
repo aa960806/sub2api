@@ -10,6 +10,34 @@ import (
 
 type subNexusMarqueeRepository struct{ db *sql.DB }
 
+func (r *subNexusMarqueeRepository) withGate(ctx context.Context, fn func(*sql.Tx) error) error {
+	if r == nil || r.db == nil {
+		return service.ErrMarqueeDisabled
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var value string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = $1 FOR SHARE`,
+		service.SettingKeySubNexusMarqueeEnabled,
+	).Scan(&value); err != nil {
+		if err == sql.ErrNoRows {
+			return service.ErrMarqueeDisabled
+		}
+		return err
+	}
+	if value != "true" {
+		return service.ErrMarqueeDisabled
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func NewSubNexusMarqueeRepository(db *sql.DB) service.MarqueeRepository {
 	return &subNexusMarqueeRepository{db: db}
 }
@@ -64,6 +92,27 @@ func (r *subNexusMarqueeRepository) CreateAdmin(ctx context.Context, input servi
 	return &item, nil
 }
 
+func (r *subNexusMarqueeRepository) CreateAdminWithGate(ctx context.Context, input service.MarqueeBroadcastInput, adminID int64) (*service.MarqueeBroadcast, error) {
+	var item *service.MarqueeBroadcast
+	err := r.withGate(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `
+			INSERT INTO activity_broadcasts
+				(title, content, source, enabled, priority, start_at, end_at, created_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, 0))
+			RETURNING id, title, content, source, enabled, priority, start_at, end_at,
+			          created_by, created_at, updated_at
+		`, input.Title, input.Content, service.MarqueeSourceAdmin, input.Enabled, input.Priority,
+			input.StartAt, input.EndAt, adminID)
+		scanned, err := scanMarqueeBroadcast(row)
+		if err != nil {
+			return err
+		}
+		item = &scanned
+		return nil
+	})
+	return item, err
+}
+
 func (r *subNexusMarqueeRepository) UpdateAdmin(ctx context.Context, id int64, input service.MarqueeBroadcastInput) (*service.MarqueeBroadcast, error) {
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE activity_broadcasts
@@ -81,6 +130,28 @@ func (r *subNexusMarqueeRepository) UpdateAdmin(ctx context.Context, id int64, i
 	return &item, nil
 }
 
+func (r *subNexusMarqueeRepository) UpdateAdminWithGate(ctx context.Context, id int64, input service.MarqueeBroadcastInput) (*service.MarqueeBroadcast, error) {
+	var item *service.MarqueeBroadcast
+	err := r.withGate(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `
+			UPDATE activity_broadcasts
+			SET title = $2, content = $3, enabled = $4, priority = $5,
+			    start_at = $6, end_at = $7, updated_at = NOW()
+			WHERE id = $1 AND source = $8
+			RETURNING id, title, content, source, enabled, priority, start_at, end_at,
+			          created_by, created_at, updated_at
+		`, id, input.Title, input.Content, input.Enabled, input.Priority, input.StartAt, input.EndAt,
+			service.MarqueeSourceAdmin)
+		scanned, err := scanMarqueeBroadcast(row)
+		if err != nil {
+			return err
+		}
+		item = &scanned
+		return nil
+	})
+	return item, err
+}
+
 func (r *subNexusMarqueeRepository) DeleteAdmin(ctx context.Context, id int64) (bool, error) {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM activity_broadcasts WHERE id = $1 AND source = $2`, id, service.MarqueeSourceAdmin)
 	if err != nil {
@@ -88,6 +159,23 @@ func (r *subNexusMarqueeRepository) DeleteAdmin(ctx context.Context, id int64) (
 	}
 	count, err := result.RowsAffected()
 	return count > 0, err
+}
+
+func (r *subNexusMarqueeRepository) DeleteAdminWithGate(ctx context.Context, id int64) (bool, error) {
+	deleted := false
+	err := r.withGate(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `DELETE FROM activity_broadcasts WHERE id = $1 AND source = $2`, id, service.MarqueeSourceAdmin)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		deleted = count > 0
+		return nil
+	})
+	return deleted, err
 }
 
 type marqueeScanner interface {

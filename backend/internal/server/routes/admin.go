@@ -52,11 +52,11 @@ func RegisterAdminRoutes(
 		// SubNexus custom activity center
 		registerActivityCenterRoutes(admin, h)
 		registerSubNexusMarqueeRoutes(admin, h)
-		registerSubNexusCheckInRoutes(admin, h)
-		registerSubNexusLeaderboardRoutes(admin, h)
+		registerSubNexusCheckInRoutes(admin, h, stepUpAuth)
+		registerSubNexusLeaderboardRoutes(admin, h, stepUpAuth)
 		registerSubNexusInviteActivitiesRoutes(admin, h)
-		registerStudentRechargeBenefitRoutes(admin, h)
-		registerInvoiceRoutes(admin, h, panelRateLimiter)
+		registerStudentRechargeBenefitRoutes(admin, h, stepUpAuth)
+		registerInvoiceRoutes(admin, h, panelRateLimiter, stepUpAuth)
 		registerBattlePassRoutes(admin, h, stepUpAuth)
 
 		// OpenAI OAuth
@@ -147,13 +147,14 @@ func RegisterAdminRoutes(
 // settings in their own namespace. The admin routes remain available while
 // the independent runtime switch is disabled so operators can prepare a
 // rollout safely.
-func registerStudentRechargeBenefitRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerStudentRechargeBenefitRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	student := admin.Group("/activity/student-recharge")
 	student.GET("/config", h.Admin.StudentRechargeBenefit.GetConfig)
-	student.PUT("/config", h.Admin.StudentRechargeBenefit.UpdateConfig)
+	stepUp := gin.HandlerFunc(stepUpAuth)
+	student.PUT("/config", stepUp, h.Admin.StudentRechargeBenefit.UpdateConfig)
 	student.GET("/users", h.Admin.StudentRechargeBenefit.ListAccounts)
-	student.POST("/users/:id/grant", h.Admin.StudentRechargeBenefit.GrantAccount)
-	student.POST("/users/:id/revoke", h.Admin.StudentRechargeBenefit.RevokeAccount)
+	student.POST("/users/:id/grant", stepUp, h.Admin.StudentRechargeBenefit.GrantAccount)
+	student.POST("/users/:id/revoke", stepUp, h.Admin.StudentRechargeBenefit.RevokeAccount)
 	student.GET("/audit-logs", h.Admin.StudentRechargeBenefit.ListAuditLogs)
 }
 
@@ -167,17 +168,18 @@ func registerSubNexusMarqueeRoutes(admin *gin.RouterGroup, h *handler.Handlers) 
 	marquee.DELETE("/broadcasts/:id", h.Admin.SubNexusMarquee.Delete)
 }
 
-func registerSubNexusCheckInRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerSubNexusCheckInRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	checkin := admin.Group("/checkin")
 	checkin.GET("/config", h.Admin.SubNexusCheckIn.GetConfig)
-	checkin.PUT("/config", h.Admin.SubNexusCheckIn.UpdateConfig)
+	checkin.PUT("/config", gin.HandlerFunc(stepUpAuth), h.Admin.SubNexusCheckIn.UpdateConfig)
 }
 
-func registerSubNexusLeaderboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerSubNexusLeaderboardRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	leaderboard := admin.Group("/leaderboard")
 	leaderboard.GET("/config", h.Admin.SubNexusLeaderboard.GetConfig)
-	leaderboard.PUT("/config", h.Admin.SubNexusLeaderboard.UpdateConfig)
-	leaderboard.POST("/rewards", h.Admin.SubNexusLeaderboard.GrantRewards)
+	stepUp := gin.HandlerFunc(stepUpAuth)
+	leaderboard.PUT("/config", stepUp, h.Admin.SubNexusLeaderboard.UpdateConfig)
+	leaderboard.POST("/rewards", stepUp, h.Admin.SubNexusLeaderboard.GrantRewards)
 	leaderboard.GET("/rewards", h.Admin.SubNexusLeaderboard.ListRewardHistory)
 }
 
@@ -199,21 +201,22 @@ func registerActivityCenterRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerInvoiceRoutes(admin *gin.RouterGroup, h *handler.Handlers, panelRateLimiter *middleware.PanelRateLimiter) {
+func registerInvoiceRoutes(admin *gin.RouterGroup, h *handler.Handlers, panelRateLimiter *middleware.PanelRateLimiter, stepUpAuth middleware.StepUpAuthMiddleware) {
 	invoices := admin.Group("/invoices")
 	{
 		invoices.GET("/config", h.Admin.Invoice.GetConfig)
-		invoices.PUT("/config", h.Admin.Invoice.UpdateConfig)
+		stepUp := gin.HandlerFunc(stepUpAuth)
+		invoices.PUT("/config", stepUp, h.Admin.Invoice.UpdateConfig)
 		invoices.GET("/reconciliation", panelRateLimiter.Heavy(), h.Admin.Invoice.ReconcileFiles)
 		invoices.GET("", h.Admin.Invoice.List)
 		invoices.GET("/:id", h.Admin.Invoice.Get)
-		invoices.POST("/:id/accept", h.Admin.Invoice.Accept)
-		invoices.POST("/:id/release", h.Admin.Invoice.Release)
-		invoices.POST("/:id/reject", h.Admin.Invoice.Reject)
-		invoices.POST("/:id/issue", panelRateLimiter.Heavy(), middleware.RequestBodyLimit(21<<20), h.Admin.Invoice.Issue)
-		invoices.POST("/:id/replace-file", panelRateLimiter.Heavy(), middleware.RequestBodyLimit(21<<20), h.Admin.Invoice.ReplaceFile)
-		invoices.POST("/:id/void", h.Admin.Invoice.Void)
-		invoices.POST("/:id/resend-email", h.Admin.Invoice.ResendEmail)
+		invoices.POST("/:id/accept", stepUp, h.Admin.Invoice.Accept)
+		invoices.POST("/:id/release", stepUp, h.Admin.Invoice.Release)
+		invoices.POST("/:id/reject", stepUp, h.Admin.Invoice.Reject)
+		invoices.POST("/:id/issue", stepUp, panelRateLimiter.Heavy(), middleware.RequestBodyLimit(21<<20), h.Admin.Invoice.Issue)
+		invoices.POST("/:id/replace-file", stepUp, panelRateLimiter.Heavy(), middleware.RequestBodyLimit(21<<20), h.Admin.Invoice.ReplaceFile)
+		invoices.POST("/:id/void", stepUp, h.Admin.Invoice.Void)
+		invoices.POST("/:id/resend-email", stepUp, h.Admin.Invoice.ResendEmail)
 		invoices.GET("/:id/download", h.Admin.Invoice.Download)
 		invoices.GET("/:id/audit-logs", h.Admin.Invoice.ListAuditLogs)
 	}

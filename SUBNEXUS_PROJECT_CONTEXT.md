@@ -13,7 +13,7 @@
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新上游基线：`upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`（版本 `0.2.0`）
 - 当前迁移分支：`feature/subnexus-migration`；功能代码候选提交：`b26c42e08fb190f3915f08949aaaba48dbe61a26`（已合并最新上游）；文档收尾提交以 `git rev-parse HEAD` 为准
-- 旧二开参考 HEAD：`ccffee6c6`，分支 `alignment/v0.1.181-local`
+- 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
 ## 当前状态

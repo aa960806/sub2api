@@ -44,12 +44,36 @@ const renderedContent = computed(() => {
   if (!hasContent.value) return ''
   try {
     const html = marked.parse(rawContent.value) as string
-    return DOMPurify.sanitize(html, {
-      // Keep the support channel useful for QR images while stripping scripts
-      // and event-handler attributes from administrator-authored Markdown.
-      ADD_ATTR: ['target', 'rel'],
+    const sanitized = DOMPurify.sanitize(html, {
+      // Keep the support channel useful for formatted text and QR images while
+      // allowing only the tags/attributes needed by administrator-authored Markdown.
+      ALLOWED_TAGS: [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'br', 'hr',
+        'ul', 'ol', 'li',
+        'strong', 'em', 'u', 's', 'del', 'code', 'pre',
+        'a', 'img', 'blockquote',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td',
+      ],
+      ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'target', 'rel', 'class'],
+      // External links may use web/mail/phone protocols. Data URLs are only
+      // accepted for raster images used by QR codes.
+      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|data:image\/(?:png|gif|jpe?g|webp);|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
       ALLOW_DATA_ATTR: false,
     })
+
+    // DOMPurify removes event handlers, but a surviving target=_blank still
+    // needs an opener policy. Add it after sanitization using the browser DOM.
+    if (typeof document === 'undefined') return sanitized
+    const template = document.createElement('template')
+    template.innerHTML = sanitized
+    template.content.querySelectorAll('a[target="_blank"]').forEach((anchor) => {
+      const rel = new Set((anchor.getAttribute('rel') || '').split(/\s+/).filter(Boolean))
+      rel.add('noopener')
+      rel.add('noreferrer')
+      anchor.setAttribute('rel', Array.from(rel).join(' '))
+    })
+    return template.innerHTML
   } catch {
     return ''
   }

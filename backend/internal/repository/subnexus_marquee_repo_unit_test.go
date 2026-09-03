@@ -67,3 +67,54 @@ func TestMarqueeRepositoryEveryQueryRestrictsSourceToAdmin(t *testing.T) {
 	require.True(t, deleted)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestMarqueeRepositoryGatedCreateLocksSwitchBeforeMutation(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewSubNexusMarqueeRepository(db)
+	gated, ok := repo.(interface {
+		CreateAdminWithGate(context.Context, service.MarqueeBroadcastInput, int64) (*service.MarqueeBroadcast, error)
+	})
+	require.True(t, ok)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT value FROM settings\s+WHERE key = \$1 FOR SHARE`).
+		WithArgs(service.SettingKeySubNexusMarqueeEnabled).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("true"))
+	mock.ExpectQuery(`(?s)INSERT INTO activity_broadcasts.*RETURNING`).
+		WithArgs("Notice", "Message", service.MarqueeSourceAdmin, true, 4, nil, nil, int64(9)).
+		WillReturnRows(marqueeRows())
+	mock.ExpectCommit()
+
+	item, err := gated.CreateAdminWithGate(context.Background(), service.MarqueeBroadcastInput{
+		Title: "Notice", Content: "Message", Enabled: true, Priority: 4,
+	}, 9)
+	require.NoError(t, err)
+	require.NotNil(t, item)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestMarqueeRepositoryGatedCreateRejectsDisabledSwitch(t *testing.T) {
+	t.Parallel()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewSubNexusMarqueeRepository(db)
+	gated, ok := repo.(interface {
+		CreateAdminWithGate(context.Context, service.MarqueeBroadcastInput, int64) (*service.MarqueeBroadcast, error)
+	})
+	require.True(t, ok)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT value FROM settings\s+WHERE key = \$1 FOR SHARE`).
+		WithArgs(service.SettingKeySubNexusMarqueeEnabled).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("false"))
+	mock.ExpectRollback()
+
+	item, err := gated.CreateAdminWithGate(context.Background(), service.MarqueeBroadcastInput{Title: "Notice", Content: "Message"}, 9)
+	require.ErrorIs(t, err, service.ErrMarqueeDisabled)
+	require.Nil(t, item)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

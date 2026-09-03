@@ -236,6 +236,7 @@ export default {
     activities: '活动中心',
     activityEntries: '活动入口',
     leaderboard: '排行榜',
+    checkin: '每日签到',
   },
 
   // Auth

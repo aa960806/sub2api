@@ -133,6 +133,7 @@
       @confirm="confirmStatusChange"
       @cancel="pendingAction = null"
     />
+    <TotpStepUpDialog :controller="stepUp" />
   </section>
 </template>
 
@@ -142,6 +143,8 @@ import { useI18n } from 'vue-i18n'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import { isStepUpBlocked, isStepUpCancelled, stepUpBlockReason, useStepUp } from '@/composables/useStepUp'
 import { useAppStore } from '@/stores'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import {
@@ -158,6 +161,7 @@ import {
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
+const stepUp = useStepUp()
 const loading = ref(true)
 const saving = ref(false)
 const usersLoading = ref(false)
@@ -270,12 +274,17 @@ async function saveConfig(): Promise<void> {
   if (!config) return
   saving.value = true
   try {
-    const saved = parseConfig(await updateStudentRechargeBenefitConfig(config))
+    const saved = parseConfig(await stepUp.run(() => updateStudentRechargeBenefitConfig(config)))
     if (!saved) throw new Error('Invalid student benefit configuration response')
     applyConfig(saved)
     appStore.showSuccess(t('admin.studentRecharge.saved'))
   } catch (error: unknown) {
     if (confirmedConfig) applyConfig(confirmedConfig, false)
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN' ? t('stepUp.adminApiKeyForbidden') : t('stepUp.notEnabled'))
+      return
+    }
     appStore.showError(extractApiErrorMessage(error, t('admin.studentRecharge.saveFailed')))
   } finally {
     saving.value = false
@@ -318,13 +327,18 @@ async function confirmStatusChange(): Promise<void> {
   changingUserId.value = action.item.user_id
   try {
     if (action.student) {
-      await grantStudentAccount(action.item.user_id)
+      await stepUp.run(() => grantStudentAccount(action.item.user_id))
     } else {
-      await revokeStudentAccount(action.item.user_id, revokeReasons[action.item.user_id] || '')
+      await stepUp.run(() => revokeStudentAccount(action.item.user_id, revokeReasons[action.item.user_id] || ''))
     }
     appStore.showSuccess(action.student ? t('admin.studentRecharge.grantSuccess') : t('admin.studentRecharge.revokeSuccess'))
     await Promise.all([searchUsers(), loadAudits()])
   } catch (error: unknown) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN' ? t('stepUp.adminApiKeyForbidden') : t('stepUp.notEnabled'))
+      return
+    }
     appStore.showError(extractApiErrorMessage(error, action.student ? t('admin.studentRecharge.grantFailed') : t('admin.studentRecharge.revokeFailed')))
   } finally {
     changingUserId.value = null

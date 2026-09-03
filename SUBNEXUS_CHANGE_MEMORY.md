@@ -32,7 +32,7 @@
 
 ### 事实与结果
 
-- 旧项目参考分支 `alignment/v0.1.181-local` / HEAD `ccffee6c6` / 应用版本 `0.1.135` / Go `1.26.6`。
+- 旧项目参考分支 `alignment/v0.1.181-local` / HEAD `62ea35e1c78416fd83e1e41bbb310b307941811a` / 应用版本 `0.1.135` / Go `1.26.6`。
 - 新 fork `main` / HEAD `d596d0844` / 应用版本 `0.1.185` / Go `1.27.0`。
 - 旧项目含活动、发票和 Battle Pass 实现；目标 fork 当前不存在对应的 `activity_service.go`、`invoice_service.go`、`battle_pass.go` 和 `254_battle_pass.sql`。
 - 目标 fork 已有不同上游迁移集合，并存在重复数字前缀；后续不能复用旧的 151/210/254 文件名。
@@ -851,3 +851,63 @@
 
 - 功能代码回滚点仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；本次只新增审计记忆，不改变代码回滚点。
 - Docker、持久化 Redis 恢复、生产备份隔离克隆、维护者验收等 Release Gate 仍未完成；在这些门禁通过前不得让服务器拉取或切流。
+
+## 2026-09-03（Asia/Shanghai）— 主审报告独立复核与确认问题修复
+
+### 本轮范围
+
+- 仅修改 `F:\MySub2\sub2api` 的 `feature/subnexus-migration` 工作树；`F:\Sub2Api\SubNexus`、fork `main`、服务器和生产 PostgreSQL/Redis 均保持不动。
+- 对主审报告逐项复核后，修复了可以由代码证据直接确认的问题；首充退款资格和关闭态过期清理仍保留为待产品确认的既有语义，活动中心/跑马灯写入竞态和注册冷却设置读取异常已按 fail-closed 方式修复。
+
+### 已修改
+
+- 新增 `frontend/src/views/admin/CheckInSettingsView.vue`，只包含签到策略配置；新增 `/admin/checkin` 管理路由、侧栏入口及中英文 i18n。页面在功能关闭时仍可读取/保存策略，真正奖励写入仍由服务端独立开关和合法 JSON 双重门控。
+- `setting_public.go` 与 runtime 使用同一合法模式校验；非法 `channel_monitor_mode` 现在对公开设置和运行时均 fail-closed，不再出现前端显示 V1 但后端关闭探测的分叉。
+- 客服 Markdown 恢复显式标签/属性/协议白名单，限制 data URL 为图片，并在保留 `target=_blank` 时强制补 `noopener noreferrer`。
+- 签到奖励日志改为 `ON CONFLICT (source,period,user_id) DO NOTHING`，与唯一索引契约一致，避免吞掉非预期唯一冲突。
+- 发票配置、发票状态/文件/邮件变更和学生优惠配置、grant/revoke 路由接入 step-up；对应前端调用接入 `useStepUp`，服务端要求时弹出 TOTP 后重试同一请求。
+- 将上下文、迁移计划、台账和变更记忆中的旧项目参考 SHA 从过期的 `ccffee6c6` 校正为 `62ea35e1c78416fd83e1e41bbb310b307941811a`。
+- 待定 OAuth 完成现在对注册冷却开关读取错误直接失败，不再在设置存储不可用时跳过 reservation finalize；正常关闭或缺失设置仍不访问冷却表。
+
+### 验证边界
+
+- 本轮修改尚未推送，功能开关仍保持默认关闭；前端全量 282 个测试文件/1954 个测试、Go 定向 service/repository/routes 测试和后端全量门禁均通过，仍需维护者重新审核。
+
+## 2026-09-03（Asia/Shanghai）— 主审复核后的后端全量门禁收尾
+
+- 在 `F:\MySub2\sub2api\backend` 执行 `go test ./... -run '^$' -count=1 -p=1 -timeout=45m`，退出码 0；全仓 Go 包编译级检查通过。
+- 执行 `go vet ./...`，退出码 0；未发现静态分析问题。
+- 执行 `go test -tags unit ./... -count=1 -p=1 -timeout=30m`，退出码 0；所有带 `unit` 标签测试通过，`internal/service` 用时约 170.7 秒。
+- 本轮没有访问线上服务器、生产 PostgreSQL/Redis，也没有修改 `F:\Sub2Api\SubNexus`、fork `main` 或生产开关；当前改动仍是 `feature/subnexus-migration` 的本地未提交工作树变更。
+- Release Gate 仍未通过：生产备份隔离恢复、持久化 Redis 恢复、Docker 候选镜像和维护者验收尚未完成；不得据此推送、部署或切流。
+
+## 2026-09-03（Asia/Shanghai）— 第二轮主审剩余项全部收口
+
+### 本轮修改
+
+- 仅修改 `F:\MySub2\sub2api` 的 `feature/subnexus-migration` 工作树；未修改 `F:\Sub2Api\SubNexus`、fork `main`，未访问服务器、生产 PostgreSQL/Redis，也未执行部署或开关变更。
+- 简易模式直链限制补入 `/admin/checkin` 和 `/admin/leaderboard`，并保留管理员重定向到 dashboard 的既有行为。
+- 签到配置、排行榜配置和排行榜奖励三个管理写入口接入 `StepUpAuthMiddleware`；签到/排行榜管理页使用 `useStepUp` 和 `TotpStepUpDialog`，支持验证后单次重试、取消静默返回以及 TOTP 未启用/API key 禁止的明确提示。
+- 敏感路由回归测试扩展到学生优惠、发票全部写入口，以及签到/排行榜全部敏感写入口，共 14 条，均验证先返回 `428 Precondition Required`。
+- 删除会吞掉设置读取错误的未使用 `AuthService.registrationIPCooldownEnabled` helper；OAuth 回滚在调用方明确绑定 reservation 时直接释放，避免二次设置读取造成错误吞没或孤儿 reservation。
+- 新增首充退款语义回归测试：已完成首充订单即使状态变为 `REFUNDED`，`PrepareOrder` 仍返回 `ErrFirstRechargeAlreadyPurchased`，不恢复促销购买资格。关闭态 terminal reservation 清理继续保留为独立后台补偿，只处理终态预约，不发奖、不写用户业务数据。
+- 同步 `SUBNEXUS_FEATURE_MATRIX.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`，将 P3-01 至 P3-04 及 F05 两项语义从待确认改为明确实现/测试策略。
+
+### 定向验证
+
+- `go test -tags unit ./internal/server/routes ./internal/service -run 'Test(SubNexusSensitiveAdminRoutesRequireStepUp|FirstRechargeRefundDoesNotRestorePurchaseEligibility)' -count=1 -p=1 -timeout=15m` 通过。
+- `frontend`: `pnpm exec vitest run src/views/admin/__tests__/CheckInSettingsView.spec.ts src/views/admin/__tests__/LeaderboardSettingsView.spec.ts src/router/__tests__/guards.spec.ts` 通过，3 个文件/40 个测试。
+- 全量门禁仍需在提交前重新执行；所有迁移功能继续默认关闭，Release Gate（生产备份隔离恢复、持久化 Redis、Docker、维护者验收）仍未通过。
+
+## 2026-09-03（Asia/Shanghai）— 剩余项收口后的全量门禁
+
+- 后端最终执行并通过：`go test ./... -run '^$' -count=1 -p=1 -timeout=45m`、`go vet ./...`、`go test -tags unit ./... -count=1 -p=1 -timeout=30m`。
+- 前端最终执行并通过：`pnpm typecheck`、`pnpm test:run`（282 个文件/1954 个测试）、`pnpm lint:check`、`pnpm build`。构建仅输出已有的 Browserslist、chunk size 和动态导入提示，没有错误。
+- `git diff --check` 通过；构建生成的 `backend/internal/web/dist` 未产生 Git 工作树变更。提交前将再次核对 staged 文件，只包含本次迁移代码、测试和文档。
+- 当前仍只允许本地提交：不推送、不连接服务器或生产 PostgreSQL/Redis、不执行线上迁移/部署/切换；所有迁移开关默认关闭，Release Gate 仍需维护者另行完成。
+
+## 2026-09-03（Asia/Shanghai）— 本地提交完成
+
+- `feature/subnexus-migration` 已创建本地提交 `fix: close remaining SubNexus migration review items`；最终提交 SHA 以 `git rev-parse HEAD` 为准（本次记忆更新随同提交 amend）。
+- 提交范围为第二轮主审剩余项的实现、回归测试及迁移文档；未包含构建产物、密钥、环境文件或线上证据。
+- 提交后仍不推送、不部署；维护者验收和 Release Gate 完成前，服务器不得拉取该分支。

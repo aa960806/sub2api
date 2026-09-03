@@ -83,8 +83,13 @@ func TestClaimRegistrationIPCooldownDisabledStatesDoNotTouchBusinessTable(t *tes
 			svc := &AuthService{entClient: client, settingService: setting}
 
 			claim, err := svc.claimRegistrationIPCooldown(WithAffiliateSignupIP(context.Background(), "203.0.113.20"))
-			require.NoError(t, err)
-			require.Nil(t, claim)
+			if tt.name == "read error" {
+				require.ErrorIs(t, err, ErrServiceUnavailable)
+				require.Nil(t, claim)
+			} else {
+				require.NoError(t, err)
+				require.Nil(t, claim)
+			}
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}

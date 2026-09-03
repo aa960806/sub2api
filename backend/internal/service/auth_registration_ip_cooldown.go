@@ -35,11 +35,26 @@ type registrationIPCooldownClaim struct {
 // unreadable setting fails closed so a partially migrated database cannot
 // unexpectedly enable a balance-independent registration restriction.
 func (s *SettingService) IsRegistrationIPCooldownEnabled(ctx context.Context) bool {
+	enabled, _ := s.registrationIPCooldownEnabledState(ctx)
+	return enabled
+}
+
+// registrationIPCooldownEnabledState distinguishes an intentionally disabled
+// or not-yet-migrated setting from an unavailable settings store. Callers that
+// are about to create an account must reject the latter so an outage cannot
+// silently bypass an already-enabled anti-abuse control.
+func (s *SettingService) registrationIPCooldownEnabledState(ctx context.Context) (bool, error) {
 	if s == nil || s.settingRepo == nil {
-		return false
+		return false, nil
 	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationIPCooldownEnabled)
-	return err == nil && raw == "true"
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return false, nil
+		}
+		return false, ErrServiceUnavailable
+	}
+	return raw == "true", nil
 }
 
 // GetRegistrationIPCooldownSeconds returns a bounded value even when the
@@ -83,7 +98,15 @@ func (s *AuthService) registrationIPCooldownClient(ctx context.Context) *dbent.C
 // A nil claim means the feature is disabled. Database failures deliberately
 // fail closed while the feature is enabled.
 func (s *AuthService) claimRegistrationIPCooldown(ctx context.Context) (*registrationIPCooldownClaim, error) {
-	if s == nil || s.settingService == nil || !s.settingService.IsRegistrationIPCooldownEnabled(ctx) {
+	if s == nil || s.settingService == nil {
+		return nil, nil
+	}
+	enabled, settingErr := s.settingService.registrationIPCooldownEnabledState(ctx)
+	if settingErr != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Registration IP cooldown setting is unavailable: %v", settingErr)
+		return nil, settingErr
+	}
+	if !enabled {
 		return nil, nil
 	}
 	client := s.registrationIPCooldownClient(ctx)
@@ -333,8 +356,4 @@ func wrapRegistrationCleanupError(operation string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", operation, err)
-}
-
-func (s *AuthService) registrationIPCooldownEnabled(ctx context.Context) bool {
-	return s != nil && s.settingService != nil && s.settingService.IsRegistrationIPCooldownEnabled(ctx)
 }

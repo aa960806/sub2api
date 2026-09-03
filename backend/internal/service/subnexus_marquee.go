@@ -68,6 +68,15 @@ type MarqueeRepository interface {
 	DeleteAdmin(ctx context.Context, id int64) (bool, error)
 }
 
+// marqueeGatedRepository repeats the rollout check inside the mutation
+// transaction. It is optional so in-memory test repositories remain small;
+// the production SQL repository implements it to close toggle/write races.
+type marqueeGatedRepository interface {
+	CreateAdminWithGate(ctx context.Context, input MarqueeBroadcastInput, adminID int64) (*MarqueeBroadcast, error)
+	UpdateAdminWithGate(ctx context.Context, id int64, input MarqueeBroadcastInput) (*MarqueeBroadcast, error)
+	DeleteAdminWithGate(ctx context.Context, id int64) (bool, error)
+}
+
 type MarqueeService struct {
 	repo            MarqueeRepository
 	settingRepo     SettingRepository
@@ -166,6 +175,9 @@ func (s *MarqueeService) Create(ctx context.Context, input MarqueeBroadcastInput
 	if err != nil {
 		return nil, err
 	}
+	if gated, ok := s.repo.(marqueeGatedRepository); ok {
+		return gated.CreateAdminWithGate(ctx, input, adminID)
+	}
 	return s.repo.CreateAdmin(ctx, input, adminID)
 }
 
@@ -180,7 +192,12 @@ func (s *MarqueeService) Update(ctx context.Context, id int64, input MarqueeBroa
 	if err != nil {
 		return nil, err
 	}
-	item, err := s.repo.UpdateAdmin(ctx, id, input)
+	var item *MarqueeBroadcast
+	if gated, ok := s.repo.(marqueeGatedRepository); ok {
+		item, err = gated.UpdateAdminWithGate(ctx, id, input)
+	} else {
+		item, err = s.repo.UpdateAdmin(ctx, id, input)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, infraerrors.NotFound("SUBNEXUS_MARQUEE_NOT_FOUND", "administrator broadcast not found")
 	}
@@ -194,7 +211,13 @@ func (s *MarqueeService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return infraerrors.BadRequest("SUBNEXUS_MARQUEE_ID_INVALID", "broadcast id must be positive")
 	}
-	deleted, err := s.repo.DeleteAdmin(ctx, id)
+	var deleted bool
+	var err error
+	if gated, ok := s.repo.(marqueeGatedRepository); ok {
+		deleted, err = gated.DeleteAdminWithGate(ctx, id)
+	} else {
+		deleted, err = s.repo.DeleteAdmin(ctx, id)
+	}
 	if err != nil {
 		return err
 	}

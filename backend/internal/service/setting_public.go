@@ -391,7 +391,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		BalanceLowNotifyThreshold:           balanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:         settings[SettingKeyBalanceLowNotifyRechargeURL],
 
-		ChannelMonitorEnabled:                 settings[SettingKeyChannelMonitorEnabled] == "true",
+		ChannelMonitorEnabled:                 settings[SettingKeyChannelMonitorEnabled] == "true" && validChannelMonitorMode(settings[SettingKeyChannelMonitorMode]),
 		ChannelMonitorMode:                    normalizeChannelMonitorMode(settings[SettingKeyChannelMonitorMode]),
 		ChannelMonitorDefaultIntervalSeconds:  parseChannelMonitorInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		ChannelMonitorHideThroughput:          !isFalseSettingValue(settings[SettingKeyChannelMonitorHideThroughput]),
@@ -443,6 +443,15 @@ func normalizeChannelMonitorMode(raw string) string {
 		return ChannelMonitorModeV3
 	default:
 		return defaultChannelMonitorMode
+	}
+}
+
+func validChannelMonitorMode(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", ChannelMonitorModeV1, ChannelMonitorModeV2, ChannelMonitorModeV3:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -521,8 +530,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 	if !enabledPresent || rawEnabled != "true" {
 		return closed
 	}
-	rawMode := strings.ToLower(strings.TrimSpace(vals[SettingKeyChannelMonitorMode]))
-	if rawMode != "" && rawMode != ChannelMonitorModeV1 && rawMode != ChannelMonitorModeV2 && rawMode != ChannelMonitorModeV3 {
+	if !validChannelMonitorMode(vals[SettingKeyChannelMonitorMode]) {
 		return closed
 	}
 	return ChannelMonitorRuntime{

@@ -13,6 +13,34 @@ type activityCenterRepository struct {
 	db *sql.DB
 }
 
+func (r *activityCenterRepository) withGate(ctx context.Context, fn func(*sql.Tx) error) error {
+	if r == nil || r.db == nil {
+		return service.ErrActivityCenterDisabled
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var value string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT value FROM settings WHERE key = $1 FOR SHARE`,
+		service.SettingKeySubNexusActivityCenterEnabled,
+	).Scan(&value); err != nil {
+		if err == sql.ErrNoRows {
+			return service.ErrActivityCenterDisabled
+		}
+		return err
+	}
+	if value != "true" {
+		return service.ErrActivityCenterDisabled
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func NewActivityCenterRepository(db *sql.DB) service.ActivityCenterRepository {
 	return &activityCenterRepository{db: db}
 }
@@ -71,6 +99,30 @@ func (r *activityCenterRepository) Create(ctx context.Context, input service.Act
 	return &item, nil
 }
 
+func (r *activityCenterRepository) CreateWithGate(ctx context.Context, input service.ActivityCenterItemInput, adminID int64) (*service.ActivityCenterItem, error) {
+	var item *service.ActivityCenterItem
+	err := r.withGate(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `
+			INSERT INTO activity_center_items
+				(slug, title, subtitle, description, icon, cover_url, route_path, external_url,
+				 action_label, activity_type, enabled, sort_order, start_at, end_at, metadata, created_by)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,NULLIF($16,0))
+			RETURNING id, slug, title, subtitle, description, icon, cover_url, route_path, external_url,
+			          action_label, activity_type, enabled, sort_order, start_at, end_at, metadata,
+			          created_by, created_at, updated_at
+		`, input.Slug, input.Title, input.Subtitle, input.Description, input.Icon, input.CoverURL,
+			input.RoutePath, input.ExternalURL, input.ActionLabel, service.ActivityCenterTypeCustom,
+			input.Enabled, input.SortOrder, input.StartAt, input.EndAt, string(input.Metadata), adminID)
+		scanned, err := scanActivityCenterItem(row)
+		if err != nil {
+			return err
+		}
+		item = &scanned
+		return nil
+	})
+	return item, err
+}
+
 func (r *activityCenterRepository) Update(ctx context.Context, id int64, input service.ActivityCenterItemInput) (*service.ActivityCenterItem, error) {
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE activity_center_items
@@ -91,6 +143,31 @@ func (r *activityCenterRepository) Update(ctx context.Context, id int64, input s
 	return &item, nil
 }
 
+func (r *activityCenterRepository) UpdateWithGate(ctx context.Context, id int64, input service.ActivityCenterItemInput) (*service.ActivityCenterItem, error) {
+	var item *service.ActivityCenterItem
+	err := r.withGate(ctx, func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(ctx, `
+			UPDATE activity_center_items
+			SET slug=$2, title=$3, subtitle=$4, description=$5, icon=$6, cover_url=$7,
+			    route_path=$8, external_url=$9, action_label=$10, enabled=$11, sort_order=$12,
+			    start_at=$13, end_at=$14, metadata=$15::jsonb, updated_at=NOW()
+			WHERE id=$1 AND activity_type='custom'
+			RETURNING id, slug, title, subtitle, description, icon, cover_url, route_path, external_url,
+			          action_label, activity_type, enabled, sort_order, start_at, end_at, metadata,
+			          created_by, created_at, updated_at
+		`, id, input.Slug, input.Title, input.Subtitle, input.Description, input.Icon, input.CoverURL,
+			input.RoutePath, input.ExternalURL, input.ActionLabel, input.Enabled, input.SortOrder,
+			input.StartAt, input.EndAt, string(input.Metadata))
+		scanned, err := scanActivityCenterItem(row)
+		if err != nil {
+			return err
+		}
+		item = &scanned
+		return nil
+	})
+	return item, err
+}
+
 func (r *activityCenterRepository) Delete(ctx context.Context, id int64) (bool, error) {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM activity_center_items WHERE id = $1 AND activity_type = 'custom'`, id)
 	if err != nil {
@@ -101,6 +178,23 @@ func (r *activityCenterRepository) Delete(ctx context.Context, id int64) (bool, 
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func (r *activityCenterRepository) DeleteWithGate(ctx context.Context, id int64) (bool, error) {
+	deleted := false
+	err := r.withGate(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `DELETE FROM activity_center_items WHERE id = $1 AND activity_type = 'custom'`, id)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		deleted = count > 0
+		return nil
+	})
+	return deleted, err
 }
 
 type activityCenterScanner interface {

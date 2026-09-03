@@ -339,10 +339,18 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
 	// Pending OAuth reservations are finalized in the same transaction as the
 	// identity/session binding. The guarded update is a no-op for users without
-	// an active registration reservation.
-	if s.registrationIPCooldownEnabled(ctx) {
-		if err := s.finalizeRegistrationIPCooldownForUser(ctx, user.ID); err != nil {
-			return wrapRegistrationCleanupError("finalize registration IP cooldown for user", err)
+	// an active registration reservation. If the enablement setting is
+	// temporarily unreadable, fail closed instead of committing an account with
+	// a reservation that will expire without recording the cooldown.
+	if s.settingService != nil {
+		enabled, settingErr := s.settingService.registrationIPCooldownEnabledState(ctx)
+		if settingErr != nil {
+			return wrapRegistrationCleanupError("read registration IP cooldown setting", settingErr)
+		}
+		if enabled {
+			if err := s.finalizeRegistrationIPCooldownForUser(ctx, user.ID); err != nil {
+				return wrapRegistrationCleanupError("finalize registration IP cooldown for user", err)
+			}
 		}
 	}
 	return nil
@@ -374,17 +382,31 @@ func (s *AuthService) rollbackOAuthEmailAccountCreation(
 		cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("restore invitation code", err))
 	}
 	// The feature is optional during a rolling upgrade. A caller that knows it
-	// attached a claim passes releaseReservation=true; old/no-gate callers do
-	// not need to query a table that may not exist yet.
-	if releaseReservation && s.registrationIPCooldownEnabled(ctx) {
-		if err := s.releaseRegistrationIPCooldownForUser(ctx, userID); err != nil {
-			cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("release registration IP cooldown for user", err))
+	// attached a claim passes releaseReservation=true; old/no-gate callers pass
+	// false and do not touch the optional table.
+	if releaseReservation {
+		enabled, err := s.registrationIPCooldownEnabled(ctx)
+		if err != nil {
+			cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("read registration IP cooldown setting", err))
+		} else if enabled {
+			if err := s.releaseRegistrationIPCooldownForUser(ctx, userID); err != nil {
+				cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("release registration IP cooldown for user", err))
+			}
 		}
 	}
 	if err := s.userRepo.Delete(ctx, userID); err != nil {
 		cleanupErrs = append(cleanupErrs, wrapRegistrationCleanupError("delete created oauth user", err))
 	}
 	return joinRegistrationCleanupErrors(nil, cleanupErrs...)
+}
+
+// registrationIPCooldownEnabled returns the optional gate state without
+// hiding settings-store failures from compensating account cleanup.
+func (s *AuthService) registrationIPCooldownEnabled(ctx context.Context) (bool, error) {
+	if s == nil || s.settingService == nil {
+		return false, nil
+	}
+	return s.settingService.registrationIPCooldownEnabledState(ctx)
 }
 
 // rollbackRegistrationAccountCreation combines the original failure with all

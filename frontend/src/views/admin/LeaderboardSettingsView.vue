@@ -87,7 +87,8 @@
           </button>
         </div>
       </form>
-    </section>
+  </section>
+    <TotpStepUpDialog :controller="stepUp" />
   </AppLayout>
 </template>
 
@@ -97,12 +98,15 @@ import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import { getLeaderboardConfig, updateLeaderboardConfig, type LeaderboardConfig } from '@/api/leaderboard'
+import { isStepUpBlocked, isStepUpCancelled, stepUpBlockReason, useStepUp } from '@/composables/useStepUp'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const stepUp = useStepUp()
 const loading = ref(true)
 const loadFailed = ref(false)
 const saving = ref(false)
@@ -195,9 +199,14 @@ async function saveConfig(): Promise<void> {
   if (!config) return
   saving.value = true
   try {
-    applyConfig(await updateLeaderboardConfig(config))
+    applyConfig(await stepUp.run(() => updateLeaderboardConfig(config)))
     appStore.showSuccess(t('admin.leaderboard.saved'))
   } catch (error) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN' ? t('stepUp.adminApiKeyForbidden') : t('stepUp.notEnabled'))
+      return
+    }
     appStore.showError(extractApiErrorMessage(error, t('admin.leaderboard.saveFailed')))
   } finally { saving.value = false }
 }

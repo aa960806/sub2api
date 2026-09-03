@@ -841,6 +841,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/first-recharge-gift', label: t('nav.firstRechargeGift'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/admin/student-recharge', label: t('admin.studentRecharge.title'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/admin/leaderboard', label: t('nav.leaderboard'), icon: ChartIcon },
+    { path: '/admin/checkin', label: t('nav.checkin'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     {
       path: '/admin/security-audit',

@@ -90,6 +90,16 @@ type ActivityCenterRepository interface {
 	Delete(ctx context.Context, id int64) (bool, error)
 }
 
+// activityCenterGatedRepository repeats the rollout check inside the same
+// database transaction as the mutation. The optional interface keeps the
+// lightweight repository contract usable by unit tests while production SQL
+// repositories close the toggle/write race with SELECT ... FOR SHARE.
+type activityCenterGatedRepository interface {
+	CreateWithGate(ctx context.Context, input ActivityCenterItemInput, adminID int64) (*ActivityCenterItem, error)
+	UpdateWithGate(ctx context.Context, id int64, input ActivityCenterItemInput) (*ActivityCenterItem, error)
+	DeleteWithGate(ctx context.Context, id int64) (bool, error)
+}
+
 type ActivityCenterService struct {
 	repo            ActivityCenterRepository
 	settingRepo     SettingRepository
@@ -196,7 +206,12 @@ func (s *ActivityCenterService) Create(ctx context.Context, input ActivityCenter
 	if err != nil {
 		return nil, err
 	}
-	item, err := s.repo.Create(ctx, input, adminID)
+	var item *ActivityCenterItem
+	if gated, ok := s.repo.(activityCenterGatedRepository); ok {
+		item, err = gated.CreateWithGate(ctx, input, adminID)
+	} else {
+		item, err = s.repo.Create(ctx, input, adminID)
+	}
 	if isActivityCenterSlugDuplicate(err) {
 		return nil, infraerrors.BadRequest("SUBNEXUS_ACTIVITY_CENTER_SLUG_DUPLICATE", "activity slug already exists")
 	}
@@ -214,7 +229,12 @@ func (s *ActivityCenterService) Update(ctx context.Context, id int64, input Acti
 	if err != nil {
 		return nil, err
 	}
-	item, err := s.repo.Update(ctx, id, input)
+	var item *ActivityCenterItem
+	if gated, ok := s.repo.(activityCenterGatedRepository); ok {
+		item, err = gated.UpdateWithGate(ctx, id, input)
+	} else {
+		item, err = s.repo.Update(ctx, id, input)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, infraerrors.NotFound("SUBNEXUS_ACTIVITY_CENTER_ITEM_NOT_FOUND", "custom activity item not found")
 	}
@@ -231,7 +251,13 @@ func (s *ActivityCenterService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return infraerrors.BadRequest("SUBNEXUS_ACTIVITY_CENTER_ITEM_INVALID", "activity id must be positive")
 	}
-	deleted, err := s.repo.Delete(ctx, id)
+	var deleted bool
+	var err error
+	if gated, ok := s.repo.(activityCenterGatedRepository); ok {
+		deleted, err = gated.DeleteWithGate(ctx, id)
+	} else {
+		deleted, err = s.repo.Delete(ctx, id)
+	}
 	if err != nil {
 		return err
 	}

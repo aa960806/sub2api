@@ -98,6 +98,25 @@ func TestFirstRechargeConfigRequiresExactIndependentSwitch(t *testing.T) {
 	}
 }
 
+func TestFirstRechargeRefundDoesNotRestorePurchaseEligibility(t *testing.T) {
+	ctx := context.Background()
+	client, db := newFirstRechargeStateTestClient(t)
+	repo := &firstRechargeSettingRepoStub{values: map[string]string{
+		SettingKeySubNexusFirstRechargeEnabled: "true",
+		SettingKeySubNexusFirstRechargeConfig:  `{"enabled":true,"price":9.9,"credited_amount":12,"ratio":1.2}`,
+	}}
+	service := NewFirstRechargeGiftService(client, repo)
+
+	insertFirstRechargeTestOrder(t, db, 600, 31, OrderStatusPending, paymentOrderTypeFirstRecharge, time.Now().Add(time.Hour))
+	reserveFirstRechargeTestOrder(t, ctx, client, service, 31, 600)
+	setFirstRechargeTestOrderStatus(t, db, 600, OrderStatusRecharging)
+	require.NoError(t, service.MarkCompleted(ctx, 31, 600, 9.9, 12, time.Now()))
+	setFirstRechargeTestOrderStatus(t, db, 600, OrderStatusRefunded)
+
+	_, err := service.PrepareOrder(ctx, 31)
+	require.ErrorIs(t, err, ErrFirstRechargeAlreadyPurchased)
+}
+
 func TestFirstRechargeReplacementRejectsLateOldOrder(t *testing.T) {
 	ctx := context.Background()
 	client, db := newFirstRechargeStateTestClient(t)
@@ -233,7 +252,9 @@ func TestFirstRechargeReconcileStaleReservationsReleasesTerminalOrder(t *testing
 	reserveFirstRechargeTestOrder(t, ctx, client, service, 22, 500)
 	// ReserveTx is intentionally allowed to create a pending marker for a
 	// payment order that later becomes terminal; this is the failure state the
-	// periodic reconciler repairs.
+	// periodic reconciler repairs. Reconciliation does not consult the rollout
+	// switch, so it also drains stale markers while the offer is disabled or
+	// its setting is not present during a rolling upgrade.
 	setFirstRechargeTestOrderStatus(t, db, 500, OrderStatusFailed)
 
 	cleaned, failures, err := service.ReconcileStaleReservations(ctx)

@@ -236,6 +236,7 @@ export default {
     activities: 'Activity Center',
     activityEntries: 'Activity Entries',
     leaderboard: 'Leaderboard',
+    checkin: 'Daily Check-in',
   },
 
   // Auth

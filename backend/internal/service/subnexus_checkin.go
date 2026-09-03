@@ -811,7 +811,7 @@ func (s *CheckInService) insertCheckInTx(ctx context.Context, tx *sql.Tx, userID
 	if frozen {
 		note += " (frozen)"
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO activity_reward_logs(user_id,source,period,rank,amount,note,ip,frozen) VALUES($1,'checkin',$2,0,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, userID, period, amount, note, clientIP, frozen)
+	result, err := tx.ExecContext(ctx, `INSERT INTO activity_reward_logs(user_id,source,period,rank,amount,note,ip,frozen) VALUES($1,'checkin',$2,0,$3,$4,$5,$6) ON CONFLICT (source,period,user_id) DO NOTHING`, userID, period, amount, note, clientIP, frozen)
 	if err != nil {
 		return 0, err
 	}

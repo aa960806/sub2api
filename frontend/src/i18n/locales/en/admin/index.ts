@@ -12,6 +12,7 @@ import leaderboard from './leaderboard'
 import firstRechargeGift from './firstRechargeGift'
 import marquee from './marquee'
 import studentRecharge from './studentRecharge'
+import checkin from './checkin'
 
 export default {
   ...overview,
@@ -28,4 +29,5 @@ export default {
   ...firstRechargeGift,
   ...marquee,
   ...studentRecharge,
+  ...checkin,
 }
