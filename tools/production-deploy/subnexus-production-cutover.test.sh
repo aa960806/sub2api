@@ -99,6 +99,10 @@ for marker in \
   'database backup was not restored'; do
   assert_contains "$marker"
 done
+assert_contains 'raw_binds = host.get("Binds") or []'
+assert_contains 'HostConfig.Binds.unmatched'
+assert_contains 'contract_bind_mounts = []'
+assert_contains 'contract["HostConfig"]["Binds"] = contract_bind_mounts'
 
 for forbidden in \
   'docker pull' 'docker build' 'docker push' 'docker compose' \
@@ -419,6 +423,49 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&
   )
 else
   printf 'subnexus runtime metadata fixtures skipped (requires usable python3)\n'
+fi
+
+# Fixture 5b: Docker 29 legacy HostConfig.Binds is accepted only when it
+# exactly agrees with a structured Mounts bind; unsupported options remain
+# rejected. This fixture is Linux-only because the subject invokes python3.
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&1; then
+  runtime_supported_source="$(extract_function validate_runtime_contract_supported)"
+  [[ "$runtime_supported_source" == *'validate_runtime_contract_supported() {'* ]] || fail 'runtime contract helper source was not found'
+  (
+    set -Eeuo pipefail
+    eval "$runtime_supported_source"
+    fail() { printf 'runtime fixture failure: %s\n' "$*" >&2; exit 77; }
+    fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-cutover-bind.XXXXXX")"
+    trap 'rm -rf -- "$fixture_root"' EXIT
+    fixture_json="$fixture_root/inspect.json"
+    cat >"$fixture_json" <<'JSON'
+{"Id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{},"HostConfig":{"Binds":["/srv/subnexus-migration/runtime/subnexus-data:/app/data:rw"]},"Mounts":[{"Type":"bind","Source":"/srv/subnexus-migration/runtime/subnexus-data","Destination":"/app/data","Mode":"rw","RW":true,"Propagation":"rprivate"}],"NetworkSettings":{"Networks":{"sub2api-net":{"NetworkID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}}
+JSON
+    app_id='fixture-app'
+    docker_rpc() { [[ "$1" == inspect ]] || return 98; cat "$fixture_json"; }
+    validate_runtime_contract_supported
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["HostConfig"]["Binds"] = ["/srv/subnexus-migration/runtime/subnexus-data:/app/data:z"]
+path.write_text(json.dumps(data))
+PY
+    # The production helper calls the caller-provided `fail` hook on a
+    # rejected contract.  Use a returning hook in this expected-failure
+    # subshell so the assertion can observe the non-zero status instead of
+    # terminating the whole fixture early.
+    if (
+      fail() { return 77; }
+      validate_runtime_contract_supported >/dev/null 2>&1
+    ); then
+      fail 'unsupported bind relabel option was accepted'
+    fi
+  )
+else
+  printf 'subnexus HostConfig.Binds fixtures skipped (requires usable python3)\n'
 fi
 
 # ---------------------------------------------------------------------------

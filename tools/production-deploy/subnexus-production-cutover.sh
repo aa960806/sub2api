@@ -564,7 +564,67 @@ if isinstance(config.get("Entrypoint"), list) and len(config["Entrypoint"]) > 1:
 
 for key in ("AutoRemove", "Privileged", "PublishAllPorts", "ReadonlyRootfs"):
     reject(host.get(key) not in (None, False), "HostConfig." + key)
-reject(nonempty(host.get("Binds")), "HostConfig.Binds")
+
+# Docker exposes legacy `-v` mounts in HostConfig.Binds while the canonical
+# Mounts entries contain the structured metadata used by capture_mounts.
+# Accept only a simple, reproducible bind form and require every Binds entry
+# to agree with its corresponding structured Mounts entry. Unsupported bind
+# options (relabeling, nocopy, custom propagation, etc.) remain fail-closed.
+mount_entries = obj.get("Mounts") or []
+if not isinstance(mount_entries, list):
+    reject(True, "Mounts")
+bind_mounts = {}
+for mount in mount_entries:
+    if not isinstance(mount, dict):
+        reject(True, "Mounts(entry)")
+    if mount.get("Type") == "bind":
+        source = mount.get("Source")
+        destination = mount.get("Destination")
+        if not isinstance(source, str) or not isinstance(destination, str):
+            reject(True, "Mounts.bind.path")
+        bind_mounts[(source, destination)] = mount
+
+raw_binds = host.get("Binds") or []
+if not isinstance(raw_binds, list):
+    reject(True, "HostConfig.Binds")
+for raw_bind in raw_binds:
+    if not isinstance(raw_bind, str):
+        reject(True, "HostConfig.Binds.entry")
+    fields = raw_bind.split(":")
+    if len(fields) not in (2, 3):
+        reject(True, "HostConfig.Binds.entry")
+    source, destination = fields[:2]
+    if not source.startswith("/") or not destination.startswith("/"):
+        reject(True, "HostConfig.Binds.path")
+    options = [] if len(fields) == 2 or fields[2] == "" else fields[2].split(",")
+    if len(options) != len(set(options)):
+        reject(True, "HostConfig.Binds.options")
+    mode = "rw"
+    propagation = "rprivate"
+    mode_seen = False
+    propagation_seen = False
+    for option in options:
+        if option in ("rw", "ro"):
+            if mode_seen:
+                reject(True, "HostConfig.Binds.mode")
+            mode = option
+            mode_seen = True
+        elif option in ("private", "rprivate", "shared", "rshared", "slave", "rslave"):
+            if propagation_seen:
+                reject(True, "HostConfig.Binds.propagation")
+            propagation = option
+            propagation_seen = True
+        else:
+            reject(True, "HostConfig.Binds.option")
+    mount = bind_mounts.get((source, destination))
+    if mount is None:
+        reject(True, "HostConfig.Binds.unmatched")
+    mount_mode = mount.get("Mode") or ("rw" if mount.get("RW") is not False else "ro")
+    if mount_mode not in ("rw", "ro") or mount_mode != mode:
+        reject(True, "HostConfig.Binds.mode")
+    mount_propagation = mount.get("Propagation") or "rprivate"
+    if mount_propagation != propagation:
+        reject(True, "HostConfig.Binds.propagation")
 for key in ("CapAdd", "CapDrop", "DeviceCgroupRules", "Devices", "DeviceRequests",
             "Dns", "DnsOptions", "DnsSearch", "ExtraHosts", "GroupAdd",
             "Links", "StorageOpt", "Sysctls", "Tmpfs", "VolumesFrom"):
@@ -778,6 +838,20 @@ for mount in obj.get("Mounts") or []:
     mounts.append(normalized_mount)
 mounts.sort(key=lambda item: (str(item.get("Destination")), str(item.get("Type")), str(item.get("Name"))))
 
+# HostConfig.Binds is a legacy string representation. Normalize it to the
+# structured Mounts form so a live `-v` bind and a replacement `--mount` bind
+# produce the same runtime contract hash.
+contract_bind_mounts = []
+for mount in mounts:
+    if mount.get("Type") == "bind":
+        contract_bind_mounts.append({
+            "Source": mount.get("Source"),
+            "Destination": mount.get("Destination"),
+            "Mode": mount.get("Mode"),
+            "RW": mount.get("RW"),
+            "Propagation": mount.get("Propagation"),
+        })
+
 networks = {}
 app_name = str(obj.get("Name") or "").lstrip("/")
 container_id = str(obj.get("Id") or "")
@@ -805,6 +879,7 @@ contract = {
     "Networks": networks,
 }
 contract["Config"]["Healthcheck"] = normalize_healthcheck(config.get("Healthcheck"))
+contract["HostConfig"]["Binds"] = contract_bind_mounts
 for key in ("Env", "ExposedPorts"):
     value = contract["Config"].get(key)
     if isinstance(value, list):
