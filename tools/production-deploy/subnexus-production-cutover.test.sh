@@ -297,6 +297,46 @@ environment_source="$(extract_function validate_environment_file)"
 )
 
 # ---------------------------------------------------------------------------
+# Fixture 3a: Docker template/CLI double-newline mount output is tolerated
+# only when the complete record is empty; malformed partial records fail.
+# ---------------------------------------------------------------------------
+
+mount_source="$(extract_function capture_mounts)"
+[[ "$mount_source" == *'capture_mounts() {'* ]] || fail 'mount capture helper source was not found'
+(
+  set -Eeuo pipefail
+  fail() { printf 'mount fixture failure: %s\n' "$*" >&2; exit 77; }
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-cutover-mounts.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  mkdir -- "$fixture_root/data"
+  run_dir="$fixture_root/run"
+  mkdir -- "$run_dir"
+  app_id=fixture-app
+  docker_rpc() {
+    [[ "${1:-}" == inspect ]] || return 98
+    printf 'bind|%s||/app/data|rw|true|rprivate\n\n' "$fixture_root/data"
+  }
+  eval "$mount_source"
+  capture_mounts
+  [[ "$(cat "$run_dir/mounts.txt")" == "bind|$fixture_root/data||/app/data|rw|true|rprivate" ]] ||
+    fail 'mount capture did not ignore the trailing empty record'
+  docker_rpc() {
+    [[ "${1:-}" == inspect ]] || return 98
+    printf 'bind|%s||/app/data|rw|true|\n\n' "$fixture_root/data"
+  }
+  capture_mounts
+  [[ "$(cat "$run_dir/mounts.txt")" == "bind|$fixture_root/data||/app/data|rw|true|" ]] ||
+    fail 'mount capture did not accept an empty propagation field'
+  printf 'bind|%s||/app/data|rw|\n\n' "$fixture_root/data" > "$run_dir/invalid-mount-output"
+  if (
+    docker_rpc() { [[ "${1:-}" == inspect ]] || return 98; cat "$run_dir/invalid-mount-output"; }
+    capture_mounts >/dev/null 2>&1
+  ); then
+    fail 'partial mount record was accepted'
+  fi
+)
+
+# ---------------------------------------------------------------------------
 # Fixture 3b: duplicate Docker environment entries require explicit approval,
 # retain Docker's last-wins value without recording plaintext evidence, and
 # remain comparable after Docker canonicalizes the candidate to unique keys.

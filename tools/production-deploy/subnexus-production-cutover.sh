@@ -1538,6 +1538,12 @@ capture_mounts() {
   local line type source name destination mode writable propagation extra app_data_count=0
   captured_mounts=()
   while IFS='|' read -r type source name destination mode writable propagation extra; do
+    # Docker's Go template output can contain one template newline plus the
+    # CLI's terminating newline. Ignore only a completely empty record;
+    # partially populated records remain hard failures.
+    [[ -z "${type:-}" && -z "${source:-}" && -z "${name:-}" &&
+       -z "${destination:-}" && -z "${mode:-}" && -z "${writable:-}" &&
+       -z "${propagation:-}" && -z "${extra:-}" ]] && continue
     [[ -z "${extra:-}" && -n "${type:-}" && -n "${destination:-}" ]] || fail 'live mount metadata is malformed'
     [[ "$destination" != *$'\n'* && "$destination" != *$'\r'* && "$destination" != *'|'* && "$destination" != *','* && "$destination" != *'='* &&
        "$source" != *$'\n'* && "$source" != *$'\r'* && "$source" != *'|'* && "$source" != *','* &&
@@ -1552,7 +1558,8 @@ capture_mounts() {
     elif [[ "$mode" == rw || -z "$mode" ]]; then
       [[ "$writable" == true ]] || fail 'read-write mount mode conflicts with writable flag'
     fi
-    [[ "$propagation" =~ ^(private|rprivate|shared|rshared|slave|rslave|)$ ]] || fail 'live mount propagation is invalid'
+    [[ -z "$propagation" || "$propagation" =~ ^(private|rprivate|shared|rshared|slave|rslave)$ ]] ||
+      fail 'live mount propagation is invalid'
     if [[ "$type" == volume && -n "$propagation" && "$propagation" != rprivate ]]; then
       fail 'non-default volume mount propagation cannot be reproduced safely'
     fi
@@ -2743,7 +2750,8 @@ validate_runtime_metadata_files() {
     elif [[ "$mode" == rw || -z "$mode" ]]; then
       [[ "$writable" == true ]] || fail 'mount mode/writable metadata conflicts'
     fi
-    [[ "$propagation" =~ ^(private|rprivate|shared|rshared|slave|rslave|)$ ]] || fail 'mount propagation metadata is invalid'
+    [[ -z "$propagation" || "$propagation" =~ ^(private|rprivate|shared|rshared|slave|rslave)$ ]] ||
+      fail 'mount propagation metadata is invalid'
     case "$type" in
       bind)
         [[ "$source" == /* && -e "$source" && ! -L "$source" ]] || fail 'bind mount source metadata is invalid'

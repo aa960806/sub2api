@@ -1183,3 +1183,9 @@
 - 修复一个重要状态边界：replay 现在把观测结果写入独立 observed 状态，不会覆盖准备合同；因此候选 canonicalization 后，后续 preserved-container 合同和自动回滚仍按原始 last-wins 合同复核。
 - 测试：Windows Git Bash 的脚本语法、静态/夹具测试通过（系统 `python3` 为 AppInstaller redirector，动态夹具按设计跳过）；`SubNexusBuild20260904` WSL/Linux 中 `bash -n` 与 production cutover 全部夹具通过，动态覆盖无批准/错误 hash/额外 duplicate 拒绝、last-wins 归一化、无明文 evidence、live 序列漂移、candidate canonicalization 和 runtime hash 等价性；`git diff --check` 通过。
 - 本轮尚未提交或推送；需由维护者复核差异后重新计算批准脚本 SHA，再决定是否同步 detached clone/重跑线上只读 `prepare`。在此之前 `cutover_allowed=false`，所有迁移功能继续默认关闭。
+
+## 2026-09-04（Asia/Shanghai）— 线上 prepare 挂载输出兼容修复（未提交）
+
+- 新脚本首次在服务器执行 `prepare` 时只读采集到真实 Docker 29 挂载输出的双换行（Go 模板换行加 CLI 终止换行），在 `capture_mounts` 误报 `live mount metadata is malformed`/传播字段错误；失败发生在备份、镜像加载、容器操作和数据库写入之前。失败运行目录 `/srv/subnexus-migration/cutover/20260904140820-3616319` 保留作审计，线上应用 ID 与健康状态未改变。
+- 修复仅允许解析器跳过“所有字段为空”的尾部记录，任何部分字段仍 fail-closed；同时将挂载传播校验改为跨 GNU Bash/MSYS 可移植的显式空值或枚举判断。新增夹具覆盖双换行、空传播字段和部分记录拒绝。
+- Windows Git Bash 与 WSL（从 `/mnt/f/MySub2/sub2api` 运行）脚本语法、production cutover 全部夹具和 `git diff --check` 通过。修复尚未提交/推送/安装；服务器仍未执行备份、迁移、切换或开关修改。下一步提交并重新计算脚本 SHA，原子安装新工具后重跑 `prepare`。
