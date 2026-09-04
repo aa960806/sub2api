@@ -1199,3 +1199,10 @@
 - 线上候选归档 `/srv/subnexus-migration/candidate-artifacts/02774d028d076e934a59f04fd1ee98598ac693a1/candidate-image.tar` 的 SHA256=`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`，gate evidence `/srv/subnexus-migration/docker-candidate/20260904T110814Z-be48efa2-3133-4c27-bc9f-a7cbf1d221c9/evidence.txt` 的 SHA256=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，候选 image ID=`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`；只读核对均一致，gate 仍标记 `cutover_authorized=false`/`manual_review=required`。
 - 线上 `/srv/subnexus-repo` 当前为 ubuntu-owned、分支 `production/ovh-baseline-20260807`、HEAD `681589e6638269069d314dc2c9f6444e6d67fc85`，不是候选 `02774d028...`，因此禁止直接将其作为 release source。下一步在 `/srv/subnexus-migration` 下创建独立 root-owned detached release source，完成后再安装本次唯一新命名脚本并运行无停机 `prepare`；旧失败 run 目录全部保留。
 - 当前状态：本地代码已提交并推送迁移分支；Docker 候选 gate 通过；线上 prepare 尚未成功完成，切换、生产迁移、切流和功能开启仍禁止。回滚点为提交前 `843f10fd4`（脚本/测试代码回滚不删除线上资产）。
+
+## 2026-09-04（Asia/Shanghai）— 文档指针收敛与 release source 只读复核
+
+- 文档状态收敛提交为 `67f6f92aea6e988e83a45eef534f38334379a08b`，已推送到 `origin/feature/subnexus-migration`；应用镜像、归档和 Docker runtime gate 仍固定在功能候选提交 `02774d028d076e934a59f04fd1ee98598ac693a1`，不得把文档 tip 当作镜像构建 SHA。
+- 通过 SSH 只读复核确认服务器已有独立 release source `/srv/subnexus-migration/release-repos/sub2api-02774d028d076e934a59f04fd1ee98598ac693a1`；该路径不覆盖 `/srv/subnexus-repo`，后续只在其通过 root-owned、detached、clean、无 submodule 和 tree 校验后用于 `prepare`。
+- 当前服务器候选归档/evidence/image 仍分别为 `45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`、`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`、`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`；旧应用、PG、Redis、Nginx 和流量仍未改变。
+- 线上只读磁盘剩余约 36.5 GB；准备阶段仍需在不停止服务的前提下生成本次 run 的备份、settings snapshot、manifest 和 `READY`。在 `READY`、人工验收和维护者手动切换前，`switch`、生产迁移、切流及功能开启均禁止。

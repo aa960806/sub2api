@@ -15,7 +15,8 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支功能候选 SHA | `b26c42e08fb190f3915f08949aaaba48dbe61a26`（上游同步父提交为 `23d6e8ec0`；当前远端发布指针为 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`） |
+| 迁移分支当前 tip | `67f6f92aea6e988e83a45eef534f38334379a08b`（文档收尾提交，已推送） |
+| 应用功能候选 SHA | `02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 Docker runtime gate 均由此提交构建；上游同步父提交为 `23d6e8ec0`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
@@ -41,7 +42,7 @@
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
 | B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建与结构校验） | `/srv/subnexus-migration/backups/20260903T073714Z`；PG custom dump/list、globals、Redis RDB/check、应用 tar 和全量 SHA256 均通过 |
-| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；最新 gate 证据 `20260904T104343Z-2854f544-d1ee-44be-9b58-ff465ee160ac`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
+| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；当前服务器复核的 gate 证据 `20260904T110814Z-be48efa2-3133-4c27-bc9f-a7cbf1d221c9`，evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
 
 ## 实施批次
 
@@ -124,7 +125,7 @@
 | 阶段 | 回滚点 | 数据库动作 |
 | --- | --- | --- |
 | 文档/盘点 | `d596d0844` | 无 |
-| 当前本地候选 | `b26c42e08fb190f3915f08949aaaba48dbe61a26` | 无；所有迁移开关保持关闭 |
+| 当前应用候选 | `02774d028d076e934a59f04fd1ee98598ac693a1` | 无；所有迁移开关保持关闭 |
 | Batch 0 改名迁移 adoption 门禁 | `dfec06ac1c939e07629d8c70b04c2a509f8007d0`（父提交 `df0e6a136`） | 无；仅新增启动前校验与只读预检证据采集 |
 | 每个代码批次 | 批次前提交 SHA | 默认不恢复数据库，关闭对应开关 |
 | 线上候选 | 旧容器、旧镜像、服务器回滚脚本 | 先回滚应用，不自动恢复数据库 |
