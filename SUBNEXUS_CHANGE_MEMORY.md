@@ -1123,3 +1123,13 @@
 - Windows Git Bash：四个发布脚本 `bash -n`、isolated-image-build、Docker candidate-check、readonly-preflight、Redis restore-check 夹具均通过；Windows 的动态 Python 夹具因系统只有 AppInstaller redirector 按设计跳过。WSL/Linux：同四套 `bash -n`/夹具均通过，动态归档、context 权限与 legacy/gzip layer 夹具实际执行并通过；`git diff --check` 通过（仅报告工作树 CRLF 转换提示）。
 - 当前状态仍为“本地代码门禁通过，真实 Docker Release Gate 未通过/待重跑”：尚未生成新的候选镜像归档，不能据此替换线上版本。BuildKit 使用专用 daemon 仍有 privileged 容器和构建网络出站的残余风险；生产候选 gate 不读取无独立签名的 `metadata.env`/`SHA256SUMS`，发布清单必须在外部保存并复核构建脚本 SHA。下一步是提交本轮改动、同步 `/work/sub2api` detached clone，复核专用 daemon 五镜像/零对象基线后再重跑真实隔离构建。
 - 本轮回滚点：提交前本地 HEAD `058657b94682d1aa0088e148d4fa1e41ddadd273`；此前已验证的代码回滚点 `79ce84dfd976002134500f27bbf8d0df75a19ca4`。本轮提交 SHA、脚本 SHA及真实构建证据须在后续追加记录中补齐。
+
+## 2026-09-04（Asia/Shanghai）— 真实隔离 Docker 构建成功
+
+- 本轮仅在 `F:\MySub2\sub2api` 的迁移分支和专用 WSL daemon `SubNexusBuild20260904` 执行；没有读取或修改 `F:\Sub2Api\SubNexus`，没有修改 fork `main`，没有连接线上服务器、生产 Docker、PostgreSQL、Redis 或 Nginx。
+- 使用已批准提交 `fa8ac7fa0c45e83a68010467f26d3def2ecd73fd` 完成真实隔离构建。BuildKit builder、资源/安全合同、固定源码 context、前端构建、Go 后端构建、镜像加载及 Docker archive 完整性校验均通过。
+- 生成候选镜像 ID：`sha256:9a6d5812a54bd5b74b8977c15503d7e8f67a472cf768d954e2cb01b833321a17`；候选归档 SHA256：`838633aacb3be5ae6e05a51c3931b8b5f7c0e09ce0b502dbdffa9aa4b6e697c4`。
+- 构建后专用 daemon 保留五个固定基础镜像和一个候选镜像（共 6 个 image ID）；候选镜像同时保留 release tag 与 gate tag，两个 tag 指向同一候选 ID。候选 archive validator、静态夹具和运行时构建收尾校验均通过。
+- 构建元数据中的 `BUILD_SCRIPT_SHA256`、`APPROVED_BUILD_SCRIPT_SHA256`、`APPROVED_BUILD_SCRIPT_BLOB_SHA256` 三项均为 `fa41a1e9909d8ec9d39f370eb84d9b97bb7f0f5c7e8258aca7387e987b255cd4`，并已与批准提交中的脚本 blob 和实际执行文件一致。
+- 构建结束后的专用 daemon 收尾核对通过：五个固定基础镜像仍在，容器数为 0、卷数为 0、无自定义网络，仅保留 `bridge`、`host`、`none`；未使用 prune，未删除 Docker Desktop 或生产资产。
+- 本次只证明本地隔离构建和归档可交接，不等于候选 runtime gate、生产备份克隆上的最终候选验收或线上切换通过。线上仍未访问、未迁移、未部署、未重启、未切流，所有迁移功能继续保持默认关闭；下一步是使用该归档执行本地候选 runtime gate，之后再由维护者决定发布窗口。
