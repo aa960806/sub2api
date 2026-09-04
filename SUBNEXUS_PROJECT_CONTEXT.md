@@ -12,7 +12,7 @@
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新上游基线：`upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`（版本 `0.2.0`）
-- 当前迁移分支：`feature/subnexus-migration`；当前分支 tip：`1bc02739e5dcb2818af7a1727c412506c46ef79c`（最终交接文档提交）；应用功能候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 gate 均由此提交构建）；`main` 未修改
+- 当前迁移分支：`feature/subnexus-migration`；当前分支 tip 必须以 `git rev-parse HEAD` 实时核对（本轮状态同步提交为 `acbf003f3e4aa067b65c7df97cbff4d03cc0e566`）；应用功能候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 gate 均由此提交构建）；`main` 未修改
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -26,7 +26,7 @@
 | 生产数据库访问 | 已执行只读盘点和 `pg_dump` 备份；未执行生产 SQL DDL/DML、迁移或候选连接，Redis 仅执行 `BGSAVE` 生成恢复点并在隔离容器验证恢复 |
 | 生产部署/切换 | `prepare` 已执行并生成 `READY=prepared`；`switch` 未执行 |
 | 生产开关 | 未修改 |
-| 工作区 | `feature/subnexus-migration` 已推送 fork；当前 tip `1bc02739e`（最终交接文档），应用候选仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1`；业务依赖、前端 lockfile 和 VERSION 未改 |
+| 工作区 | `feature/subnexus-migration` 已推送 fork；当前 tip 以 `git rev-parse HEAD` 实时核对，应用候选仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1`；业务依赖、前端 lockfile 和 VERSION 未改 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
