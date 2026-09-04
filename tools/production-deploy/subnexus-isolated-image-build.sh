@@ -620,10 +620,43 @@ create_builder_network() {
     fail 'isolated BuildKit network options or labels are invalid' || return 1
 }
 
+validate_builder_mounts() {
+  local mounts="$1" expected_state_volume="$2" expected_state_source="${3:-}"
+  local mount_line mount_type mount_name mount_destination mount_rw mount_source extra
+  local state_count=0 wsl_count=0
+  # Docker 29/WSL may add a read-only /usr/lib/wsl bind mount to the
+  # disposable BuildKit container. Mount order is not stable, so validate
+  # the allowed set entry-by-entry and reject every other mount.
+  while IFS= read -r mount_line; do
+    [[ -n "$mount_line" ]] || continue
+    IFS='|' read -r mount_type mount_name mount_destination mount_rw mount_source extra <<< "$mount_line"
+    [[ -z "$extra" ]] || return 1
+    case "$mount_type" in
+      volume)
+        (( state_count == 0 )) || return 1
+        [[ -n "$expected_state_source" && "$mount_name" == "$expected_state_volume" &&
+          "$mount_destination" == '/var/lib/buildkit' &&
+          "$mount_rw" == 'true' && "$mount_source" == "$expected_state_source" ]] || return 1
+        state_count=$((state_count + 1))
+        ;;
+      bind)
+        (( wsl_count == 0 )) || return 1
+        [[ -z "$mount_name" && "$mount_source" == '/usr/lib/wsl' &&
+          "$mount_destination" == '/usr/lib/wsl' && "$mount_rw" == 'false' ]] || return 1
+        wsl_count=$((wsl_count + 1))
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done <<< "$mounts"
+  [[ "$state_count" -eq 1 && "$wsl_count" -le 1 ]]
+}
+
 validate_builder_container() {
   local id="$1" validation_mode="${2:-strict}" observed_name observed_image network_mode ports privileged pid_mode ipc_mode mounts
   local memory memory_swap cpu_quota cpu_period pids_limit restart_policy security_opt devices device_requests volumes_from
-  local cgroupns_mode init readonly_rootfs expected_mount
+  local cgroupns_mode init readonly_rootfs
   [[ "$id" =~ ^[0-9a-f]{64}$ ]] || return 1
   observed_name="$(docker_call inspect --format '{{.Name}}' "$id")" || return 1
   observed_image="$(docker_call inspect --format '{{.Image}}' "$id")" || return 1
@@ -637,7 +670,7 @@ validate_builder_container() {
   privileged="$(docker_call inspect --format '{{.HostConfig.Privileged}}' "$id")" || return 1
   pid_mode="$(docker_call inspect --format '{{.HostConfig.PidMode}}' "$id")" || return 1
   ipc_mode="$(docker_call inspect --format '{{.HostConfig.IpcMode}}' "$id")" || return 1
-  mounts="$(docker_call inspect --format '{{range .Mounts}}{{printf "%s|%s|%s|%t\n" .Type .Name .Destination .RW}}{{end}}' "$id")" || return 1
+  mounts="$(docker_call inspect --format '{{range .Mounts}}{{printf "%s|%s|%s|%t|%s\n" .Type .Name .Destination .RW .Source}}{{end}}' "$id")" || return 1
   restart_policy="$(docker_call inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$id")" || return 1
   security_opt="$(docker_call inspect --format '{{json .HostConfig.SecurityOpt}}' "$id")" || return 1
   devices="$(docker_call inspect --format '{{json .HostConfig.Devices}}' "$id")" || return 1
@@ -646,7 +679,8 @@ validate_builder_container() {
   cgroupns_mode="$(docker_call inspect --format '{{.HostConfig.CgroupnsMode}}' "$id")" || return 1
   init="$(docker_call inspect --format '{{.HostConfig.Init}}' "$id")" || return 1
   readonly_rootfs="$(docker_call inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$id")" || return 1
-  expected_mount="volume|buildx_buildkit_${builder_name}0_state|/var/lib/buildkit|true"
+  validate_builder_mounts "$mounts" "buildx_buildkit_${builder_name}0_state" \
+    "${docker_root_dir%/}/volumes/buildx_buildkit_${builder_name}0_state/_data" || return 1
   [[ "$observed_name" == "/buildx_buildkit_${builder_name}0" &&
     "$observed_image" == "sha256:$buildkit_image_id" &&
     ( "$network_mode" == "$builder_network_name" || "$network_mode" == "$builder_network_id" ) &&
@@ -654,7 +688,7 @@ validate_builder_container() {
     "$cpu_quota" == '200000' && "$cpu_period" == '100000' &&
     ( "$ports" == '{}' || "$ports" == 'null' ) && "$pid_mode" == '' && "$ipc_mode" == 'private' &&
     "$restart_policy" == 'no' && "$cgroupns_mode" == 'private' && "$init" == 'true' &&
-    "$readonly_rootfs" == 'false' && "$mounts" == "$expected_mount" ]] || return 1
+    "$readonly_rootfs" == 'false' ]] || return 1
   case "$validation_mode" in
     strict)
       [[ "$pids_limit" == '512' ]] || return 1
@@ -981,9 +1015,27 @@ write_metadata() {
   mv -- "$checksums_tmp" "$checksums_stage"
 }
 
+validate_builder_cleanup_network() {
+  local expected_member="${1:-}" observed_name observed_gate observed_token members
+  [[ "$builder_network_id" =~ ^[0-9a-f]{64}$ ]] || return 1
+  observed_gate="$(docker_call network inspect --format '{{index .Labels "com.subnexus.isolated-build.gate"}}' "$builder_network_id" 2>/dev/null)" || return 1
+  observed_token="$(docker_call network inspect --format '{{index .Labels "com.subnexus.isolated-build.token"}}' "$builder_network_id" 2>/dev/null)" || return 1
+  observed_name="$(docker_call network inspect --format '{{.Name}}' "$builder_network_id" 2>/dev/null)" || return 1
+  [[ "$observed_name" == "$builder_network_name" && "$observed_gate" == "$script_name" &&
+    "$observed_token" == "$run_token" ]] || return 1
+  members="$(docker_call network inspect --format '{{range $id, $container := .Containers}}{{println $id}}{{end}}' "$builder_network_id" 2>/dev/null)" || return 1
+  if [[ -n "$expected_member" ]]; then
+    [[ "$members" == "$expected_member" ]]
+  else
+    [[ -z "$members" ]]
+  fi
+}
+
 cleanup_builder_and_network() {
-  local observed_name observed_gate observed_token members status=0
+  local observed_name observed_image observed_network_mode members status=0
   local builder_listing network_listing builder_count network_count
+  local builder_status=0 builder_validation_failed=0 builder_identity_ok=0 builder_exists='false'
+  local network_status=0
   local -a builder_ids=() network_ids=()
 
   if [[ "$builder_cleanup_done" != 'true' &&
@@ -998,31 +1050,49 @@ cleanup_builder_and_network() {
         builder_count="${#builder_ids[@]}"
         if [[ "$builder_count" -eq 1 && "${builder_ids[0]}" =~ ^[0-9a-f]{64}$ ]]; then
           builder_id="${builder_ids[0]}"
-        elif [[ "$builder_count" -gt 1 ]]; then
-          status=1
+        elif [[ "$builder_count" -ne 0 ]]; then
+          builder_status=1
         fi
       else
-        status=1
+        builder_status=1
       fi
     fi
-    if [[ "$status" -eq 0 && -n "$builder_id" ]]; then
-      if observed_name="$(docker_call inspect --format '{{.Name}}' "$builder_id" 2>/dev/null)"; then
-        [[ "$observed_name" == "/buildx_buildkit_${builder_name}0" ]] || status=1
-        if [[ "$status" -eq 0 ]]; then
+    if [[ "$builder_status" -eq 0 && -n "$builder_id" ]]; then
+      if observed_name="$(docker_call inspect --format '{{.Name}}' "$builder_id" 2>/dev/null)" &&
+        observed_image="$(docker_call inspect --format '{{.Image}}' "$builder_id" 2>/dev/null)" &&
+        observed_network_mode="$(docker_call inspect --format '{{.HostConfig.NetworkMode}}' "$builder_id" 2>/dev/null)"; then
+        [[ "$observed_name" == "/buildx_buildkit_${builder_name}0" &&
+          "$observed_image" == "sha256:$buildkit_image_id" &&
+          ( "$observed_network_mode" == "$builder_network_name" ||
+            "$observed_network_mode" == "$builder_network_id" ) ]] || builder_status=1
+        if [[ "$builder_status" -eq 0 ]] && validate_builder_cleanup_network "$builder_id"; then
+          builder_identity_ok=1
           if [[ "$builder_validated" == 'true' ]]; then
-            validate_builder_container "$builder_id" || status=1
+            validate_builder_container "$builder_id" || builder_validation_failed=1
           else
-            validate_builder_container "$builder_id" prebuild-cleanup || status=1
+            validate_builder_container "$builder_id" prebuild-cleanup || builder_validation_failed=1
           fi
         fi
       else
-        # The container may have exited and been removed by Buildx already;
-        # confirm the daemon is responsive, then let buildx rm reconcile its
-        # exact builder metadata.
-        docker_call info >/dev/null 2>&1 || status=1
+        builder_status=1
+      fi
+    elif [[ "$builder_status" -eq 0 ]]; then
+      # The container may have exited and been removed by Buildx already. A
+      # matching builder record plus an empty, token-labelled network is safe
+      # to reconcile; an unrelated record is never touched.
+      if builder_listing="$(docker_call buildx ls 2>/dev/null)"; then
+        if printf '%s\n' "$builder_listing" | awk -v wanted="$builder_name" \
+          '$1 == wanted || $1 == wanted "*" {found=1} END {exit found ? 0 : 1}'; then
+          builder_exists='true'
+          validate_builder_cleanup_network '' || builder_status=1
+          [[ "$builder_status" -eq 0 ]] && builder_identity_ok=1
+        fi
+      else
+        builder_status=1
       fi
     fi
-    if [[ "$status" -eq 0 ]]; then
+    if [[ "$builder_status" -eq 0 && "$builder_identity_ok" -eq 1 ]]; then
+      builder_exists='true'
       if docker_call buildx rm --force "$builder_name" >/dev/null 2>&1; then
         :
       else
@@ -1030,29 +1100,36 @@ cleanup_builder_and_network() {
         # exact container are provably absent afterwards.
         if builder_listing="$(docker_call buildx ls 2>/dev/null)"; then
           printf '%s\n' "$builder_listing" | awk -v wanted="$builder_name" \
-            '$1 == wanted || $1 == wanted "*" {found=1} END {exit found ? 0 : 1}' && status=1 || true
+            '$1 == wanted || $1 == wanted "*" {found=1} END {exit found ? 0 : 1}' && builder_status=1 || true
         else
-          status=1
+          builder_status=1
         fi
       fi
       if builder_listing="$(docker_call ps --all --no-trunc \
         --filter "name=^/buildx_buildkit_${builder_name}0$" --format '{{.ID}}' 2>/dev/null)"; then
-        [[ -z "$(printf '%s' "$builder_listing" | tr -d '\r\n')" ]] || status=1
+        [[ -z "$(printf '%s' "$builder_listing" | tr -d '\r\n')" ]] || builder_status=1
       else
-        status=1
+        builder_status=1
       fi
       if builder_listing="$(docker_call buildx ls 2>/dev/null)"; then
         printf '%s\n' "$builder_listing" | awk -v wanted="$builder_name" \
-          '$1 == wanted || $1 == wanted "*" {found=1} END {exit found ? 0 : 1}' && status=1 || true
+          '$1 == wanted || $1 == wanted "*" {found=1} END {exit found ? 0 : 1}' && builder_status=1 || true
       else
-        status=1
+        builder_status=1
       fi
+    elif [[ "$builder_status" -eq 0 && "$builder_exists" == 'false' ]]; then
+      # The exact generated builder/container is already absent and the
+      # successful query above proved there is nothing to remove.
+      :
     fi
-    [[ "$status" -eq 0 ]] && builder_cleanup_done='true'
+    [[ "$builder_status" -eq 0 ]] && builder_cleanup_done='true'
+    [[ "$builder_validation_failed" -eq 0 ]] || builder_status=1
+    [[ "$builder_status" -eq 0 ]] || status=1
   fi
 
   if [[ "$builder_network_cleanup_done" != 'true' &&
-    ( "$builder_network_create_attempted" == 'true' || -n "$builder_network_id" ) ]]; then
+    ( "$builder_network_create_attempted" == 'true' || -n "$builder_network_id" ) &&
+    ( "$builder_create_attempted" != 'true' || "$builder_cleanup_done" == 'true' ) ]]; then
     if [[ -z "$builder_network_id" ]]; then
       if network_listing="$(docker_call network ls --no-trunc \
         --filter "name=^${builder_network_name}$" --format '{{.ID}}' 2>/dev/null)"; then
@@ -1060,32 +1137,27 @@ cleanup_builder_and_network() {
         network_count="${#network_ids[@]}"
         if [[ "$network_count" -eq 1 && "${network_ids[0]}" =~ ^[0-9a-f]{64}$ ]]; then
           builder_network_id="${network_ids[0]}"
-        elif [[ "$network_count" -gt 1 ]]; then
-          status=1
+        elif [[ "$network_count" -ne 0 ]]; then
+          network_status=1
         fi
       else
-        status=1
+        network_status=1
       fi
     fi
-    if [[ "$status" -eq 0 && -n "$builder_network_id" ]]; then
-      observed_gate="$(docker_call network inspect --format '{{index .Labels "com.subnexus.isolated-build.gate"}}' "$builder_network_id" 2>/dev/null || true)"
-      observed_token="$(docker_call network inspect --format '{{index .Labels "com.subnexus.isolated-build.token"}}' "$builder_network_id" 2>/dev/null || true)"
-      observed_name="$(docker_call network inspect --format '{{.Name}}' "$builder_network_id" 2>/dev/null || true)"
-      [[ "$observed_name" == "$builder_network_name" && "$observed_gate" == "$script_name" &&
-        "$observed_token" == "$run_token" ]] || status=1
-      members="$(docker_call network inspect --format '{{range $id, $container := .Containers}}{{println $id}}{{end}}' "$builder_network_id" 2>/dev/null || true)"
-      [[ -z "$members" ]] || status=1
-      if [[ "$status" -eq 0 ]]; then
+    if [[ "$network_status" -eq 0 && -n "$builder_network_id" ]]; then
+      validate_builder_cleanup_network '' || network_status=1
+      if [[ "$network_status" -eq 0 ]]; then
         docker_call network rm "$builder_network_id" >/dev/null 2>&1 || {
-          docker_call network inspect "$builder_network_id" >/dev/null 2>&1 && status=1 || true
+          docker_call network inspect "$builder_network_id" >/dev/null 2>&1 && network_status=1 || true
         }
-        docker_call network inspect "$builder_network_id" >/dev/null 2>&1 && status=1 || true
+        docker_call network inspect "$builder_network_id" >/dev/null 2>&1 && network_status=1 || true
       fi
-    elif [[ "$status" -eq 0 ]]; then
+    elif [[ "$network_status" -eq 0 ]]; then
       # No exact network exists; the daemon query above was successful.
       :
     fi
-    [[ "$status" -eq 0 ]] && builder_network_cleanup_done='true'
+    [[ "$network_status" -eq 0 ]] && builder_network_cleanup_done='true'
+    [[ "$network_status" -eq 0 ]] || status=1
   fi
 
   [[ "$status" -eq 0 ]] || cleanup_failed='true'

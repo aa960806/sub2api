@@ -143,7 +143,14 @@ assert_contains 'swap_limit_supported_from_warnings'
 assert_contains 'DOCKER_SWAP_LIMIT_SUPPORTED'
 assert_contains "builder_validated='true'"
 assert_contains 'validate_builder_container "$builder_id" prebuild-cleanup'
-assert_contains 'expected_mount="volume|buildx_buildkit_${builder_name}0_state|/var/lib/buildkit|true"'
+assert_contains 'validate_builder_mounts() {'
+assert_contains 'validate_builder_mounts "$mounts" "buildx_buildkit_${builder_name}0_state" \'
+assert_contains '"${docker_root_dir%/}/volumes/buildx_buildkit_${builder_name}0_state/_data"'
+assert_contains 'printf "%s|%s|%s|%t|%s\n" .Type .Name .Destination .RW .Source'
+assert_contains 'validate_builder_cleanup_network() {'
+assert_contains 'builder_validation_failed=0'
+assert_contains 'validate_builder_container "$builder_id" || builder_validation_failed=1'
+assert_contains '"$builder_create_attempted" != '\''true'\'' || "$builder_cleanup_done" == '\''true'\'''
 assert_contains "\"\$pids_limit\" == '<nil>' || \"\$pids_limit\" == '0' || \"\$pids_limit\" == '512'"
 assert_contains "\"\$memory_swap\" == '-1' || \"\$memory_swap\" == '4294967296'"
 assert_contains "^Driver:[[:space:]]+docker-container[[:space:]]*\$"
@@ -196,7 +203,10 @@ remove_context_source="$(sed -n '/^safe_remove_context() {$/,/^}$/p' "$subject")
 baseline_objects_source="$(sed -n '/^assert_baseline_objects_unchanged() {$/,/^}$/p' "$subject")"
 absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
 swap_support_source="$(sed -n '/^swap_limit_supported_from_warnings() {$/,/^}$/p' "$subject")"
-[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" && -n "$swap_support_source" ]] || fail 'validator functions not found'
+mount_validator_source="$(sed -n '/^validate_builder_mounts() {$/,/^}$/p' "$subject")"
+cleanup_network_source="$(sed -n '/^validate_builder_cleanup_network() {$/,/^cleanup_builder_and_network() {$/p' "$subject" | sed '$d')"
+cleanup_source="$(sed -n '/^cleanup_builder_and_network() {$/,/^cleanup_release_tags() {$/p' "$subject" | sed '$d')"
+[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" && -n "$swap_support_source" && -n "$mount_validator_source" && -n "$cleanup_network_source" && -n "$cleanup_source" ]] || fail 'validator functions not found'
 (
   eval "$validator_source"
   eval "$repository_validator_source"
@@ -255,6 +265,107 @@ swap_support_source="$(sed -n '/^swap_limit_supported_from_warnings() {$/,/^}$/p
   fi
   swap_limit_supported_from_warnings '[]' || fail 'empty warning list was treated as no swap support'
   swap_limit_supported_from_warnings '["WARNING: unrelated"]' || fail 'unrelated warning list was treated as no swap support'
+)
+
+# BuildKit mount serialization is order-independent. Docker 29 on WSL may
+# include exactly one read-only /usr/lib/wsl bind alongside the state volume.
+(
+  eval "$mount_validator_source"
+  docker_root_dir='/var/lib/docker'
+  state_volume='buildx_buildkit_fixture0_state'
+  state_source="${docker_root_dir%/}/volumes/$state_volume/_data"
+  state_mount="volume|$state_volume|/var/lib/buildkit|true|$state_source"
+  wsl_mount='bind||/usr/lib/wsl|false|/usr/lib/wsl'
+  state_then_wsl="${state_mount}"$'\n'"${wsl_mount}"
+  wsl_then_state="${wsl_mount}"$'\n'"${state_mount}"
+  validate_builder_mounts "$state_mount" "$state_volume" "$state_source"
+  validate_builder_mounts "$state_then_wsl" "$state_volume" "$state_source"
+  validate_builder_mounts "$wsl_then_state" "$state_volume" "$state_source"
+  if validate_builder_mounts "$wsl_mount" "$state_volume" "$state_source"; then fail 'missing BuildKit state volume was accepted'; fi
+  if validate_builder_mounts "${state_mount}"$'\n'"bind||/tmp|false|/tmp" "$state_volume" "$state_source"; then fail 'unexpected bind mount was accepted'; fi
+  if validate_builder_mounts "${state_mount}"$'\n'"bind||/usr/lib/wsl|true|/usr/lib/wsl" "$state_volume" "$state_source"; then fail 'writable WSL bind mount was accepted'; fi
+  if validate_builder_mounts "${state_mount}"$'\n'"bind||/host|false|/usr/lib/wsl" "$state_volume" "$state_source"; then fail 'WSL destination/source mismatch was accepted'; fi
+  if validate_builder_mounts "${state_mount}"$'\n'"${state_mount}" "$state_volume" "$state_source"; then fail 'duplicate state volume was accepted'; fi
+  if validate_builder_mounts "${state_mount}"$'\n'"${wsl_mount}"$'\n'"${wsl_mount}" "$state_volume" "$state_source"; then fail 'duplicate WSL bind mount was accepted'; fi
+  if validate_builder_mounts 'bind||/var/run/docker.sock|false|/var/run/docker.sock' "$state_volume" "$state_source"; then fail 'Docker socket mount was accepted'; fi
+  wrong_source_mount="volume|$state_volume|/var/lib/buildkit|true|/tmp/$state_volume/_data"
+  if validate_builder_mounts "$wrong_source_mount" "$state_volume" "$state_source"; then fail 'unexpected state volume source was accepted'; fi
+)
+
+# A strict resource validation failure must still remove only the exact,
+# token-labelled builder and its empty network, while preserving a failure
+# status for the caller.
+(
+  eval "$cleanup_network_source"
+  eval "$cleanup_source"
+  builder_id="$(printf 'a%.0s' {1..64})"
+  buildkit_image_id="$(printf 'b%.0s' {1..64})"
+  builder_network_id="$(printf 'c%.0s' {1..64})"
+  builder_name='subnexus-build-fixture'
+  builder_network_name='subnexus-build-net-fixture'
+  run_token='fixture-token'
+  script_name='subnexus-isolated-image-build-v1'
+  builder_create_attempted='true'
+  builder_created='true'
+  builder_validated='true'
+  builder_cleanup_done='false'
+  builder_network_create_attempted='true'
+  builder_network_cleanup_done='false'
+  cleanup_failed='false'
+  removed_builder='false'
+  removed_network='false'
+  validate_builder_container() { return 1; }
+  docker_call() {
+    local command="$1"
+    shift
+    case "$command" in
+      inspect)
+        case "${2:-}" in
+          *'.Name'*) printf '/buildx_buildkit_%s0' "$builder_name" ;;
+          *'.Image'*) printf 'sha256:%s' "$buildkit_image_id" ;;
+          *'NetworkMode'*) printf '%s' "$builder_network_name" ;;
+          *) return 1 ;;
+        esac
+        ;;
+      ps)
+        [[ "$removed_builder" == 'true' ]] || printf '%s\n' "$builder_id"
+        ;;
+      buildx)
+        case "${1:-}" in
+          ls)
+            [[ "$removed_builder" == 'true' ]] || printf '%s * docker-container\n' "$builder_name"
+            ;;
+          rm) removed_builder='true' ;;
+          *) return 1 ;;
+        esac
+        ;;
+      network)
+        case "${1:-}" in
+          inspect)
+            if [[ "${2:-}" == '--format' ]]; then
+              case "${3:-}" in
+                *'isolated-build.gate'*) printf '%s' "$script_name" ;;
+                *'isolated-build.token'*) printf '%s' "$run_token" ;;
+                *'.Name'*) printf '%s' "$builder_network_name" ;;
+                *'.Containers'*) [[ "$removed_builder" == 'true' ]] || printf '%s\n' "$builder_id" ;;
+                *) return 1 ;;
+              esac
+            else
+              [[ "$removed_network" == 'true' ]] && return 1
+            fi
+            ;;
+          rm) removed_network='true' ;;
+          *) return 1 ;;
+        esac
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  if cleanup_builder_and_network; then fail 'cleanup hid the strict validation failure'; fi
+  [[ "$builder_cleanup_done" == 'true' ]] || fail 'builder was not marked cleaned after validation failure'
+  [[ "$builder_network_cleanup_done" == 'true' ]] || fail 'network was not marked cleaned after validation failure'
+  [[ "$removed_builder" == 'true' ]] || fail 'exact builder was not removed after validation failure'
+  [[ "$removed_network" == 'true' ]] || fail 'exact network was not removed after validation failure'
 )
 
 # Context cleanup is restricted to the one fixed context below staging.
