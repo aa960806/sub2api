@@ -1236,4 +1236,13 @@
 - 提交 `ba1c6450d` 修复候选镜像已预加载时缺少 `image-load.log` 的证据不完整问题：每个 prepare run 都会创建 root-owned、模式 `0600` 的空日志；已有文件或符号链接会在 Docker 查询前被拒绝。这样复用已核验的候选镜像不会绕过日志文件完整性门禁。
 - 提交 `af82a6877` 将日志证据安装改为 GNU `mv -T`，并保留安装前的目标路径复核；目标在竞态中变成指向目录的符号链接时不会被跟随写入外部目录。测试同时覆盖预加载 tag、空日志、权限和预置符号链接拒绝。
 - Windows Git Bash 五套 `tools/production-deploy/*test.sh`、脚本语法检查和 `git diff --check` 通过；在隔离 WSL 的独立临时副本中五套测试和 Linux 动态夹具也通过。测试期间未连接或修改线上服务器、生产 Docker、PostgreSQL、Redis、Nginx 或流量。
-- 当前迁移分支 HEAD 为文档提交 `3f07e87aa`（部署脚本修复提交为 `af82a687746aaf35dd5e6d00dff93a7571355a31`），工作树干净并已与 `origin/feature/subnexus-migration` 同步。应用候选镜像仍固定于 `02774d028d076e934a59f04fd1ee98598ac693a1`；本次仅改部署脚本/测试，不需要重建应用镜像。切换门禁仍为 `cutover_allowed=false`，线上 `prepare`/`switch`/`rollback` 均未由本轮执行。
+- 当前迁移分支 HEAD 为文档提交 `3c18050d1`（部署脚本修复提交为 `af82a687746aaf35dd5e6d00dff93a7571355a31`），工作树干净并已与 `origin/feature/subnexus-migration` 同步。应用候选镜像仍固定于 `02774d028d076e934a59f04fd1ee98598ac693a1`；本次仅改部署脚本/测试，不需要重建应用镜像。切换门禁仍为 `cutover_allowed=false`，线上 `prepare` 已完成，`switch`/`rollback` 未执行。
+
+## 2026-09-05（Asia/Shanghai）— 线上无停机 prepare 成功与人工切换交接
+
+- 本轮先将 `af82a6877` 的生产切换脚本以唯一文件名 `/srv/subnexus-migration/tools/subnexus-production-cutover-af82a6877-ba0f4c1e.sh` 安装到服务器；服务器副本 root-owned、模式 `0700`、SHA256=`ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064`，`bash -n` 通过。旧脚本副本未覆盖、未删除。
+- 第一次重试使用了带换行的重复环境值哈希，脚本在只读环境元数据阶段以 `the selected last environment value does not match its approved hash` fail-closed；该 run `/srv/subnexus-migration/cutover/20260904175414-3700860` 和日志均保留，未生成备份、未触碰容器。随后按脚本实际 `value.encode('utf-8')` 算法使用独立批准哈希 `633e5f7d659d6b1a617824263685c063a145afda7463344f1ab502c27ee99dd9` 重试。
+- 成功 run 为 `/srv/subnexus-migration/cutover/20260904175519-3701605`，后台进程已正常退出并生成 `READY` 内容 `prepared`。候选提交=`02774d028d076e934a59f04fd1ee98598ac693a1`，source tree=`023e96b6c629f7d33e8ac2d43b7bd93f960a36f5`，镜像 ID=`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`，候选归档 SHA=`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`，runtime gate evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`。
+- 备份与证据尺寸：PostgreSQL custom dump `5071323565` bytes、catalog list `107429` bytes、Redis RDB `6785583` bytes、RDB check `643` bytes、应用数据归档 `79658747` bytes；活动日志策略固定为只排除 `./logs/*.log`，保留 `./logs/*.gz` 和其他应用数据。所有 required sidecar/manifest、settings before/closed 快照、environment duplicate evidence、owner/mode/inode 和依赖身份复核通过；`SERVER_TRUSTED_PROXIES` 以已批准的 last-wins 合同记录，应用数据 owner 为已审核的 `1000:1000`/mode `0755`。
+- prepare 全程未停止、重命名、重启或创建线上应用容器，未执行生产 PostgreSQL/Redis 迁移、DDL/DML、Nginx 切流或功能开关修改。完成后线上 `subnexus-cutover` 仍为 ID `be459424b327...`、healthy、restart `0`，PostgreSQL/Redis 仍为原 ID/running，未发现候选容器；失败 run、历史备份和旧版本资产继续保留。
+- 当前交接点是 `READY` 但 `cutover_allowed=false`：仅维护者在确认无结算/迁移任务、入口配置和备份证据后，手动执行同一脚本的 `switch`；异常时优先按同一 run 执行应用 `rollback`，不自动恢复数据库。所有迁移功能继续关闭，逐项验收后再开启。

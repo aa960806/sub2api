@@ -15,12 +15,12 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支发布状态 | 本地与 `origin/feature/subnexus-migration` 必须以 `git rev-parse` 实时核对；应用功能候选仍为 `02774d028...`，最新生产切换脚本代码固定点为 `b27ae6652`，后续仅文档提交不得改变脚本 SHA |
+| 迁移分支发布状态 | 本地与 `origin/feature/subnexus-migration` 必须以 `git rev-parse` 实时核对；应用功能候选仍为 `02774d028...`，最新生产切换脚本代码固定点为 `af82a6877`，脚本文件 SHA256=`ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064`；后续仅文档提交不得改变脚本 SHA |
 | 应用功能候选 SHA | `02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 Docker runtime gate 均由此提交构建；上游同步父提交为 `23d6e8ec0`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
-| 生产数据库状态 | 只读预检与隔离恢复已完成；最近一次在线 prepare 的 PostgreSQL/Redis 备份成功，但整个 run 因应用活动日志归档失败而没有 `READY`；生产库仍未执行迁移/DDL/DML |
+| 生产数据库状态 | 只读预检、隔离恢复和在线 prepare 已完成；最新 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 已生成并核验 `READY=prepared`、PostgreSQL/Redis/应用数据备份及快照；生产库仍未执行迁移/DDL/DML，等待维护者人工 switch |
 
 ## Batch 0 门禁
 
@@ -41,7 +41,7 @@
 | 编号 | 门禁 | 状态 | 证据/备注 |
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
-| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建与结构校验） | `/srv/subnexus-migration/backups/20260903T073714Z`；PG custom dump/list、globals、Redis RDB/check、应用 tar 和全量 SHA256 均通过 |
+| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建、结构和最新 prepare 证据校验） | 历史备份 `/srv/subnexus-migration/backups/20260903T073714Z`；最新无停机 prepare `/srv/subnexus-migration/cutover/20260904175519-3701605` 的 PostgreSQL custom dump/list、Redis RDB/check、应用 tar、排除策略、设置快照和全量 SHA256 均通过 |
 | B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；当前服务器复核的 gate 证据 `20260904T110814Z-be48efa2-3133-4c27-bc9f-a7cbf1d221c9`，evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
 
 ## 实施批次
@@ -174,4 +174,5 @@
 | 2026-09-04 Asia/Shanghai | 重复 Docker 环境键 fail-closed 兼容合同（未提交） | 本地静态/夹具通过；线上 prepare 待重跑 | `SERVER_TRUSTED_PROXIES` 重复时默认拒绝；仅显式 token + 精确 allowlist + 最终值 SHA256 才允许 last-wins。新增脱敏 `environment-duplicates.tsv`、规范化 `container.env`/manifest SHA、live replay 与 candidate canonicalization 合同；修复 replay 观测状态覆盖准备合同的回滚风险。Windows Git Bash 与 WSL/Linux `bash -n`、production cutover 测试通过，动态夹具覆盖错误批准、无明文证据、序列漂移和 runtime hash 等价性 | 只修改 fork 迁移分支的脚本/测试/手册；未修改旧项目、`main`、服务器、生产数据或开关，未提交/推送；在重新计算批准脚本 SHA、同步 detached clone 并重新运行线上 prepare 前，`cutover_allowed=false` |
 | 2026-09-04 Asia/Shanghai | 线上 prepare 挂载双换行兼容修复（未提交） | 首次 prepare 在只读运行元数据阶段 fail-closed；修复待重跑 | Docker 29 `{{range .Mounts}}...{{end}}` 输出与 CLI 终止换行形成空记录，已让 `capture_mounts` 仅跳过全空记录并保留部分记录拒绝；传播枚举改为跨 Bash/MSYS 可移植判断；新增回归夹具。失败目录 `/srv/subnexus-migration/cutover/20260904140820-3616319` 保留，未生成/使用备份，线上应用仍 healthy | 只修改 fork 分支本地脚本/测试/记忆；未修改旧项目、`main`、服务器业务、数据库、Redis、Nginx 或开关；提交并重新安装新 SHA 后才可再次 prepare |
 | 2026-09-04 Asia/Shanghai | 应用数据 owner 合同收口（提交 `66cb41b26`） | 本地与 WSL 门禁通过；线上 prepare 待执行 | 新 run 默认严格 `root-only`；唯一审核非 root 例外为 `1000:1000`/安全叶 mode，父链 root-owned；prepare/switch/rollback 重复锁定 owner、mode、设备号和 inode。旧 manifest 保留旧脚本 UID-only 的 legacy root-UID 兼容；修复空 GID resolver 缺陷并恢复通用路径 helper 原语义。脚本 SHA256=`9b7717eab53f898c659958a19b10c088bace3f7695657cb7e6085e5099c5f847`。线上只读复核确认应用 healthy、数据目录 `1000:1000`/`0755`、候选归档/gate/image SHA 一致；源码 `/srv/subnexus-repo` 仍为旧生产分支，需另建 root-owned detached release source | 未停止/重启/重命名线上容器，未执行 SQL/DML/迁移、切流、开关修改或删除；下一步安装唯一新脚本并执行无停机 `prepare`，生成 `READY` 后停在人工切换前 |
-| 2026-09-05 Asia/Shanghai | 在线应用数据归档活动日志策略（提交 `9c0033aa1`、`b27ae6652`） | 本地 Windows/WSL 五套发布夹具通过；线上 prepare 待重跑 | 上一 run `/srv/subnexus-migration/cutover/20260904161542-3664694` 的 PostgreSQL/Redis/设置快照成功，但 tar 读取持续写入的 `logs/sub2api.log` 后安全失败且无 `READY`。新脚本固定仅排除 `./logs/*.log`，保留压缩历史日志和其他数据；生成 root-only 策略文件、sidecar 和 manifest hash，switch 强制校验。rollback 不读取归档，因此策略证据不作为回滚前置条件。非日志 tar 错误仍 fail-closed，且清除 `TAR_OPTIONS`/`GZIP` 环境注入 | 修复提交已推送；写入本行时尚未安装最终脚本或重跑线上 prepare，未停止/重启/重命名生产容器，未写生产数据库/Redis、未切流或修改开关。最终 prepare 成功并核验 `READY` 后停在维护者人工 switch 前 |
+| 2026-09-05 Asia/Shanghai | 在线应用数据归档活动日志策略（提交 `9c0033aa1`、`b27ae6652`） | 通过（本地与线上 prepare） | 新脚本固定仅排除 `./logs/*.log`，保留压缩历史日志和其他数据；生成 root-only 策略文件、sidecar 和 manifest hash，switch 强制校验。最新 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 的归档与策略 SHA 已核验；非日志 tar 错误仍 fail-closed，且清除 `TAR_OPTIONS`/`GZIP` 环境注入 |
+| 2026-09-05 Asia/Shanghai | 预加载候选镜像日志证据与生产 prepare 完成（提交 `ba1c6450d`、`af82a6877`） | 通过（待维护者人工 switch） | 部署脚本 SHA256=`ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064`，以新文件名 `/srv/subnexus-migration/tools/subnexus-production-cutover-af82a6877-ba0f4c1e.sh` root/700 安装并校验。无停机 prepare run `/srv/subnexus-migration/cutover/20260904175519-3701605` 已生成 `READY=prepared`；PG dump=`5071323565` bytes、Redis RDB=`6785583` bytes、应用归档=`79658747` bytes，全部 sidecar、manifest、owner/mode/inode、候选镜像 ID/label 和依赖身份通过。线上 `subnexus-cutover` ID `be459424b327...` 仍 healthy、restart=0；无候选容器、无切流、无生产迁移/DDL/DML、无开关修改。一次错误重复键 hash 的 prepare 在只读阶段 fail-closed，失败记录保留 |

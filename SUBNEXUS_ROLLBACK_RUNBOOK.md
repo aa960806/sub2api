@@ -35,6 +35,14 @@ curl -fsS --max-time 8 https://<公网健康域名>/health
 
 如果 Nginx 已切到候选端口，先恢复切换前配置副本再 reload。快速回滚不恢复数据库，因新增隔离表/可选字段应被旧版本忽略；切回后必须验证登录、API Key、余额、订阅、订单、支付回调、用量和健康检查。
 
+当前 prepared run 的固定人工回滚命令（只有在切换已开始或候选已启动后执行）为：
+
+```bash
+sudo -n env SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064 SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-af82a6877-ba0f4c1e.sh rollback /srv/subnexus-migration/cutover/20260904175519-3701605
+```
+
+该命令只回滚应用容器和已关闭的 rollout gates，不恢复 PostgreSQL/Redis 备份；执行前仍需核对实时容器、依赖身份和入口配置。
+
 ## 3. 应用无法启动
 
 保留候选容器、日志和数据库现场，先确认是否为配置、镜像权限、Redis 或连接问题：
