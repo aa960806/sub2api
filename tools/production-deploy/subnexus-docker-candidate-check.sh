@@ -2008,19 +2008,22 @@ start_candidate_services() {
   validate_network_members true || fail 'candidate network members changed after start'
 }
 
+candidate_pg_exec() {
+  local sql="$1"
+  # Keep the password on stdin, but pass SQL as one quoted positional argument.
+  # This pipeline lives outside command substitution so Bash cannot fold the
+  # caller's if/then/else source into the Docker exec invocation.
+  printf '%s\n' "$pg_password" |
+    docker_rpc exec -i "$postgres_id" /bin/sh -c \
+      'IFS= read -r password || exit 1; user="$1"; database="$2"; sql="$3"; unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGPASSFILE PGDATABASE PGUSER; PGPASSWORD="$password" PGCONNECT_TIMEOUT=8 exec psql -X -A -t -v ON_ERROR_STOP=1 -U "$user" -d "$database" -c "$sql"' \
+      sh "$pg_user" "$pg_database" "$sql"
+}
+
 candidate_pg_psql() {
   local sql="$1"
   local output='' status=0
   assert_production_unchanged before_candidate_postgresql_exec || return 1
-  # Keep the password on stdin, but pass SQL as one quoted positional argument.
-  # Feeding SQL through the same stdin stream made failures difficult to
-  # diagnose when a Docker exec wrapper or psql startup script consumed more
-  # than the password line. The SQL is never interpolated into the shell
-  # program; it is expanded only by the quoted "$3" argument to psql -c.
-  if output="$(printf '%s\n' "$pg_password" |
-    docker_rpc exec -i "$postgres_id" /bin/sh -c \
-      'IFS= read -r password || exit 1; user="$1"; database="$2"; sql="$3"; unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGPASSFILE PGDATABASE PGUSER; PGPASSWORD="$password" PGCONNECT_TIMEOUT=8 exec psql -X -A -t -v ON_ERROR_STOP=1 -U "$user" -d "$database" -c "$sql"' \
-      sh "$pg_user" "$pg_database" "$sql"); then
+  if output="$(candidate_pg_exec "$sql")"; then
     status=0
   else
     status=$?
@@ -2030,13 +2033,17 @@ candidate_pg_psql() {
   printf '%s' "$output"
 }
 
+candidate_redis_exec() {
+  printf '%s\n' "$redis_password" |
+    docker_rpc exec -i "$redis_id" /bin/sh -c \
+      'IFS= read -r password || exit 1; unset REDISCLI_AUTH REDISCLI_HISTFILE; REDISCLI_AUTH="$password"; export REDISCLI_AUTH; exec redis-cli --no-auth-warning --raw -h 127.0.0.1 -p 6379 -n 0 "$@"' \
+      sh "$@"
+}
+
 candidate_redis_cli() {
   local output='' status=0
   assert_production_unchanged before_candidate_redis_exec || return 1
-  if output="$(printf '%s\n' "$redis_password" |
-    docker_rpc exec -i "$redis_id" /bin/sh -c \
-      'IFS= read -r password || exit 1; unset REDISCLI_AUTH REDISCLI_HISTFILE; REDISCLI_AUTH="$password"; export REDISCLI_AUTH; exec redis-cli --no-auth-warning --raw -h 127.0.0.1 -p 6379 -n 0 "$@"' \
-      sh "$@"); then
+  if output="$(candidate_redis_exec "$@")"; then
     status=0
   else
     status=$?
@@ -2086,6 +2093,22 @@ verify_candidate_rollout_gates() {
   [[ "$config" == 'closed' ]] || fail 'candidate invitation activity config is not closed'
 }
 
+candidate_http_post() {
+  local path="$1" payload="$2"
+  { printf '%s\n' "$payload"; } |
+    docker_rpc exec -i "$app_id" /bin/sh -c \
+      'IFS= read -r body || exit 1; unset http_proxy https_proxy all_proxy no_proxy; export HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY="*"; exec wget -q -T 10 -O - --header="Content-Type: application/json" --post-data="$body" "http://127.0.0.1:8080$1"' \
+      sh "$path"
+}
+
+candidate_http_get() {
+  local path="$1" token="$2"
+  printf '%s\n' "$token" |
+    docker_rpc exec -i "$app_id" /bin/sh -c \
+      'IFS= read -r token || true; unset http_proxy https_proxy all_proxy no_proxy; export HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY="*"; if [ -n "$token" ]; then exec wget -q -T 10 -O - --header="Authorization: Bearer $token" "http://127.0.0.1:8080$1"; else exec wget -q -T 10 -O - "http://127.0.0.1:8080$1"; fi' \
+      sh "$path"
+}
+
 candidate_http() {
   local method="$1"
   local path="$2"
@@ -2095,19 +2118,13 @@ candidate_http() {
   [[ "$path" == /* && "$path" != *'..'* && "$path" != *$'\n'* && "$path" != *$'\r'* ]] || return 1
   assert_production_unchanged "before_http_${method}_${path//\//_}" || return 1
   if [[ "$method" == 'POST' ]]; then
-    if output="$({ printf '%s\n' "$payload"; } |
-      docker_rpc exec -i "$app_id" /bin/sh -c \
-        'IFS= read -r body || exit 1; unset http_proxy https_proxy all_proxy no_proxy; export HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY="*"; exec wget -q -T 10 -O - --header="Content-Type: application/json" --post-data="$body" "http://127.0.0.1:8080$1"' \
-        sh "$path"); then
+    if output="$(candidate_http_post "$path" "$payload")"; then
       status=0
     else
       status=$?
     fi
   else
-    if output="$(printf '%s\n' "$token" |
-      docker_rpc exec -i "$app_id" /bin/sh -c \
-        'IFS= read -r token || true; unset http_proxy https_proxy all_proxy no_proxy; export HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= NO_PROXY="*"; if [ -n "$token" ]; then exec wget -q -T 10 -O - --header="Authorization: Bearer $token" "http://127.0.0.1:8080$1"; else exec wget -q -T 10 -O - "http://127.0.0.1:8080$1"; fi' \
-        sh "$path"); then
+    if output="$(candidate_http_get "$path" "$token")"; then
       status=0
     else
       status=$?

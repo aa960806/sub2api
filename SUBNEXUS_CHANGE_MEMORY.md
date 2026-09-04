@@ -1133,3 +1133,11 @@
 - 构建元数据中的 `BUILD_SCRIPT_SHA256`、`APPROVED_BUILD_SCRIPT_SHA256`、`APPROVED_BUILD_SCRIPT_BLOB_SHA256` 三项均为 `fa41a1e9909d8ec9d39f370eb84d9b97bb7f0f5c7e8258aca7387e987b255cd4`，并已与批准提交中的脚本 blob 和实际执行文件一致。
 - 构建结束后的专用 daemon 收尾核对通过：五个固定基础镜像仍在，容器数为 0、卷数为 0、无自定义网络，仅保留 `bridge`、`host`、`none`；未使用 prune，未删除 Docker Desktop 或生产资产。
 - 本次只证明本地隔离构建和归档可交接，不等于候选 runtime gate、生产备份克隆上的最终候选验收或线上切换通过。线上仍未访问、未迁移、未部署、未重启、未切流，所有迁移功能继续保持默认关闭；下一步是使用该归档执行本地候选 runtime gate，之后再由维护者决定发布窗口。
+
+## 2026-09-04（Asia/Shanghai）— 候选运行时门禁 Bash 参数污染修复
+
+- 上一轮针对提交 `93d48e257e51d939b6e56623b478ab15e469d005` 的真实候选 gate 未通过：`SELECT 1;` 的返回值混入了 `then/status/else/fi` 及后续函数源码。复核确认 PostgreSQL、Redis 和 HTTP 三处把跨行 pipeline 直接嵌在 `if output="$(...)"` 命令替换中，运行时 Docker exec 参数/输入边界不可靠；这不是线上数据库或 Redis 数据异常。
+- 在 `tools/production-deploy/subnexus-docker-candidate-check.sh` 中将四类 Docker exec pipeline 提取为 `candidate_pg_exec`、`candidate_redis_exec`、`candidate_http_post`、`candidate_http_get`，调用方只保留简单的 helper 命令替换；未改变密码 stdin、SQL positional argument、HTTP payload/token 或生产身份检查语义。
+- `subnexus-docker-candidate-check.test.sh` 新增四个 helper 的独立 `bash -n` 检查，以及 PostgreSQL/Redis/HTTP 的参数和 stdin 夹具，确认 `SELECT 1;`、`PING`、payload/token 不会被调用方控制文本污染。Git Bash 与 WSL/Linux 的 candidate-check 夹具、四个发布脚本语法检查和 `git diff --check` 均通过；夹具中预期的负面错误输出不代表测试失败。
+- 本轮只修改 fork 的迁移分支；未修改 `F:\Sub2Api\SubNexus`、`main`、线上服务器、生产 Docker/PostgreSQL/Redis/Nginx，未执行生产迁移、部署、重启、切流或开关变更。修复提交后必须重新同步 WSL detached clone，从五个固定基础镜像/零运行对象基线重建并重跑 candidate gate；在 gate 通过前 `cutover_allowed=false`。
+- 回滚点：本次提交前 `93d48e257e51d939b6e56623b478ab15e469d005`（仅代码回退，不得复用其失败候选归档上线）。

@@ -249,11 +249,124 @@ assert_contains 'candidate PostgreSQL must run as non-root'
 assert_contains 'candidate Redis must run as non-root'
 assert_not_contains 'local output status=0'
 assert_contains "local output='' status=0"
+assert_contains 'candidate_pg_exec() {'
+assert_contains 'candidate_redis_exec() {'
+assert_contains 'candidate_http_post() {'
+assert_contains 'candidate_http_get() {'
+assert_contains 'output="$(candidate_pg_exec "$sql")"'
+assert_contains 'output="$(candidate_redis_exec "$@")"'
+assert_contains 'output="$(candidate_http_post "$path" "$payload")"'
+assert_contains 'output="$(candidate_http_get "$path" "$token")"'
+assert_not_contains 'if output="$(printf '\''%s\\n'\'' "$pg_password" |'
+assert_not_contains 'if output="$(printf '\''%s\\n'\'' "$redis_password" |'
+assert_not_contains 'if output="$({ printf '\''%s\\n'\'' "$payload"; } |'
+assert_not_contains 'if output="$(printf '\''%s\\n'\'' "$token" |'
+for helper_name in candidate_pg_exec candidate_redis_exec candidate_http_post candidate_http_get; do
+  helper_source="$(extract_function "$helper_name")"
+  [[ -n "$helper_source" ]] || fail "$helper_name source was not found"
+  printf '%s\n' "$helper_source" | bash -n || fail "$helper_name has a shell syntax error"
+done
 assert_contains 'exec psql -X -A -t -v ON_ERROR_STOP=1'
 assert_contains 'sql="$3"'
 assert_contains ' -c "$sql"'
 assert_contains "unexpected SELECT 1 result: \$(printf '%q' \"\$pg_result\")"
 assert_contains "unexpected PING result: \$(printf '%q' \"\$redis_result\")"
+
+# Regression fixture for the Bash command-substitution parser bug: the
+# Docker exec helper must receive the SQL as one positional argument, without
+# the caller's if/then/else source being appended to it.
+pg_exec_source="$(extract_function candidate_pg_exec)"
+[[ "$pg_exec_source" == *'candidate_pg_exec() {'* ]] || fail 'candidate PostgreSQL exec helper was not found'
+(
+  eval "$pg_exec_source"
+  pg_password='fixture-password'
+  postgres_id='candidate-postgres-id'
+  pg_user='fixture-user'
+  pg_database='fixture-db'
+  docker_rpc() {
+    [[ "$1" == exec && "$2" == -i && "$3" == "$postgres_id" && "$7" == sh &&
+      "$8" == "$pg_user" && "$9" == "$pg_database" ]] || return 97
+    cat >/dev/null
+    printf '%s' "${10}"
+  }
+  expected_sql='SELECT 1;'
+  actual_sql=''
+  if actual_sql="$(candidate_pg_exec "$expected_sql")"; then
+    :
+  else
+    fail 'candidate PostgreSQL exec helper failed in argument fixture'
+  fi
+  [[ "$actual_sql" == "$expected_sql" ]] ||
+    fail "candidate PostgreSQL SQL argument was polluted: $(printf '%q' "$actual_sql")"
+)
+
+redis_exec_source="$(extract_function candidate_redis_exec)"
+[[ "$redis_exec_source" == *'candidate_redis_exec() {'* ]] || fail 'candidate Redis exec helper was not found'
+(
+  eval "$redis_exec_source"
+  redis_password='fixture-password'
+  redis_id='candidate-redis-id'
+  docker_rpc() {
+    [[ "$1" == exec && "$2" == -i && "$3" == "$redis_id" && "$7" == sh && "$8" == PING ]] || return 97
+    input="$(cat)"
+    [[ "$input" == "$redis_password" ]] || return 98
+    printf 'PONG'
+  }
+  actual_ping=''
+  if actual_ping="$(candidate_redis_exec PING)"; then
+    :
+  else
+    fail 'candidate Redis exec helper failed in argument fixture'
+  fi
+  [[ "$actual_ping" == 'PONG' ]] ||
+    fail "candidate Redis response was polluted: $(printf '%q' "$actual_ping")"
+)
+
+http_post_source="$(extract_function candidate_http_post)"
+[[ "$http_post_source" == *'candidate_http_post() {'* ]] || fail 'candidate HTTP POST helper was not found'
+(
+  eval "$http_post_source"
+  app_id='candidate-app-id'
+  expected_path='/api/v1/test'
+  expected_payload='{"probe":true}'
+  docker_rpc() {
+    [[ "$1" == exec && "$2" == -i && "$3" == "$app_id" && "$7" == sh && "$8" == "$expected_path" ]] || return 97
+    input="$(cat)"
+    [[ "$input" == "$expected_payload" ]] || return 98
+    printf '{"ok":true}'
+  }
+  actual_body=''
+  if actual_body="$(candidate_http_post "$expected_path" "$expected_payload")"; then
+    :
+  else
+    fail 'candidate HTTP POST helper failed in argument fixture'
+  fi
+  [[ "$actual_body" == '{"ok":true}' ]] ||
+    fail "candidate HTTP POST response was polluted: $(printf '%q' "$actual_body")"
+)
+
+http_get_source="$(extract_function candidate_http_get)"
+[[ "$http_get_source" == *'candidate_http_get() {'* ]] || fail 'candidate HTTP GET helper was not found'
+(
+  eval "$http_get_source"
+  app_id='candidate-app-id'
+  expected_path='/health'
+  expected_token='fixture-token'
+  docker_rpc() {
+    [[ "$1" == exec && "$2" == -i && "$3" == "$app_id" && "$7" == sh && "$8" == "$expected_path" ]] || return 97
+    input="$(cat)"
+    [[ "$input" == "$expected_token" ]] || return 98
+    printf '{"status":"ok"}'
+  }
+  actual_body=''
+  if actual_body="$(candidate_http_get "$expected_path" "$expected_token")"; then
+    :
+  else
+    fail 'candidate HTTP GET helper failed in argument fixture'
+  fi
+  [[ "$actual_body" == '{"status":"ok"}' ]] ||
+    fail "candidate HTTP GET response was polluted: $(printf '%q' "$actual_body")"
+)
 
 # All migrated switches are fail-closed in the disposable database and in the
 # public API smoke check.  The explicitly excluded legacy features are not
