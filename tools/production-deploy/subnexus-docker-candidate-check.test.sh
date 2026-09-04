@@ -174,6 +174,7 @@ assert_contains 'candidate_archive_fingerprint'
 assert_contains 'candidate image archive SHA256 does not match the approved value'
 assert_contains 'assert_candidate_archive_unchanged'
 assert_contains 'evidence_lock_fingerprint='
+assert_contains '/proc/${BASHPID:-$$}/fd/9'
 assert_contains 'exec 9<"$evidence_root"'
 assert_contains 'candidate evidence directory changed before locking'
 assert_not_contains '.docker-candidate.lock'
@@ -185,6 +186,10 @@ assert_contains 'network create --driver bridge --internal --ipv6=false'
 assert_contains 'assert_network_not_production'
 assert_contains 'validate_network_labels() {'
 assert_contains 'validate_network_members() {'
+assert_contains 'validate_network_members false'
+assert_contains 'validate_network_members true'
+assert_contains '[[ -z "$observed" || "$observed" == "$expected" ]]'
+assert_contains "network inspect --format '{{json .Containers}}'"
 assert_contains '--network "$network_name"'
 assert_contains '--network-alias postgres-candidate'
 assert_contains '--network-alias redis-candidate'
@@ -204,11 +209,19 @@ assert_contains '{{json .HostConfig.PortBindings}}'
 assert_contains '{{.HostConfig.PublishAllPorts}}'
 assert_contains 'json_is_empty_list_or_null "$port_bindings"'
 assert_contains 'network_count'
+assert_not_contains 'range $name, $_'
+assert_contains 'range $name, $network := .NetworkSettings.Networks'
+assert_contains "network member mismatch: observed="
+assert_contains "network inspect --format '{{json .Containers}}'"
+assert_contains '[[ "$expected_running" == '\''true'\'' ]]'
+assert_contains 'NetworkID is empty'
 # Docker's Go-template printf must receive a single \n escape.  Two
 # backslashes would be decoded to a literal "\n" and make the exact network
 # identity check fail on every real container.
 assert_contains 'printf "%s|%s\n" $name $network.NetworkID'
 assert_not_contains 'printf "%s|%s\\n" $name $network.NetworkID'
+assert_contains 'printf "%s|%s|%s|%t|%s\n" .Type .Name .Destination .RW .Source'
+assert_not_contains 'printf "%s|%s|%s|%s|%s\n" .Type .Name .Destination .RW .Source'
 assert_contains 'validate_candidate_tmpfs() {'
 assert_contains '[ADMIN_EMAIL]=gate-admin@example.invalid'
 assert_contains "'/tmp:rw,nosuid,nodev,noexec,size=64m'"
@@ -216,6 +229,11 @@ assert_contains "'/tmp:rw,nosuid,nodev,noexec,size=32m'"
 assert_contains "'/run/postgresql:rw,nosuid,nodev,noexec,size=16m'"
 assert_contains 'runtime_cap_add_matches() {'
 assert_contains 'runtime_cap_drop_matches() {'
+assert_not_contains "candidate_pg_psql 'SELECT 1;' -A -t"
+assert_not_contains "candidate_pg_psql 'SELECT 1;' -At"
+assert_contains 'swap_limit_supported_from_warnings() {'
+assert_contains 'docker_swap_limit_supported'
+assert_contains 'docker_info_warnings'
 assert_contains 'runtime_security_opt_matches() {'
 assert_contains 'validate_pid1_security() {'
 assert_contains 'NoNewPrivs:'
@@ -229,6 +247,13 @@ assert_contains 'for role in postgres redis app'
 assert_contains 'candidate_health_status "$role" "$container_id"'
 assert_contains 'candidate PostgreSQL must run as non-root'
 assert_contains 'candidate Redis must run as non-root'
+assert_not_contains 'local output status=0'
+assert_contains "local output='' status=0"
+assert_contains 'exec psql -X -A -t -v ON_ERROR_STOP=1'
+assert_contains 'sql="$3"'
+assert_contains ' -c "$sql"'
+assert_contains "unexpected SELECT 1 result: \$(printf '%q' \"\$pg_result\")"
+assert_contains "unexpected PING result: \$(printf '%q' \"\$redis_result\")"
 
 # All migrated switches are fail-closed in the disposable database and in the
 # public API smoke check.  The explicitly excluded legacy features are not
@@ -286,18 +311,21 @@ assert_contains "printf 'manual_review=required\\n'"
 assert_contains 'The approved release image is intentionally retained'
 assert_not_contains 'image rm'
 assert_not_contains 'image rmi'
-assert_not_contains 'docker_rpc inspect "$id" >/dev/null 2>&1 && failed='''true''''
+assert_not_contains "docker_rpc inspect \"\$id\" >/dev/null 2>&1 && failed='true'"
 assert_contains 'trap on_signal INT TERM HUP'
-assert_contains 'failure_reason='\''gate interrupted by signal'\''
+assert_contains "failure_reason='gate interrupted by signal'"
 assert_contains 'exit 130'
 assert_contains 'trap on_exit EXIT'
-assert_contains 'cleanup_resources >/dev/null 2>&1 || cleanup_failed='\''true'\'''
+assert_contains 'if ! cleanup_resources; then'
+assert_contains 'candidate cleanup did not remove every exact run resource'
+assert_contains 'if ! assert_production_unchanged exit_cleanup; then'
+assert_not_contains "cleanup_resources >/dev/null 2>&1 || cleanup_failed='true'"
 assert_contains 'evidence_publish_failed'
 assert_contains 'mv -- "$evidence_stage_dir" "$evidence_final_dir"'
 assert_contains 'sync -f "$evidence_root"'
 assert_before 'cleanup_resources() {' 'create_candidate_container() {'
-assert_before 'cleanup_resources >/dev/null 2>&1' 'write_evidence "$([[ "$final_status" -eq 0 ]]'
-assert_before 'assert_production_unchanged '\''before_evidence_publish'\''' "gate_result='passed'"
+assert_before 'if ! cleanup_resources; then' 'write_evidence "$([[ "$final_status" -eq 0 ]]'
+assert_before "assert_production_unchanged 'before_evidence_publish'" "gate_result='passed'"
 
 # Docker inspect returns status 1 for both a genuine "not found" result and
 # several daemon/CLI failures.  Exercise the helper with all four outcomes so
@@ -624,17 +652,21 @@ resolve_source="$(extract_function resolve_image_ref)"
 # local python3 shim keeps this test usable on Git Bash installations where the
 # python3 launcher is a Windows exit-code shim; Linux uses the real interpreter.
 cap_source="$(extract_function runtime_cap_add_matches)"
+swap_source="$(extract_function swap_limit_supported_from_warnings)"
 tmpfs_source="$(extract_function validate_candidate_tmpfs)"
 empty_source="$(extract_function json_is_empty_list_or_null)"
-[[ -n "$cap_source" && -n "$tmpfs_source" && -n "$empty_source" ]] || fail 'runtime validator functions not found'
+[[ -n "$cap_source" && -n "$swap_source" && -n "$tmpfs_source" && -n "$empty_source" ]] || fail 'runtime validator functions not found'
 (
   eval "$cap_source"
+  eval "$swap_source"
   cap_drop_source="$(extract_function runtime_cap_drop_matches)"
   security_source="$(extract_function runtime_security_opt_matches)"
   eval "$cap_drop_source"
   eval "$security_source"
   runtime_cap_add_matches app '["CHOWN","SETGID","SETUID"]'
   runtime_cap_add_matches postgres '["CHOWN","DAC_OVERRIDE","FOWNER","SETGID","SETUID"]'
+  runtime_cap_add_matches app '["CAP_CHOWN","CAP_SETGID","CAP_SETUID"]'
+  runtime_cap_add_matches postgres '["CAP_CHOWN","CAP_DAC_OVERRIDE","CAP_FOWNER","CAP_SETGID","CAP_SETUID"]'
   if runtime_cap_add_matches app '["CHOWN","SETGID","SETUID","NET_ADMIN"]'; then fail 'extra capability accepted'; fi
   if runtime_cap_add_matches app '["CHOWN","CHOWN","SETUID"]'; then fail 'duplicate capability accepted'; fi
   if runtime_cap_add_matches app '[]'; then fail 'empty capability set accepted'; fi
@@ -644,6 +676,10 @@ empty_source="$(extract_function json_is_empty_list_or_null)"
   if runtime_cap_drop_matches '[]' || runtime_cap_drop_matches '["ALL","NET_ADMIN"]'; then
     fail 'capability drop allowlist is not exact'
   fi
+  if swap_limit_supported_from_warnings '["WARNING: No swap limit support"]'; then
+    fail 'no-swap warning was treated as swap-limit support'
+  fi
+  swap_limit_supported_from_warnings '[]' || fail 'empty warnings were treated as no swap support'
   runtime_security_opt_matches '["no-new-privileges:true"]'
   if runtime_security_opt_matches '[]' || runtime_security_opt_matches '["no-new-privileges:true","seccomp=unconfined"]'; then
     fail 'security option allowlist is not exact'

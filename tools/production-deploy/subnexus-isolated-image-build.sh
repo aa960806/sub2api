@@ -802,7 +802,7 @@ validate_builder_container() {
       ;;
     *) return 1 ;;
   esac
-  [[ "$privileged" == 'true' || "$privileged" == 'false' ]] || return 1
+  [[ "$privileged" == 'false' ]] || return 1
   [[ "$security_opt" != *'seccomp=unconfined'* && "$security_opt" != *'apparmor=unconfined'* ]] || return 1
   [[ "$devices" == '[]' || "$devices" == 'null' ]] || return 1
   [[ "$device_requests" == '[]' || "$device_requests" == 'null' ]] || return 1
