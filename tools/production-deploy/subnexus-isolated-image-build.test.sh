@@ -138,6 +138,9 @@ assert_not_contains "--driver-opt 'pids-limit=512'"
 assert_contains 'docker_call update --memory 4g --memory-swap 4g'
 assert_contains '--cpu-period 100000 --cpu-quota 200000 --pids-limit 512 --restart no "$builder_id"'
 assert_contains 'cannot apply the BuildKit container resource limits'
+assert_contains 'docker_info_warnings="$(docker_call info --format'
+assert_contains 'swap_limit_supported_from_warnings'
+assert_contains 'DOCKER_SWAP_LIMIT_SUPPORTED'
 assert_contains "builder_validated='true'"
 assert_contains 'validate_builder_container "$builder_id" prebuild-cleanup'
 assert_contains 'expected_mount="volume|buildx_buildkit_${builder_name}0_state|/var/lib/buildkit|true"'
@@ -192,7 +195,8 @@ dockerfile_contract_source="$(sed -n '/^validate_dockerfile_pin_contract() {$/,/
 remove_context_source="$(sed -n '/^safe_remove_context() {$/,/^}$/p' "$subject")"
 baseline_objects_source="$(sed -n '/^assert_baseline_objects_unchanged() {$/,/^}$/p' "$subject")"
 absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
-[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" ]] || fail 'validator functions not found'
+swap_support_source="$(sed -n '/^swap_limit_supported_from_warnings() {$/,/^}$/p' "$subject")"
+[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" && -n "$swap_support_source" ]] || fail 'validator functions not found'
 (
   eval "$validator_source"
   eval "$repository_validator_source"
@@ -240,6 +244,17 @@ absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
   is_database_dump_path 'backend/migrations/123/subdir_snapshot.sql'
   is_database_dump_path 'backend/migrations/123evil_archive_snapshot.sql'
   if is_database_dump_path 'backend/migrations/archive.sql'; then fail 'ordinary migration SQL was treated as a dump'; fi
+)
+
+# A daemon warning is the only condition that permits Docker's -1
+# MemorySwap representation in strict builder validation.
+(
+  eval "$swap_support_source"
+  if swap_limit_supported_from_warnings '["WARNING: No swap limit support"]'; then
+    fail 'no-swap warning was treated as swap-limit support'
+  fi
+  swap_limit_supported_from_warnings '[]' || fail 'empty warning list was treated as no swap support'
+  swap_limit_supported_from_warnings '["WARNING: unrelated"]' || fail 'unrelated warning list was treated as no swap support'
 )
 
 # Context cleanup is restricted to the one fixed context below staging.

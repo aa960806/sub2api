@@ -80,6 +80,8 @@ docker_server_version=''
 docker_root_dir=''
 docker_swarm_state=''
 docker_security_options=''
+docker_info_warnings=''
+docker_swap_limit_supported=''
 docker_rpc_timeout_seconds=''
 build_timeout_seconds=''
 node_image_ref=''
@@ -655,7 +657,16 @@ validate_builder_container() {
     "$readonly_rootfs" == 'false' && "$mounts" == "$expected_mount" ]] || return 1
   case "$validation_mode" in
     strict)
-      [[ "$memory_swap" == '4294967296' && "$pids_limit" == '512' ]] || return 1
+      [[ "$pids_limit" == '512' ]] || return 1
+      if [[ "$memory_swap" == '4294967296' ]]; then
+        :
+      elif [[ "$memory_swap" == '-1' && "$docker_swap_limit_supported" == 'false' ]]; then
+        # WSL kernels without swap-limit support report -1 even after an
+        # explicit 4 GiB memory-swap request. The memory limit remains active.
+        :
+      else
+        return 1
+      fi
       ;;
     prebuild-cleanup)
       [[ "$memory_swap" == '-1' || "$memory_swap" == '4294967296' ]] || return 1
@@ -669,6 +680,11 @@ validate_builder_container() {
   [[ "$device_requests" == '[]' || "$device_requests" == 'null' ]] || return 1
   [[ "$volumes_from" == '[]' || "$volumes_from" == 'null' ]] || return 1
   [[ "$mounts" != *'docker.sock'* ]] || return 1
+}
+
+swap_limit_supported_from_warnings() {
+  local warnings="${1:-}"
+  [[ "${warnings,,}" != *'no swap limit support'* ]]
 }
 
 create_builder() {
@@ -923,6 +939,7 @@ write_metadata() {
     printf 'DOCKER_DAEMON_NAME=%s\n' "$docker_daemon_name"
     printf 'DOCKER_SERVER_VERSION=%s\n' "$docker_server_version"
     printf 'DOCKER_ROOT_DIR=%s\n' "$docker_root_dir"
+    printf 'DOCKER_SWAP_LIMIT_SUPPORTED=%s\n' "$docker_swap_limit_supported"
     printf 'BASE_IMAGES_FILE=base-images.txt\n'
     printf 'SUBNEXUS_CANDIDATE_NODE_IMAGE=%s\n' "$node_image_ref"
     printf 'SUBNEXUS_CANDIDATE_GOLANG_IMAGE=%s\n' "$golang_image_ref"
@@ -1278,6 +1295,12 @@ main() {
   docker_root_dir="$(docker_call info --format '{{.DockerRootDir}}')" || return 1
   docker_swarm_state="$(docker_call info --format '{{.Swarm.LocalNodeState}}')" || return 1
   docker_security_options="$(docker_call info --format '{{json .SecurityOptions}}')" || return 1
+  docker_info_warnings="$(docker_call info --format '{{json .Warnings}}')" || return 1
+  if swap_limit_supported_from_warnings "$docker_info_warnings"; then
+    docker_swap_limit_supported='true'
+  else
+    docker_swap_limit_supported='false'
+  fi
   [[ "$docker_daemon_id_start" =~ ^[A-Za-z0-9:_-]+$ ]] || fail 'Docker daemon ID is invalid' || return 1
   [[ ! "$docker_daemon_name" =~ (^|[^0-9])([0-9]{1,3}\.){3}[0-9]{1,3}([^0-9]|$) &&
     "${docker_daemon_name,,}" != *prod* && "${docker_daemon_name,,}" != *production* ]] ||
