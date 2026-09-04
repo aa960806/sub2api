@@ -1166,3 +1166,11 @@
 - gate 只清理本次候选对象；专用 daemon 当前仍保留用于测试的 synthetic `prod-app`/`prod-postgres`/`prod-redis` 容器及网络（无卷），不得对该 daemon 使用全局 prune。旧失败证据 `20260904T101111Z-...` 保留作历史审计，不能用于发布。
 - 当前门禁已从“Docker 待重跑”更新为“候选构建与 runtime gate 通过”；仍必须由维护者人工复核发布清单并批准维护窗口，`cutover_allowed=false`、`manual_review_required=true`。生产迁移、候选上传/启动、停旧容器、切流和功能开关开启均未执行；下一步仅可在维护者批准后准备线上候选资源，并在最终切换前停止。
 - 本轮文档回滚点为提交前 `02774d028d076e934a59f04fd1ee98598ac693a1`；代码和专用 daemon 资产均不因文档回滚删除或恢复。
+
+## 2026-09-04（Asia/Shanghai）— 生产 prepare 的 Docker 29 运行时合同修复
+
+- 上一轮线上 `prepare` 两次均在备份、数据库写入、迁移、镜像加载和容器操作之前停止；原因是实时应用的 Docker 29 `HostConfig.ConsoleSize=[49,202]` 与 json-file 日志轮转 `Config={max-file:5,max-size:20m}` 未被旧合同复现。应用容器 `be459424b327...`、PostgreSQL、Redis 和公网流量均未改变。
+- 提交 `617a2fdc1189a452f251f90a6b8e4d554ac2bd05` 仅修改生产切换脚本及其测试：`ConsoleSize` 在 `Tty=false` 时严格校验非负二维值并归一化；日志配置只允许 `json-file` 与成对的 `max-file`/`max-size`，捕获为 `log-config.json`、写入 manifest SHA，并在候选 `docker create` 时显式传递 `--log-driver`/`--log-opt`；未知驱动、字段、缺项、零值和非法值 fail-closed。
+- 脚本 SHA256=`98998993c01f7e071b491c8572895914d100ed15ea686df6b50bd1680239991c`，测试脚本 SHA256=`bced4ee8b7707186f1c0fa681e6320a5ad18e27856ece887bbe008e66c0a1203`。Windows Git Bash 五套夹具均通过；隔离 WSL Linux 五套夹具均通过，并实际验证 Docker 29 日志参数复现。候选应用代码、镜像 ID、归档 SHA 和 gate 证据仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1` / `sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979` / `45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`，无需重建应用镜像。
+- 通过 SSH 只读复核（2026-09-04 19:54 Asia/Shanghai）确认线上应用仍 healthy、`127.0.0.1:18083 -> 8080`，PostgreSQL/Redis 仍运行；服务器已保留两个失败 `prepare` 目录，仅含早期 source-tree 审计文件，没有候选容器或生产备份被误用。新脚本尚未安装，尚未重新执行 prepare。
+- 下一步：推送提交，使用唯一文件名安装 root-only 新脚本；先核对候选归档/gate SHA、源码 detached HEAD 和 Docker/磁盘基线，再运行不停止线上应用的 `prepare`。只有 `READY`、五项备份、设置快照、依赖/容器身份和 manifest 完整核验通过后，才生成最终 `switch`/`rollback` 单行命令并停在人工切换前。所有迁移功能继续默认关闭。
