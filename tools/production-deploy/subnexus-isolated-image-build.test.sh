@@ -133,9 +133,13 @@ assert_contains "--driver-opt 'memory=4g'"
 assert_contains "--driver-opt 'memory-swap=4g'"
 assert_contains "--driver-opt 'cpu-quota=200000'"
 assert_contains "--driver-opt 'cpu-period=100000'"
-assert_contains "--driver-opt 'pids-limit=512'"
 assert_contains "--driver-opt 'restart-policy=no'"
-assert_contains "--driver-opt 'pids-limit=512'"
+assert_not_contains "--driver-opt 'pids-limit=512'"
+assert_contains 'docker_call update --pids-limit 512 "$builder_id"'
+assert_contains 'cannot apply the BuildKit container PID limit'
+assert_contains "builder_validated='true'"
+assert_contains 'validate_builder_container "$builder_id" prebuild-cleanup'
+assert_contains "prebuild-cleanup) [[ \"\$pids_limit\" == '0' || \"\$pids_limit\" == '512' ]]"
 assert_contains 'setsid --wait'
 assert_contains 'build_pid_file'
 assert_contains 'subnexus-build-wrapper'

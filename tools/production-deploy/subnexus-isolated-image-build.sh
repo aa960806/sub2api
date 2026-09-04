@@ -32,6 +32,7 @@ build_pgid=''
 build_pid_file=''
 builder_created='false'
 builder_create_attempted='false'
+builder_validated='false'
 builder_id=''
 builder_name=''
 builder_network_id=''
@@ -618,7 +619,7 @@ create_builder_network() {
 }
 
 validate_builder_container() {
-  local id="$1" observed_name observed_image network_mode ports privileged pid_mode ipc_mode mounts labels
+  local id="$1" validation_mode="${2:-strict}" observed_name observed_image network_mode ports privileged pid_mode ipc_mode mounts labels
   local memory memory_swap cpu_quota cpu_period pids_limit restart_policy security_opt devices device_requests volumes_from
   [[ "$id" =~ ^[0-9a-f]{64}$ ]] || return 1
   observed_name="$(docker_call inspect --format '{{.Name}}' "$id")" || return 1
@@ -645,10 +646,14 @@ validate_builder_container() {
     ( "$network_mode" == "$builder_network_name" || "$network_mode" == "$builder_network_id" ) &&
     "$memory" == '4294967296' && "$memory_swap" == '4294967296' &&
     "$cpu_quota" == '200000' && "$cpu_period" == '100000' &&
-    "$pids_limit" == '512' &&
     ( "$ports" == '{}' || "$ports" == 'null' ) && "$pid_mode" == '' && "$ipc_mode" == 'private' &&
     "$restart_policy" == 'no' &&
     "$labels" == *'com.docker.buildx.builder'* && "$labels" == *'com.docker.buildx.driver'* ]] || return 1
+  case "$validation_mode" in
+    strict) [[ "$pids_limit" == '512' ]] || return 1 ;;
+    prebuild-cleanup) [[ "$pids_limit" == '0' || "$pids_limit" == '512' ]] || return 1 ;;
+    *) return 1 ;;
+  esac
   [[ "$privileged" == 'true' || "$privileged" == 'false' ]] || return 1
   [[ "$security_opt" != *'seccomp=unconfined'* && "$security_opt" != *'apparmor=unconfined'* ]] || return 1
   [[ "$devices" == '[]' || "$devices" == 'null' ]] || return 1
@@ -665,7 +670,7 @@ create_builder() {
     --driver-opt "image=$buildkit_image_ref" --driver-opt "network=$builder_network_name" \
     --driver-opt 'memory=4g' --driver-opt 'memory-swap=4g' \
     --driver-opt 'cpu-quota=200000' --driver-opt 'cpu-period=100000' \
-    --driver-opt 'pids-limit=512' --driver-opt 'restart-policy=no')" ||
+    --driver-opt 'restart-policy=no')" ||
     fail 'cannot create isolated BuildKit builder' || return 1
   output="${output//$'\r'/}"; output="${output//$'\n'/}"
   [[ "$output" == "$builder_name" ]] || fail 'BuildKit returned an unexpected builder name' || return 1
@@ -678,7 +683,10 @@ create_builder() {
     fail 'cannot locate isolated BuildKit container' || return 1
   [[ "$builder_listing" =~ ^[0-9a-f]{64}$ ]] || fail 'BuildKit builder container identity is ambiguous' || return 1
   builder_id="$builder_listing"
+  docker_call update --pids-limit 512 "$builder_id" >/dev/null ||
+    fail 'cannot apply the BuildKit container PID limit' || return 1
   validate_builder_container "$builder_id" || fail 'BuildKit builder container isolation validation failed' || return 1
+  builder_validated='true'
 }
 
 kill_build_group() {
@@ -973,7 +981,13 @@ cleanup_builder_and_network() {
     if [[ "$status" -eq 0 && -n "$builder_id" ]]; then
       if observed_name="$(docker_call inspect --format '{{.Name}}' "$builder_id" 2>/dev/null)"; then
         [[ "$observed_name" == "/buildx_buildkit_${builder_name}0" ]] || status=1
-        [[ "$status" -eq 0 ]] && validate_builder_container "$builder_id" || status=1
+        if [[ "$status" -eq 0 ]]; then
+          if [[ "$builder_validated" == 'true' ]]; then
+            validate_builder_container "$builder_id" || status=1
+          else
+            validate_builder_container "$builder_id" prebuild-cleanup || status=1
+          fi
+        fi
       else
         # The container may have exited and been removed by Buildx already;
         # confirm the daemon is responsive, then let buildx rm reconcile its

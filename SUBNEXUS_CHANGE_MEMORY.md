@@ -1099,3 +1099,10 @@
 - 一次独立 daemon 镜像元数据试验误删了该 daemon 内的 Node digest 镜像；Docker events 已确认删除只发生在 `SubNexusBuild20260904` 的专用 daemon，随后按同一固定 digest 重新加载。未触碰 Docker Desktop 或服务器；真实构建重跑前必须再次核对五个基础镜像及 0 容器/0 卷/仅默认网络。
 - Git Bash 与 WSL/Linux 均通过四个发布脚本 `bash -n`、isolated-image-build、Docker candidate-check、readonly-preflight、Redis restore-check 测试；动态夹具覆盖 context 实际删除以及失败路径的基础镜像缺失/额外镜像检测；Windows 无可用 Python 时 tar 权限动态夹具明确跳过，WSL 中实际执行并通过。`git diff --check` 通过。
 - 当前仍未得到成功的候选镜像/归档，Docker Release Gate 继续为未通过；下一步是提交本次修复、把 WSL detached clone 固定到新 SHA，仅在专用 daemon 重跑真实构建。不得连接生产数据库、启动线上候选、执行生产迁移、停止旧应用或切流。
+
+## 2026-09-04（Asia/Shanghai）— Buildx PID 限制参数兼容修复
+
+- 将加固提交 `75a3a33e6d2a4dc63434879bd66c78337dd904fc` 同步到 `/work/sub2api` 的 clean detached clone 后，在专用 daemon 发起真实构建；构建在创建 BuildKit builder 时停止，Buildx 0.30.1 明确返回 `invalid driver option pids-limit for docker-container driver`，尚未进入 Dockerfile 编译或依赖下载。
+- 失败路径已自动删除临时 builder/network/staging；人工复核仍为五个固定基础镜像、0 容器、0 卷、仅 `bridge/host/none`，没有候选镜像或归档，Docker Desktop 和服务器均未访问。
+- 保留 PID 上限，不再把 `pids-limit` 作为 Buildx driver option；脚本在 bootstrap 后用唯一完整 builder 容器 ID 执行 `docker update --pids-limit 512`，随后继续通过 inspect 强制验证 `HostConfig.PidsLimit=512`，验证完成前不会运行项目 build。若 update/验证失败，清理仅在其他完整身份合同仍匹配且 PID 为默认 0 或目标 512 时删除该预构建容器；已验证/已构建路径仍严格要求 512。
+- 测试明确拒绝重新加入无效 driver option，并要求容器级 PID 更新与失败诊断；Git Bash/WSL 的 `bash -n` 和 isolated-image-build 测试通过。修复提交后须再次同步 detached clone 并从完整 daemon 基线重跑。
