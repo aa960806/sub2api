@@ -3223,17 +3223,14 @@ validate_run_directory() {
   actual="$(hash_file "$run_dir/app-data-source.identity")" || fail 'cannot hash application data source identity'
   [[ "$identity_expected" == "$actual" ]] || fail 'application data source identity hash mismatch'
   validate_app_data_source_identity_file
-  if manifest_has_key application_data_archive_policy_sha256; then
+  if [[ "$validation_scope" == switch ]]; then
+    manifest_has_key application_data_archive_policy_sha256 || fail 'manifest application data archive policy SHA is missing'
     archive_policy_hash="$(manifest_value application_data_archive_policy_sha256)"
     validate_application_data_archive_policy
     valid_sha64 "$archive_policy_hash" || fail 'manifest application data archive policy SHA is invalid'
     [[ "$archive_policy_hash" == "$app_data_archive_policy_sha256" ]] || fail 'manifest application data archive policy hash mismatch'
   else
-    [[ "$validation_scope" == rollback ]] || fail 'manifest application data archive policy SHA is missing'
-    [[ ! -e "$run_dir/application-data-exclusions.txt" && ! -L "$run_dir/application-data-exclusions.txt" &&
-       ! -e "$run_dir/application-data-exclusions.txt.sha256" && ! -L "$run_dir/application-data-exclusions.txt.sha256" ]] ||
-      fail 'legacy run has partial application data archive policy evidence'
-    log 'Legacy run has no application data archive policy evidence; rollback does not read the archive.'
+    log 'Rollback does not read application data archive policy evidence; continuing with container and settings recovery checks.'
   fi
   closed_hash="$(manifest_value settings_closed_snapshot_sha256)"
   case "$state" in

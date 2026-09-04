@@ -139,8 +139,7 @@ assert_contains 'args+=(--log-opt "$key=$value")'
 assert_contains 'app_data_archive_exclusion_pattern='
 assert_contains 'application-data-exclusions.txt'
 assert_contains "app_data_archive_exclusion_pattern='./logs/*.log'"
-assert_contains 'legacy run has partial application data archive policy evidence'
-assert_contains 'Legacy run has no application data archive policy evidence'
+assert_contains 'Rollback does not read application data archive policy evidence'
 assert_not_contains '--ignore-failed-read'
 assert_not_contains 'warning=no-file-changed'
 
