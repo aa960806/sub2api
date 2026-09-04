@@ -100,6 +100,22 @@ bash "$verified_script" "$source_root" "$approved_commit_sha" '/work/subnexus-ar
 
 缺少该环境变量、格式错误、Git blob 与批准值不一致，或执行文件被替换时，脚本必须在 Docker context inspect 之前退出。任何脚本变更都要重新生成批准提交/脚本 SHA 并重新审核。
 
+### 3.1 Docker 环境重复键兼容
+
+`docker inspect .Config.Env` 在少数历史容器中可能包含同名键。切换脚本默认按严格模式拒绝任何重复键，避免把 Docker 的隐式覆盖规则误当成已批准配置。当前线上只读检查确认过的兼容对象是 `SERVER_TRUSTED_PROXIES`；这不是对未来其他键的通行许可。
+
+只有在维护者逐项复核当前 live 容器后，`prepare` 才可以同时接收以下三个独立值：
+
+```text
+SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM=I_UNDERSTAND_DOCKER_ENV_LAST_WINS
+SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS=SERVER_TRUSTED_PROXIES
+SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256=SERVER_TRUSTED_PROXIES=<最终出现值的 64 位小写 SHA256>
+```
+
+`EXPECTED_SHA256` 是同名键最后一次出现的值的 SHA-256，不是键名、整行或环境文件的哈希。批准值必须来自单独的只读复核记录；不要在调用 `prepare` 的同一条命令中读取明文、现算现批或把值写入 shell 历史。键和哈希列表必须按键排序、无重复，并且每个重复键都要有对应哈希。确认值、键清单或哈希任一缺失/不匹配，脚本都会在备份、数据库写入、容器停止之前失败关闭。
+
+通过后，脚本只把每个键最后一项写入 root-only 的 `container.env`（0600），并在 `environment-duplicates.tsv` 中记录出现次数、位置和各值哈希；证据文件不记录环境明文。manifest 固定规范化环境文件和证据文件的 SHA-256。`switch` 前会重新检查 live 容器的键序列、选中值哈希和规范化环境哈希；live 序列发生漂移会停止切换。候选容器若由 Docker 创建时已经把重复项规范化为唯一键，这是允许的，前提是规范化文件哈希仍与 prepare 完全一致。旧的无该 evidence 字段的 prepared run 按历史严格无重复合同兼容读取，不会获得 last-wins 豁免。
+
 ## 4. 备份与候选启动
 
 1. 维护窗口开始前停止旧应用的写流量或将入口置于维护页；数据库和 Redis 保持运行。

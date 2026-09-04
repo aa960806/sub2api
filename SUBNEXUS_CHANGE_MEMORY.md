@@ -1174,3 +1174,12 @@
 - 脚本 SHA256=`98998993c01f7e071b491c8572895914d100ed15ea686df6b50bd1680239991c`，测试脚本 SHA256=`bced4ee8b7707186f1c0fa681e6320a5ad18e27856ece887bbe008e66c0a1203`。Windows Git Bash 五套夹具均通过；隔离 WSL Linux 五套夹具均通过，并实际验证 Docker 29 日志参数复现。候选应用代码、镜像 ID、归档 SHA 和 gate 证据仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1` / `sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979` / `45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`，无需重建应用镜像。
 - 通过 SSH 只读复核（2026-09-04 19:54 Asia/Shanghai）确认线上应用仍 healthy、`127.0.0.1:18083 -> 8080`，PostgreSQL/Redis 仍运行；服务器已保留两个失败 `prepare` 目录，仅含早期 source-tree 审计文件，没有候选容器或生产备份被误用。新脚本尚未安装，尚未重新执行 prepare。
 - 下一步：推送提交，使用唯一文件名安装 root-only 新脚本；先核对候选归档/gate SHA、源码 detached HEAD 和 Docker/磁盘基线，再运行不停止线上应用的 `prepare`。只有 `READY`、五项备份、设置快照、依赖/容器身份和 manifest 完整核验通过后，才生成最终 `switch`/`rollback` 单行命令并停在人工切换前。所有迁移功能继续默认关闭。
+
+## 2026-09-04（Asia/Shanghai）— 重复 Docker 环境键的 fail-closed 兼容合同（未提交）
+
+- 本轮仅修改 `F:\MySub2\sub2api` 的 `feature/subnexus-migration` 工作树中的生产切换脚本、其夹具测试和切换手册；未读取或修改 `F:\Sub2Api\SubNexus`，未修改 fork `main`，未连接线上服务器或生产 PostgreSQL/Redis/Nginx，也未执行线上备份、迁移、部署、重启、切流或开关变更。
+- 线上只读复核此前发现 `SERVER_TRUSTED_PROXIES` 在 Docker `Config.Env` 中重复。脚本仍默认严格拒绝重复键；兼容路径必须同时提供显式确认 token、精确键 allowlist 和每个重复键最后值的独立 SHA-256。实际环境值不写入 evidence/日志；`container.env` 仅作为 root-only 0600 的规范化运行元数据保存。
+- 新增 `environment-duplicates.tsv` 脱敏证据及 manifest/env/evidence SHA 合同，覆盖 prepare、live replay、candidate replay。候选被 Docker 规范化为唯一键时，只要最终规范化环境哈希一致即接受；live 的重复顺序、来源数组或选中值发生漂移则 fail-closed。旧的无新字段 prepared run 继续按历史严格无重复合同回滚兼容。
+- 修复一个重要状态边界：replay 现在把观测结果写入独立 observed 状态，不会覆盖准备合同；因此候选 canonicalization 后，后续 preserved-container 合同和自动回滚仍按原始 last-wins 合同复核。
+- 测试：Windows Git Bash 的脚本语法、静态/夹具测试通过（系统 `python3` 为 AppInstaller redirector，动态夹具按设计跳过）；`SubNexusBuild20260904` WSL/Linux 中 `bash -n` 与 production cutover 全部夹具通过，动态覆盖无批准/错误 hash/额外 duplicate 拒绝、last-wins 归一化、无明文 evidence、live 序列漂移、candidate canonicalization 和 runtime hash 等价性；`git diff --check` 通过。
+- 本轮尚未提交或推送；需由维护者复核差异后重新计算批准脚本 SHA，再决定是否同步 detached clone/重跑线上只读 `prepare`。在此之前 `cutover_allowed=false`，所有迁移功能继续默认关闭。

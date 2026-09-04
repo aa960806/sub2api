@@ -37,6 +37,7 @@ readonly production_source_root='/srv/subnexus-repo'
 readonly alternate_production_source_root='/root/subnexus-repo'
 readonly cutover_approval_token='I_UNDERSTAND_SHORT_PRODUCTION_WINDOW'
 readonly rollback_approval_token='I_UNDERSTAND_APPLICATION_ROLLBACK'
+readonly environment_duplicate_approval_token='I_UNDERSTAND_DOCKER_ENV_LAST_WINS'
 readonly final_free_reserve_bytes=8589934592
 readonly postgresql_dump_budget_limit=12884901888
 readonly redis_rdb_budget_limit=4294967296
@@ -105,6 +106,17 @@ app_data_archive_budget_bytes=''
 docker_timeout_seconds=''
 script_path=''
 script_sha256=''
+environment_duplicate_mode='strict'
+environment_duplicate_keys=''
+environment_duplicate_expected_hashes=''
+environment_duplicate_evidence_sha256=''
+environment_file_sha256=''
+environment_duplicate_legacy=0
+environment_observed_mode=''
+environment_observed_keys=''
+environment_observed_expected_hashes=''
+environment_observed_evidence_sha256=''
+environment_observed_file_sha256=''
 stop_timeout_seconds=''
 candidate_health_timeout_seconds=''
 rollback_health_timeout_seconds=''
@@ -134,6 +146,14 @@ prepare creates a root-only run directory and backups while the live app is
 still serving.  switch and rollback require the operator confirmation token:
   SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW
   SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK
+
+Duplicate Docker environment keys are rejected by default.  A prepare run may
+opt into a narrowly reviewed last-wins compatibility case only when all three
+values are supplied independently (keys and hashes are comma-separated and
+sorted by key):
+  SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM=I_UNDERSTAND_DOCKER_ENV_LAST_WINS
+  SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS=SERVER_TRUSTED_PROXIES
+  SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256=SERVER_TRUSTED_PROXIES=<64 lowercase hex>
 
 The approved script SHA must be supplied independently; it must not be
 computed in the same command that invokes this tool.  The candidate archive
@@ -384,6 +404,11 @@ manifest_value() {
   awk -F= -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); print; exit}' "$file"
 }
 
+manifest_has_key() {
+  local key="$1" file="${2:-$manifest_file}"
+  awk -F= -v wanted="$key" '$1 == wanted { found = 1; exit } END { exit(found ? 0 : 1) }' "$file"
+}
+
 manifest_set() {
   local key="$1" value="$2" tmp
   [[ "$key" =~ ^[A-Za-z0-9_.-]+$ ]] || fail 'manifest key is invalid'
@@ -456,6 +481,37 @@ env_value() {
   awk -F= -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); sub(/\r$/, ""); print; exit}' "$file"
 }
 
+validate_environment_duplicate_inputs() {
+  local keys_raw="${1:-}" hashes_raw="${2:-}" item key digest
+  local -a keys=() hashes=()
+  local -A seen_keys=() seen_hashes=()
+  [[ "${#keys_raw}" -le 2048 && "${#hashes_raw}" -le 4096 ]] ||
+    fail 'duplicate environment approval input is too long'
+  if [[ -n "$keys_raw" ]]; then
+    IFS=',' read -r -a keys <<< "$keys_raw"
+    for key in "${keys[@]}"; do
+      [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+        fail 'duplicate environment approval key is invalid'
+      [[ -z "${seen_keys[$key]+x}" ]] || fail 'duplicate environment approval key is repeated'
+      seen_keys[$key]=1
+    done
+  fi
+  if [[ -n "$hashes_raw" ]]; then
+    IFS=',' read -r -a hashes <<< "$hashes_raw"
+    for item in "${hashes[@]}"; do
+      key="${item%%=*}"
+      digest="${item#*=}"
+      [[ "$item" == *=* && "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$digest" =~ ^[0-9a-f]{64}$ ]] ||
+        fail 'duplicate environment expected value hash is invalid'
+      [[ -z "${seen_hashes[$key]+x}" ]] || fail 'duplicate environment expected value hash is repeated'
+      seen_hashes[$key]=1
+      [[ -n "${seen_keys[$key]+x}" ]] || fail 'duplicate environment expected value hash has an unapproved key'
+    done
+  fi
+  [[ "${#keys[@]}" -eq "${#hashes[@]}" ]] ||
+    fail 'duplicate environment keys and expected hashes must have the same count'
+}
+
 validate_environment_file() {
   local file="$1" line key value
   local -A seen=()
@@ -476,6 +532,377 @@ validate_environment_file() {
     [[ "$value" != *$'\r'* && "$value" != *$'\n'* ]] ||
       fail "container environment metadata value is multiline: $key"
   done < "$file"
+}
+
+validate_environment_duplicate_evidence() {
+  local evidence_file="$1" env_file="$2" expected_mode="${3:-}" expected_keys="${4:-}" expected_hashes="${5:-}"
+  python3 - "$evidence_file" "$env_file" "$expected_mode" "$expected_keys" "$expected_hashes" <<'PY'
+import hashlib
+import re
+import sys
+
+evidence_path, env_path, expected_mode, expected_keys, expected_hashes = sys.argv[1:]
+
+def reject(message):
+    raise SystemExit(message)
+
+def read_bytes(path):
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError as exc:
+        reject("cannot read environment metadata evidence")
+
+evidence = read_bytes(evidence_path)
+env_bytes = read_bytes(env_path)
+try:
+    evidence_text = evidence.decode("utf-8")
+    env_text = env_bytes.decode("utf-8")
+except UnicodeDecodeError:
+    reject("environment metadata evidence is not UTF-8")
+if not evidence_text or not evidence_text.endswith("\n"):
+    reject("environment metadata evidence is incomplete")
+if any("\r" in line for line in evidence_text.splitlines()):
+    reject("environment metadata evidence contains a carriage return")
+
+headers = {}
+rows = []
+for line in evidence_text.splitlines():
+    if line.startswith("duplicate|"):
+        rows.append(line.split("|"))
+        continue
+    if "=" not in line:
+        reject("environment metadata evidence contains a malformed line")
+    key, value = line.split("=", 1)
+    if key in headers:
+        reject("environment metadata evidence contains duplicate fields")
+    if key not in {
+        "format", "mode", "source_entries", "normalized_entries", "duplicate_keys",
+        "source_env_sha256", "normalized_env_sha256",
+    }:
+        reject("environment metadata evidence contains an unknown field")
+    headers[key] = value
+required = {
+    "format", "mode", "source_entries", "normalized_entries", "duplicate_keys",
+    "source_env_sha256", "normalized_env_sha256",
+}
+if set(headers) != required:
+    reject("environment metadata evidence is missing required fields")
+if headers["format"] != "1":
+    reject("environment metadata evidence format is unsupported")
+mode = headers["mode"]
+if mode not in ("strict", "last-wins"):
+    reject("environment metadata evidence mode is invalid")
+if expected_mode and mode != expected_mode:
+    reject("environment metadata evidence mode changed")
+
+def parse_count(value):
+    if not re.fullmatch(r"[0-9]+", value):
+        reject("environment metadata evidence count is invalid")
+    return int(value)
+
+source_entries = parse_count(headers["source_entries"])
+normalized_entries = parse_count(headers["normalized_entries"])
+if normalized_entries > source_entries:
+    reject("environment metadata evidence entry counts are inconsistent")
+for name in ("source_env_sha256", "normalized_env_sha256"):
+    if not re.fullmatch(r"[0-9a-f]{64}", headers[name]):
+        reject("environment metadata evidence hash is invalid")
+if hashlib.sha256(env_bytes).hexdigest() != headers["normalized_env_sha256"]:
+    reject("normalized environment metadata hash does not match evidence")
+
+def parse_keys(value):
+    if value == "":
+        return []
+    result = value.split(",")
+    if result != sorted(result) or len(set(result)) != len(result):
+        reject("environment metadata duplicate key list is not canonical")
+    if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", item) for item in result):
+        reject("environment metadata duplicate key list is invalid")
+    return result
+
+duplicate_keys = parse_keys(headers["duplicate_keys"])
+if expected_keys:
+    if ",".join(duplicate_keys) != expected_keys:
+        reject("environment metadata duplicate key list changed")
+elif duplicate_keys:
+    reject("environment metadata contains unapproved duplicate keys")
+
+expected_map = {}
+if expected_hashes:
+    for item in expected_hashes.split(","):
+        key, separator, digest = item.partition("=")
+        if not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            reject("environment metadata expected hash list is invalid")
+        if key in expected_map:
+            reject("environment metadata expected hash list is repeated")
+        expected_map[key] = digest
+    if list(expected_map) != sorted(expected_map):
+        reject("environment metadata expected hash list is not canonical")
+if set(expected_map) != set(duplicate_keys):
+    reject("environment metadata expected hash list does not match duplicate keys")
+
+seen_rows = set()
+for row in rows:
+    if len(row) != 6 or row[0] != "duplicate":
+        reject("environment metadata duplicate evidence row is malformed")
+    _, key, count_text, last_index_text, hashes_text, selected_hash = row
+    if key in seen_rows or key not in duplicate_keys:
+        reject("environment metadata duplicate evidence row is unexpected")
+    seen_rows.add(key)
+    count = parse_count(count_text)
+    if count < 2 or not re.fullmatch(r"[0-9]+", last_index_text):
+        reject("environment metadata duplicate evidence count is invalid")
+    last_index = int(last_index_text)
+    if last_index < 1 or last_index > source_entries:
+        reject("environment metadata duplicate evidence position is invalid")
+    hashes = hashes_text.split(",")
+    if len(hashes) != count or any(not re.fullmatch(r"[0-9a-f]{64}", item) for item in hashes):
+        reject("environment metadata duplicate value hash list is invalid")
+    if selected_hash != hashes[-1] or expected_map.get(key, selected_hash) != selected_hash:
+        reject("environment metadata selected duplicate value hash is not approved")
+if set(seen_rows) != set(duplicate_keys):
+    reject("environment metadata duplicate evidence rows are incomplete")
+if mode == "strict":
+    if duplicate_keys or rows or source_entries != normalized_entries:
+        reject("strict environment metadata contains duplicate evidence")
+else:
+    if not duplicate_keys or source_entries <= normalized_entries:
+        reject("last-wins environment metadata has no duplicate entries")
+
+lines = env_text.splitlines(keepends=True)
+if any(not line.endswith("\n") or "\r" in line for line in lines):
+    reject("normalized environment metadata has invalid line endings")
+keys = []
+for line in lines:
+    entry = line[:-1]
+    key, separator, value = entry.partition("=")
+    if not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or "\x00" in value or "\n" in value:
+        reject("normalized environment metadata entry is malformed")
+    if key in keys:
+        reject("normalized environment metadata contains duplicate keys")
+    keys.append(key)
+if len(keys) != normalized_entries:
+    reject("normalized environment metadata entry count does not match evidence")
+PY
+}
+
+capture_environment_metadata() {
+  local id="$1" env_file="${2:--}" evidence_file="${3:--}" phase="${4:-prepare}"
+  local expected_mode="${5:-}" expected_keys="${6:-}" expected_hashes="${7:-}"
+  local confirm allowlist result observed_mode observed_keys observed_hashes observed_env_sha observed_evidence_sha
+  local source_count normalized_count extra
+  [[ "$phase" == prepare || "$phase" == replay || "$phase" == replay-candidate ]] || fail 'environment metadata capture phase is invalid'
+  if [[ "$phase" == prepare ]]; then
+    confirm="${SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM:-}"
+    allowlist="${SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS:-}"
+    expected_mode=''
+    expected_keys=''
+    expected_hashes="${SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256:-}"
+    validate_environment_duplicate_inputs "$allowlist" "$expected_hashes"
+  else
+    confirm=''
+    allowlist="$expected_keys"
+    validate_environment_duplicate_inputs "$allowlist" "$expected_hashes"
+  fi
+  result="$(docker_rpc inspect --format '{{json .Config.Env}}' "$id" |
+    python3 -c '
+import hashlib
+import json
+import os
+import re
+import sys
+
+env_path, evidence_path, phase, confirm, allowlist, expected_mode, expected_keys, expected_hashes, approval_token = sys.argv[1:]
+
+def reject(message):
+    raise SystemExit(message)
+
+def parse_keys(raw):
+    if raw == "":
+        return []
+    values = raw.split(",")
+    if values != sorted(values) or len(values) != len(set(values)):
+        reject("duplicate environment key allowlist must be sorted and unique")
+    if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) for value in values):
+        reject("duplicate environment key allowlist contains an invalid key")
+    return values
+
+def parse_hashes(raw):
+    if raw == "":
+        return {}
+    result = {}
+    for item in raw.split(","):
+        key, separator, digest = item.partition("=")
+        if not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            reject("duplicate environment expected value hash is invalid")
+        if key in result:
+            reject("duplicate environment expected value hash is repeated")
+        result[key] = digest
+    if list(result) != sorted(result):
+        reject("duplicate environment expected value hash list must be sorted")
+    return result
+
+try:
+    raw = json.load(sys.stdin)
+except (ValueError, TypeError):
+    reject("Docker environment metadata is not valid JSON")
+if not isinstance(raw, list):
+    reject("Docker environment metadata is not an array")
+
+entries = []
+for index, item in enumerate(raw, 1):
+    if not isinstance(item, str) or "=" not in item:
+        reject("Docker environment metadata contains an unassigned entry")
+    key, value = item.split("=", 1)
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+        reject("Docker environment metadata contains an invalid key")
+    if any(char in value for char in ("\x00", "\r", "\n")):
+        reject("Docker environment metadata contains a forbidden control character")
+    entries.append((key, value, item, index))
+
+occurrences = {}
+for key, value, item, index in entries:
+    occurrences.setdefault(key, []).append((value, item, index))
+duplicate_keys = sorted(key for key, values in occurrences.items() if len(values) > 1)
+allowed = parse_keys(allowlist)
+approved_hashes = parse_hashes(expected_hashes)
+if phase == "prepare":
+    if duplicate_keys:
+        if confirm != approval_token:
+            reject("duplicate environment metadata requires explicit last-wins confirmation")
+        if allowed != duplicate_keys:
+            reject("duplicate environment metadata keys do not match the explicit allowlist")
+        if set(approved_hashes) != set(duplicate_keys):
+            reject("duplicate environment metadata requires an expected hash for every key")
+    elif confirm or allowed or approved_hashes:
+        reject("duplicate environment approval was supplied but no duplicate key exists")
+elif phase in ("replay", "replay-candidate"):
+    if expected_mode not in ("strict", "last-wins"):
+        reject("prepared environment duplicate mode is invalid")
+    if expected_mode == "strict" and duplicate_keys:
+        reject("a new duplicate environment key appeared after prepare")
+    if expected_mode == "last-wins":
+        if allowed != duplicate_keys or set(approved_hashes) != set(duplicate_keys):
+            if phase != "replay-candidate" or duplicate_keys:
+                reject("prepared duplicate environment contract no longer matches")
+else:
+    reject("unsupported environment metadata capture phase")
+
+mode = "last-wins" if duplicate_keys else "strict"
+if phase == "replay" and mode != expected_mode:
+    reject("prepared environment duplicate mode changed")
+if phase == "replay-candidate" and mode not in (expected_mode, "strict"):
+    reject("candidate environment duplicate mode is invalid")
+for key in duplicate_keys:
+    selected_hash = hashlib.sha256(occurrences[key][-1][0].encode("utf-8")).hexdigest()
+    if approved_hashes.get(key) != selected_hash:
+        reject("the selected last environment value does not match its approved hash")
+
+selected = []
+for key, values in occurrences.items():
+    selected.append((values[-1][2], values[-1][1]))
+selected.sort(key=lambda item: item[0])
+normalized_entries = [item for _, item in selected]
+env_blob = "".join(item + "\n" for item in normalized_entries).encode("utf-8")
+source_digest = hashlib.sha256(json.dumps([item for _, _, item, _ in entries], ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+normalized_digest = hashlib.sha256(env_blob).hexdigest()
+canonical_hashes = ",".join(key + "=" + approved_hashes[key] for key in sorted(approved_hashes) if key in duplicate_keys)
+evidence_lines = [
+    "format=1\n",
+    "mode=" + mode + "\n",
+    "source_entries=" + str(len(entries)) + "\n",
+    "normalized_entries=" + str(len(normalized_entries)) + "\n",
+    "duplicate_keys=" + ",".join(duplicate_keys) + "\n",
+    "source_env_sha256=" + source_digest + "\n",
+    "normalized_env_sha256=" + normalized_digest + "\n",
+]
+for key in duplicate_keys:
+    values = occurrences[key]
+    value_hashes = [hashlib.sha256(value.encode("utf-8")).hexdigest() for value, _, _ in values]
+    evidence_lines.append("duplicate|" + key + "|" + str(len(values)) + "|" + str(values[-1][2]) + "|" + ",".join(value_hashes) + "|" + value_hashes[-1] + "\n")
+evidence_blob = "".join(evidence_lines).encode("utf-8")
+
+def write_output(path, data):
+    if path == "-":
+        return
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        reject("cannot write environment metadata output")
+
+write_output(env_path, env_blob)
+write_output(evidence_path, evidence_blob)
+print("|".join((mode, ",".join(duplicate_keys), canonical_hashes, normalized_digest,
+                hashlib.sha256(evidence_blob).hexdigest(), str(len(entries)),
+                str(len(normalized_entries)))))
+' "$env_file" "$evidence_file" "$phase" "$confirm" "$allowlist" "$expected_mode" "$expected_keys" "$expected_hashes" "$environment_duplicate_approval_token")" ||
+    fail 'cannot safely capture Docker environment metadata'
+  IFS='|' read -r observed_mode observed_keys observed_hashes observed_env_sha observed_evidence_sha source_count normalized_count extra <<< "$result"
+  [[ -z "${extra:-}" && "$observed_mode" =~ ^(strict|last-wins)$ && "$observed_keys" != *'|'* &&
+     "$observed_hashes" != *'|'* && "$observed_env_sha" =~ ^[0-9a-f]{64}$ &&
+     "$observed_evidence_sha" =~ ^[0-9a-f]{64}$ && "$source_count" =~ ^[0-9]+$ &&
+     "$normalized_count" =~ ^[0-9]+$ ]] || fail 'Docker environment metadata summary is malformed'
+  [[ "$normalized_count" -le "$source_count" ]] || fail 'Docker environment metadata counts are inconsistent'
+  environment_observed_mode="$observed_mode"
+  environment_observed_keys="$observed_keys"
+  environment_observed_expected_hashes="$observed_hashes"
+  environment_observed_file_sha256="$observed_env_sha"
+  environment_observed_evidence_sha256="$observed_evidence_sha"
+  if [[ "$phase" == prepare ]]; then
+    environment_duplicate_mode="$observed_mode"
+    environment_duplicate_keys="$observed_keys"
+    environment_duplicate_expected_hashes="$observed_hashes"
+    environment_file_sha256="$observed_env_sha"
+    environment_duplicate_evidence_sha256="$observed_evidence_sha"
+  fi
+  if [[ "$env_file" != '-' ]]; then
+    assert_root_owned_regular "$env_file" 'container environment metadata'
+    assert_root_owned_regular "$evidence_file" 'container environment duplicate evidence'
+    validate_environment_file "$env_file"
+    validate_environment_duplicate_evidence "$evidence_file" "$env_file" "$observed_mode" "$observed_keys" "$observed_hashes"
+    chmod 600 -- "$env_file" "$evidence_file"
+    [[ "$(hash_file "$env_file")" == "$observed_env_sha" ]] || fail 'normalized environment metadata hash changed while capturing'
+    [[ "$(hash_file "$evidence_file")" == "$observed_evidence_sha" ]] || fail 'environment duplicate evidence hash changed while capturing'
+  fi
+}
+
+assert_environment_matches_prepare() {
+  local id="$1" compare_source="${2:-live}"
+  local expected_mode="$environment_duplicate_mode" expected_keys="$environment_duplicate_keys"
+  local expected_hashes="$environment_duplicate_expected_hashes" expected_env_sha="$environment_file_sha256"
+  local expected_evidence_sha="$environment_duplicate_evidence_sha256"
+  local observed_mode observed_keys observed_hashes observed_env_sha observed_evidence_sha
+  local capture_phase=replay
+  [[ "$compare_source" == candidate ]] && capture_phase=replay-candidate
+  capture_environment_metadata "$id" - - "$capture_phase" "$expected_mode" "$expected_keys" "$expected_hashes"
+  observed_mode="$environment_observed_mode"
+  observed_keys="$environment_observed_keys"
+  observed_hashes="$environment_observed_expected_hashes"
+  observed_env_sha="$environment_observed_file_sha256"
+  observed_evidence_sha="$environment_observed_evidence_sha256"
+  if [[ "$compare_source" == candidate && "$expected_mode" == last-wins && "$observed_mode" == strict ]]; then
+    # Docker may canonicalize a duplicate override while creating the
+    # replacement.  The normalized file hash still proves the selected value
+    # is identical; no new duplicate is accepted in the candidate.
+    [[ -z "$observed_keys" && -z "$observed_hashes" && "$observed_env_sha" == "$expected_env_sha" ]] ||
+      fail 'candidate environment metadata differs from the prepared last-wins value'
+  else
+    [[ "$observed_mode" == "$expected_mode" && "$observed_keys" == "$expected_keys" &&
+       "$observed_hashes" == "$expected_hashes" && "$observed_env_sha" == "$expected_env_sha" ]] ||
+      fail 'live/candidate environment metadata differs from the prepared contract'
+  fi
+  if [[ "$compare_source" == live && "$environment_duplicate_legacy" != 1 ]]; then
+    [[ "$observed_evidence_sha" == "$expected_evidence_sha" ]] ||
+      fail 'live environment duplicate sequence differs from the prepared evidence'
+  fi
 }
 
 validate_security_options_file() {
@@ -741,7 +1168,10 @@ capture_runtime_contract_hash() {
   # state, network endpoint IDs/IPs, and image IDs are intentionally excluded;
   # all other fields that can change application behavior or isolation are
   # compared after the candidate is created. Secret environment values stay
-  # inside the pipe and are never printed.
+  # inside the pipe and are never printed. When the prepared contract explicitly
+  # approved a duplicate environment key, canonicalize the array by retaining
+  # its last occurrence (the Docker override semantics); strict contracts still
+  # reject any duplicate encountered here.
   docker_rpc inspect --format '{{json .}}' "$id" |
     python3 -c '
 import hashlib
@@ -749,6 +1179,9 @@ import json
 import shlex
 import sys
 
+runtime_env_mode = sys.argv[1] if len(sys.argv) > 1 else "strict"
+if runtime_env_mode not in ("strict", "last-wins"):
+    raise SystemExit("invalid runtime environment mode")
 obj = json.load(sys.stdin)
 config = obj.get("Config") or {}
 host = obj.get("HostConfig") or {}
@@ -927,6 +1360,16 @@ if isinstance(log_contract, dict):
 for key in ("Env", "ExposedPorts"):
     value = contract["Config"].get(key)
     if isinstance(value, list):
+        if key == "Env":
+            latest = {}
+            for item in value:
+                if not isinstance(item, str) or "=" not in item:
+                    raise SystemExit("invalid runtime environment entry")
+                env_key = item.split("=", 1)[0]
+                if env_key in latest and runtime_env_mode != "last-wins":
+                    raise SystemExit("duplicate runtime environment entry")
+                latest[env_key] = item
+            value = list(latest.values())
         contract["Config"][key] = sorted(value, key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
 for key in ("CapAdd", "CapDrop", "Dns", "DnsOptions", "DnsSearch", "ExtraHosts", "GroupAdd", "Ulimits", "VolumesFrom"):
     value = contract["HostConfig"].get(key)
@@ -948,7 +1391,7 @@ for key in ("CapAdd", "CapDrop"):
             normalized.append(token)
         contract["HostConfig"][key] = sorted(normalized)
 print(hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest())
-'
+ ' "${environment_duplicate_mode:-strict}"
 }
 
 capture_dependency_identity() {
@@ -1197,9 +1640,8 @@ config=obj.get("Config")
 if isinstance(config,dict):
     config["Env"]=["<redacted>"] if config.get("Env") else []
 print(json.dumps(obj, sort_keys=True, separators=(",", ":")))
-' > "$run_dir/live-app.inspect.json"
-  docker_rpc inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$app_id" > "$env_file"
-  validate_environment_file "$env_file"
+ ' > "$run_dir/live-app.inspect.json"
+  capture_environment_metadata "$app_id" "$env_file" "$run_dir/environment-duplicates.tsv" prepare
   docker_rpc inspect --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$app_id" | sed '/^[[:space:]]*$/d' > "$run_dir/networks.txt"
   docker_rpc inspect --format '{{range .HostConfig.SecurityOpt}}{{println .}}{{end}}' "$app_id" | sed '/^[[:space:]]*$/d' > "$run_dir/security-opt.txt"
   validate_security_options_file "$run_dir/security-opt.txt"
@@ -2118,6 +2560,11 @@ write_initial_manifest() {
     printf 'live_app_id=%s\n' "$app_id"
     printf 'live_app_name=%s\n' "$app_name"
     printf 'live_app_image_id=%s\n' "$app_image_id"
+    printf 'environment_duplicate_mode=%s\n' "$environment_duplicate_mode"
+    printf 'environment_duplicate_keys=%s\n' "$environment_duplicate_keys"
+    printf 'environment_duplicate_expected_sha256=%s\n' "$environment_duplicate_expected_hashes"
+    printf 'environment_file_sha256=%s\n' "$environment_file_sha256"
+    printf 'environment_duplicate_evidence_sha256=%s\n' "$environment_duplicate_evidence_sha256"
     printf 'runtime_contract_sha256=%s\n' "$(read_one_line "$run_dir/runtime-contract.sha256")"
     printf 'log_config_sha256=%s\n' "$(hash_file "$run_dir/log-config.json")"
     printf 'database_id=%s\n' "$database_id"
@@ -2263,6 +2710,10 @@ validate_runtime_metadata_files() {
     assert_root_owned_regular "$run_dir/$file" "runtime metadata $file"
   done
   validate_environment_file "$run_dir/container.env"
+  if [[ "$environment_duplicate_legacy" != 1 ]]; then
+    assert_root_owned_regular "$run_dir/environment-duplicates.tsv" 'runtime metadata environment-duplicates.tsv'
+    validate_environment_duplicate_evidence "$run_dir/environment-duplicates.tsv" "$run_dir/container.env" "$environment_duplicate_mode" "$environment_duplicate_keys" "$environment_duplicate_expected_hashes"
+  fi
   validate_security_options_file "$run_dir/security-opt.txt"
   [[ "$(read_one_line "$run_dir/runtime-contract.sha256")" =~ ^[0-9a-f]{64}$ ]] || fail 'runtime contract hash is invalid'
   assert_root_owned_regular "$run_dir/user.txt" 'container user metadata'
@@ -2524,6 +2975,29 @@ validate_run_directory() {
   app_name="$(manifest_value live_app_name)"; valid_container_ref "$app_name" || fail 'manifest live app name is invalid'
   live_image_id="$(manifest_value live_app_image_id)"
   [[ "$live_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'manifest live application image ID is invalid'
+  environment_duplicate_mode="$(manifest_value environment_duplicate_mode)"
+  environment_duplicate_legacy=0
+  if ! manifest_has_key environment_duplicate_mode; then
+    # A prepared run produced before the duplicate-environment evidence was
+    # introduced remains rollback-compatible because its old validator already
+    # rejected every duplicate key.  Treat it as an immutable strict contract.
+    environment_duplicate_legacy=1
+    environment_duplicate_mode=strict
+    environment_duplicate_keys=''
+    environment_duplicate_expected_hashes=''
+    environment_file_sha256=''
+    environment_duplicate_evidence_sha256=''
+  else
+    [[ -n "$environment_duplicate_mode" ]] || fail 'manifest environment duplicate mode is empty'
+    [[ "$environment_duplicate_mode" == strict || "$environment_duplicate_mode" == last-wins ]] || fail 'manifest environment duplicate mode is invalid'
+    environment_duplicate_keys="$(manifest_value environment_duplicate_keys)"
+    environment_duplicate_expected_hashes="$(manifest_value environment_duplicate_expected_sha256)"
+    validate_environment_duplicate_inputs "$environment_duplicate_keys" "$environment_duplicate_expected_hashes"
+    environment_file_sha256="$(manifest_value environment_file_sha256)"
+    environment_duplicate_evidence_sha256="$(manifest_value environment_duplicate_evidence_sha256)"
+    valid_sha64 "$environment_file_sha256" || fail 'manifest environment metadata SHA is invalid'
+    valid_sha64 "$environment_duplicate_evidence_sha256" || fail 'manifest environment duplicate evidence SHA is invalid'
+  fi
   database_id="$(manifest_value database_id)"; redis_id="$(manifest_value redis_id)"
   valid_container_ref "$database_id" || fail 'manifest database ID is invalid'
   valid_container_ref "$redis_id" || fail 'manifest Redis ID is invalid'
@@ -2536,6 +3010,14 @@ validate_run_directory() {
   mapfile -t captured_ports < "$run_dir/ports.txt"
   mapfile -t captured_mounts < "$run_dir/mounts.txt"
   validate_runtime_metadata_files
+  if [[ "$environment_duplicate_legacy" == 1 ]]; then
+    environment_file_sha256="$(hash_file "$run_dir/container.env")" || fail 'cannot hash legacy environment metadata'
+  else
+    actual="$(hash_file "$run_dir/container.env")" || fail 'cannot hash normalized environment metadata'
+    [[ "$actual" == "$environment_file_sha256" ]] || fail 'normalized environment metadata hash changed'
+    actual="$(hash_file "$run_dir/environment-duplicates.tsv")" || fail 'cannot hash environment duplicate evidence'
+    [[ "$actual" == "$environment_duplicate_evidence_sha256" ]] || fail 'environment duplicate evidence hash changed'
+  fi
   expected="$(manifest_value log_config_sha256)"
   valid_sha64 "$expected" || fail 'manifest log configuration SHA is invalid'
   actual="$(hash_file "$run_dir/log-config.json")" || fail 'cannot hash log configuration metadata'
@@ -2611,6 +3093,7 @@ assert_runtime_still_matches_prepare() {
   actual="$(capture_container_identity "$(manifest_value live_app_id)")" || fail 'cannot recapture live application identity'
   [[ "$actual" == "$expected" ]] || fail 'live application runtime changed after prepare'
   expected="$(read_one_line "$run_dir/runtime-contract.sha256")"
+  assert_environment_matches_prepare "$(manifest_value live_app_id)" live
   actual="$(capture_runtime_contract_hash "$(manifest_value live_app_id)")" || fail 'cannot recapture live runtime contract'
   [[ "$actual" == "$expected" ]] || fail 'live app runtime contract changed after prepare'
   assert_app_data_source_identity
@@ -2977,6 +3460,7 @@ assert_candidate_runtime_contract() {
   actual_networks="$(docker_rpc inspect --format '{{range $name, $network := .NetworkSettings.Networks}}{{printf "%s|%s\n" $name $network.NetworkID}}{{end}}' "$candidate_id" | sed '/^[[:space:]]*$/d' | LC_ALL=C sort)" || fail 'cannot inspect candidate network identities'
   [[ "$actual_networks" == "$expected_networks" ]] || fail 'candidate network identities do not match the prepared live container'
   expected="$(read_one_line "$run_dir/runtime-contract.sha256")"
+  assert_environment_matches_prepare "$candidate_id" candidate
   actual="$(capture_runtime_contract_hash "$candidate_id")" || fail 'cannot inspect candidate runtime contract'
   [[ "$actual" == "$expected" ]] || fail 'candidate runtime contract differs from the prepared live container'
 }
@@ -2995,6 +3479,7 @@ assert_preserved_container_contract() {
   [[ "$actual_id" == "$old_id" && "$actual_image" == "$image_id" ]] || fail 'preserved old container image or identity changed'
   [[ "$name" == "$app_name" || "$name" == "$preserved_name" ]] || fail 'preserved old container has an unexpected name'
   expected="$(read_one_line "$run_dir/runtime-contract.sha256")"
+  assert_environment_matches_prepare "$old_id" live
   actual="$(capture_runtime_contract_hash "$old_id")" || fail 'cannot inspect preserved old runtime contract'
   [[ "$actual" == "$expected" ]] || fail 'preserved old container runtime contract changed'
 }

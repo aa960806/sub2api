@@ -97,6 +97,19 @@ for marker in \
   'network-aliases.txt' \
   'log-config.json' \
   'runtime-contract.sha256' \
+  'environment_duplicate_approval_token' \
+  'SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM' \
+  'SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS' \
+  'SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256' \
+  'environment-duplicates.tsv' \
+  'capture_environment_metadata' \
+  'assert_environment_matches_prepare' \
+  'capture_runtime_contract_hash' \
+  'duplicate runtime environment entry' \
+  'replay-candidate' \
+  'environment_observed_mode' \
+  'manifest_has_key' \
+  'runtime_env_mode != "last-wins"' \
   'database backup was not restored'; do
   assert_contains "$marker"
 done
@@ -282,6 +295,180 @@ environment_source="$(extract_function validate_environment_file)"
     fail 'unassigned environment entry was accepted'
   fi
 )
+
+# ---------------------------------------------------------------------------
+# Fixture 3b: duplicate Docker environment entries require explicit approval,
+# retain Docker's last-wins value without recording plaintext evidence, and
+# remain comparable after Docker canonicalizes the candidate to unique keys.
+# This fixture requires a real Python 3 interpreter; Windows AppInstaller's
+# `python3` redirector is intentionally treated as unavailable.
+# ---------------------------------------------------------------------------
+
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import hashlib, json' >/dev/null 2>&1; then
+  environment_duplicate_source="$({
+    awk '
+      /^validate_environment_duplicate_inputs\(\) \{/ { capture = 1 }
+      /^validate_security_options_file\(\) \{/ { capture = 0 }
+      capture { print }
+    ' "$subject"
+  })"
+  [[ "$environment_duplicate_source" == *'capture_environment_metadata() {'* &&
+     "$environment_duplicate_source" == *'assert_environment_matches_prepare() {'* ]] ||
+    fail 'duplicate environment helper source was not found'
+  (
+    set -Eeuo pipefail
+    eval "$environment_duplicate_source"
+    fail() { printf 'duplicate environment fixture failure: %s\n' "$*" >&2; exit 77; }
+    assert_root_owned_regular() { :; }
+    hash_file() { sha256sum -- "$1" | awk '{print $1}'; }
+    expect_failure() {
+      if ("$@" >/dev/null 2>&1); then
+        return 0
+      fi
+      return 1
+    }
+    environment_duplicate_approval_token='I_UNDERSTAND_DOCKER_ENV_LAST_WINS'
+    environment_duplicate_mode='strict'
+    environment_duplicate_keys=''
+    environment_duplicate_expected_hashes=''
+    environment_duplicate_evidence_sha256=''
+    environment_file_sha256=''
+    environment_duplicate_legacy=0
+    environment_observed_mode=''
+    environment_observed_keys=''
+    environment_observed_expected_hashes=''
+    environment_observed_evidence_sha256=''
+    environment_observed_file_sha256=''
+    fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-cutover-env-duplicate.XXXXXX")"
+    trap 'rm -rf -- "$fixture_root"' EXIT
+    fixture_json="$fixture_root/env.json"
+    cat >"$fixture_json" <<'JSON'
+["A=1", "SERVER_TRUSTED_PROXIES=old-value", "B=2", "SERVER_TRUSTED_PROXIES=new-value"]
+JSON
+    docker_rpc() { [[ "${1:-}" == inspect ]] || return 98; cat -- "$fixture_json"; }
+    final_hash="$(printf %s 'new-value' | sha256sum | awk '{print $1}')"
+    env_file="$fixture_root/container.env"
+    evidence_file="$fixture_root/environment-duplicates.tsv"
+    unset SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM \
+      SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS \
+      SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256
+    if expect_failure capture_environment_metadata fixture "$env_file" "$evidence_file" prepare; then
+      fail 'duplicate environment metadata was accepted without approval'
+    fi
+    SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM="$environment_duplicate_approval_token"
+    if expect_failure capture_environment_metadata fixture "$env_file" "$evidence_file" prepare; then
+      fail 'duplicate environment metadata was accepted without an allowlist/hash'
+    fi
+    SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS=SERVER_TRUSTED_PROXIES
+    wrong_hash="$(printf %s 'old-value' | sha256sum | awk '{print $1}')"
+    SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256="SERVER_TRUSTED_PROXIES=$wrong_hash"
+    if expect_failure capture_environment_metadata fixture "$env_file" "$evidence_file" prepare; then
+      fail 'duplicate environment metadata was accepted with an incorrect approval hash'
+    fi
+    SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256="SERVER_TRUSTED_PROXIES=$(printf %064d 0)"
+    if expect_failure capture_environment_metadata fixture "$env_file" "$evidence_file" prepare; then
+      fail 'duplicate environment metadata was accepted with a zero hash'
+    fi
+    SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256="SERVER_TRUSTED_PROXIES=$final_hash"
+    capture_environment_metadata fixture "$env_file" "$evidence_file" prepare
+    [[ "$environment_duplicate_mode" == last-wins &&
+       "$environment_duplicate_keys" == SERVER_TRUSTED_PROXIES &&
+       "$environment_duplicate_expected_hashes" == "SERVER_TRUSTED_PROXIES=$final_hash" ]] ||
+      fail 'approved duplicate environment contract was not recorded'
+    [[ "$(< "$env_file")" == $'A=1\nB=2\nSERVER_TRUSTED_PROXIES=new-value' ]] ||
+      fail 'last-wins environment normalization was incorrect'
+    if grep -Fq -- old-value "$evidence_file" || grep -Fq -- new-value "$evidence_file"; then
+      fail 'duplicate environment evidence contains plaintext values'
+    fi
+    grep -Fq -- "duplicate|SERVER_TRUSTED_PROXIES|2|4|" "$evidence_file" ||
+      fail 'duplicate environment evidence did not record occurrence metadata'
+    prepared_mode="$environment_duplicate_mode"
+    prepared_keys="$environment_duplicate_keys"
+    prepared_hashes="$environment_duplicate_expected_hashes"
+    prepared_env_sha="$environment_file_sha256"
+    prepared_evidence_sha="$environment_duplicate_evidence_sha256"
+
+    # A replay of the unchanged live array must pass and must not mutate the
+    # prepared globals used by later candidate/rollback checks.
+    capture_environment_metadata fixture - - replay "$prepared_mode" "$prepared_keys" "$prepared_hashes"
+    [[ "$environment_observed_mode" == last-wins &&
+       "$environment_observed_file_sha256" == "$prepared_env_sha" ]] ||
+      fail 'unchanged duplicate environment replay did not match'
+    [[ "$environment_duplicate_mode" == "$prepared_mode" &&
+       "$environment_duplicate_keys" == "$prepared_keys" &&
+       "$environment_duplicate_expected_hashes" == "$prepared_hashes" ]] ||
+      fail 'environment replay mutated prepared contract globals'
+
+    # Docker may canonicalize the candidate to the normalized unique array.
+    cat >"$fixture_json" <<'JSON'
+["A=1", "B=2", "SERVER_TRUSTED_PROXIES=new-value"]
+JSON
+    assert_environment_matches_prepare fixture candidate
+    [[ "$environment_duplicate_mode" == "$prepared_mode" &&
+       "$environment_duplicate_keys" == "$prepared_keys" ]] ||
+      fail 'candidate replay changed prepared contract globals'
+
+    # A live duplicate sequence change is rejected even when its selected
+    # final value hash remains unchanged.
+    cat >"$fixture_json" <<'JSON'
+["A=1", "SERVER_TRUSTED_PROXIES=other-value", "B=2", "SERVER_TRUSTED_PROXIES=new-value"]
+JSON
+    if expect_failure assert_environment_matches_prepare fixture live; then
+      fail 'live duplicate sequence drift was accepted'
+    fi
+
+    # A second duplicate key outside the reviewed allowlist is rejected.
+    cat >"$fixture_json" <<'JSON'
+["A=1", "SERVER_TRUSTED_PROXIES=old-value", "B=2", "SERVER_TRUSTED_PROXIES=new-value", "C=x", "C=y"]
+JSON
+    if expect_failure capture_environment_metadata fixture - - replay "$prepared_mode" "$prepared_keys" "$prepared_hashes"; then
+      fail 'unapproved additional duplicate environment key was accepted'
+    fi
+
+    # Strict mode remains the default for containers without duplicates.
+    cat >"$fixture_json" <<'JSON'
+["A=1", "B=2"]
+JSON
+    unset SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM \
+      SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS \
+      SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256
+    capture_environment_metadata fixture "$env_file" "$evidence_file" prepare
+    [[ "$environment_duplicate_mode" == strict && -z "$environment_duplicate_keys" &&
+       "$(grep '^source_entries=' "$evidence_file")" == source_entries=2 &&
+       "$(grep '^normalized_entries=' "$evidence_file")" == normalized_entries=2 ]] ||
+      fail 'strict environment metadata default was not preserved'
+
+    # The runtime contract hash must reject duplicates in strict mode, while
+    # last-wins mode must hash identically to the canonical unique candidate.
+    runtime_hash_source="$(awk '
+      /^capture_runtime_contract_hash\(\) \{/ { capture = 1 }
+      /^capture_dependency_identity\(\) \{/ { capture = 0 }
+      capture { print }
+    ' "$subject")"
+    [[ "$runtime_hash_source" == *'capture_runtime_contract_hash() {'* ]] ||
+      fail 'runtime contract hash helper source was not found'
+    eval "$runtime_hash_source"
+    runtime_json="$fixture_root/runtime.json"
+    cat >"$runtime_json" <<'JSON'
+{"Id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Name":"/fixture","Config":{"Env":["A=1","SERVER_TRUSTED_PROXIES=old-value","SERVER_TRUSTED_PROXIES=new-value"],"Tty":false},"HostConfig":{"SecurityOpt":[],"LogConfig":{"Type":"json-file","Config":{}}},"Mounts":[],"NetworkSettings":{"Networks":{}}}
+JSON
+    docker_rpc() { [[ "${1:-}" == inspect ]] || return 98; cat -- "$runtime_json"; }
+    environment_duplicate_mode=strict
+    if expect_failure capture_runtime_contract_hash fixture; then
+      fail 'strict runtime contract hash accepted a duplicate environment entry'
+    fi
+    environment_duplicate_mode=last-wins
+    last_wins_runtime_hash="$(capture_runtime_contract_hash fixture)"
+    cat >"$runtime_json" <<'JSON'
+{"Id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Name":"/fixture","Config":{"Env":["A=1","SERVER_TRUSTED_PROXIES=new-value"],"Tty":false},"HostConfig":{"SecurityOpt":[],"LogConfig":{"Type":"json-file","Config":{}}},"Mounts":[],"NetworkSettings":{"Networks":{}}}
+JSON
+    canonical_runtime_hash="$(capture_runtime_contract_hash fixture)"
+    [[ "$last_wins_runtime_hash" == "$canonical_runtime_hash" ]] ||
+      fail 'last-wins runtime hash differs from the canonical candidate hash'
+  )
+else
+  printf 'subnexus duplicate environment fixtures skipped (requires usable python3)\n'
+fi
 
 # ---------------------------------------------------------------------------
 # Fixture 4: rollout snapshot validation, gate closure, and restore SQL
@@ -535,19 +722,19 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&
        "$args_text" == *'max-size=20m'* ]] ||
       fail 'json-file rotation arguments were not reproduced'
     printf '%s\n' '{"Type":"json-file","Config":{"max-size":"20m"}}' > "$run_dir/log-config.json"
-    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+    if (validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1); then
       fail 'partial json-file rotation configuration was accepted'
     fi
     printf '%s\n' '{"Type":"syslog","Config":{}}' > "$run_dir/log-config.json"
-    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+    if (validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1); then
       fail 'unsupported log driver was accepted'
     fi
     printf '%s\n' '{"Type":"json-file","Config":{"max-file":"5","max-size":"20m"},"Unexpected":true}' > "$run_dir/log-config.json"
-    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+    if (validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1); then
       fail 'unsupported log configuration field was accepted'
     fi
     printf '%s\n' '{"Type":"json-file","Config":{"max-file":"5","labels":"secret"}}' > "$run_dir/log-config.json"
-    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+    if (validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1); then
       fail 'unsupported json-file option was accepted'
     fi
   )
@@ -561,6 +748,7 @@ fi
 
 manifest_source="$(
   extract_function manifest_value
+  extract_function manifest_has_key
   extract_function manifest_set
 )"
 rollback_helpers="$(
@@ -592,6 +780,14 @@ rollback_helpers="$(
   run_dir="$fixture_root/run"
   mkdir -- "$run_dir"
   manifest_file="$run_dir/manifest.env"
+  manifest_probe="$fixture_root/manifest-probe.env"
+  printf 'state=switched\n' > "$manifest_probe"
+  manifest_has_key state "$manifest_probe" || fail 'manifest key presence was not detected'
+  if manifest_has_key environment_duplicate_mode "$manifest_probe"; then
+    fail 'missing manifest key was reported as present'
+  fi
+  printf 'environment_duplicate_mode=\n' >> "$manifest_probe"
+  manifest_has_key environment_duplicate_mode "$manifest_probe" || fail 'empty manifest key presence was not detected'
   old_id="$(printf 'a%.0s' {1..64})"
   candidate_fixture="$(printf 'b%.0s' {1..64})"
   db_fixture="$(printf 'c%.0s' {1..64})"
