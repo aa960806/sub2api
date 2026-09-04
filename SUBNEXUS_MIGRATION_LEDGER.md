@@ -41,7 +41,7 @@
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
 | B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建与结构校验） | `/srv/subnexus-migration/backups/20260903T073714Z`；PG custom dump/list、globals、Redis RDB/check、应用 tar 和全量 SHA256 均通过 |
-| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 部分通过；Docker 待办 | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动和旧版 0.1.135 回归均通过；Docker 候选镜像运行证据仍待完成 |
+| B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；最新 gate 证据 `20260904T104343Z-2854f544-d1ee-44be-9b58-ff465ee160ac`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
 
 ## 实施批次
 
@@ -51,7 +51,7 @@
 | Batch 2 | 首充礼包、二开邀请奖励、学生充值优惠、注册 IP 冷却 | Batch 1 规则、订单/Affiliate/Auth 审计 | 默认关闭，奖励/注册 reservation 幂等 | 本地实现完成，待最终证据/维护者验收 |
 | Batch 3 | 发票事务系统 | 数据目录、订单快照、邮件和权限审计 | `subnexus_invoice_enabled=false`（public 映射 `invoice_enabled`） | 本地实现完成，待最终证据/维护者验收 |
 | Batch 4 | Battle Pass、Channel Monitor V3、默认语言、客服按钮 | 用量/充值/邀请数据合同；上游监控基础 | 所有功能/模式默认关闭或回退安全默认 | 本地实现完成，待最终证据/维护者验收 |
-| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | 合成夹具及真实生产克隆的 PostgreSQL 接管、候选关闭态 smoke、旧版 0.1.135 回归、Redis 8 RDB 实际加载均通过；Docker 候选仍待办 |
+| Batch 5 | 集成、Docker、隔离 PostgreSQL/Redis、旧版本回归和发布候选 | Batch 1-4 本地实现 | 所有功能仍关闭直到逐项批准 | 合成夹具、真实生产克隆的 PostgreSQL 接管、候选关闭态 smoke、旧版 0.1.135 回归、Redis 8 RDB 实际加载及 Docker 候选 runtime gate 均通过；候选仍需维护者人工验收，最终切换和逐项开启未执行 |
 
 ## 主审第二轮剩余项收口（2026-09-03）
 
@@ -168,3 +168,4 @@
 | 2026-09-04 Asia/Shanghai | 候选 runtime gate Bash 参数污染修复（待重跑） | 未通过原因已定位并修复；真实 gate 待新提交重建 | 真实 gate 证据 `20260904T090327Z-c7b49564-9813-441e-b805-d036332f9bff` 失败原因是 `candidate_pg_psql` 等三处跨行 pipeline 嵌套在 `if output="$(...)"`，导致 `SELECT 1;` 输出混入调用方控制文本；新增 PG/Redis/HTTP 独立 exec helper、`bash -n` 与参数/stdin 夹具。当前不可据此切换，`cutover_allowed=false`、`manual_review_required=true` | 仅修改 fork 迁移分支和本地测试；未修改旧项目、`main`、服务器或生产数据。必须以新提交重新同步 WSL、从五个固定基础镜像/零对象基线构建并重新运行 runtime gate |
 | 2026-09-04 Asia/Shanghai | 隔离构建锁目录身份复核（待重建） | 本地门禁通过；真实构建/gate 待新批准 SHA | 构建脚本在 artifact 目录 FD 加锁前后比较设备/inode/类型/owner/mode，防止路径替换造成锁与输出目录不一致；新增 Linux/WSL FD 指纹夹具。该改动改变 `SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256`，上一轮 `9ea1d877` 归档不作为最终候选，`cutover_allowed=false` | 仅修改 fork 和本地隔离脚本/测试；未访问或修改线上资产。须新提交、重新同步 WSL、从固定基础镜像基线构建并运行 candidate gate |
 | 2026-09-04 Asia/Shanghai | `c91226ef` 隔离构建与 Docker 29 candidate cleanup 复核 | 构建及全部 runtime smoke 通过；gate 因清理诊断合同失败，修复待重建 | c912 镜像 `4f453fe2...f77ab`、归档 SHA256=`82ff92df...1de64`；candidate health、290 条迁移、关闭态、登录、重启、持久化均通过。Docker 29 的缺失网络诊断为 `[]` + `network <id> not found`，对象实际清理后旧 helper 仍置 `cleanup_failed=true`；新增仅接受完整诊断和精确 ref 的匹配及正反夹具。失败证据 token=`20260904T101111Z-5258308c-4591-4beb-8c84-ad381333293e`，不可发布，`cutover_allowed=false` | 仅使用专用 WSL daemon 和 synthetic 基线；未成功登录服务器，未修改旧项目、`main`、生产数据/容器/Nginx。修复提交后必须重新构建并重跑 gate |
+| 2026-09-04 Asia/Shanghai | `02774d028` 隔离候选构建与 Docker 29 runtime gate 通过 | 通过（候选构建、归档和 runtime gate；待维护者人工验收） | 使用提交 `02774d028d076e934a59f04fd1ee98598ac693a1`（tree=`023e96b6c629f7d33e8ac2d43b7bd93f960a36f5`）及批准构建脚本 SHA256=`cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3` 生成候选镜像 `sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`；归档 `/root/subnexus-migration/candidate-artifacts/02774d028d076e934a59f04fd1ee98598ac693a1/candidate-image.tar` 大小 `45179904`，SHA256=`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`。gate 证据 `/root/subnexus-migration/docker-candidate/20260904T104343Z-2854f544-d1ee-44be-9b58-ff465ee160ac`，证据 SHA256=`7d5dc1141906ee2dcac51dadc17da788e8cf0d4c172d1c71a781a823edc120fb`；`result=passed`、`cleanup_failed=false`、应用/PostgreSQL/Redis 健康、管理员登录与 `auth/me`、290 条迁移、重启/持久化 sentinel、关闭态公开设置均通过，迁移数重启前后一致。专用 daemon 仅保留 synthetic `prod-*` 基线容器/网络，无卷；未连接线上或生产数据库，`cutover_allowed=false`、`manual_review_required=true` | 仅修改 fork 迁移分支及专用 WSL daemon；旧项目、fork `main`、线上服务器、生产 Docker/PostgreSQL/Redis/Nginx 均未修改，未执行生产迁移、部署、重启、切流或开关变更。旧的 `20260904T101111Z-...` 失败证据继续保留，仅作历史记录，不得用于发布 |

@@ -1157,3 +1157,12 @@
 - `object_absent` 现只额外接受两种完整形式：精确错误行，或单独 `[]` 行后跟同一精确错误行；错误中的网络引用必须与请求引用一致，随后仍必须通过精确 `docker network ls` 空集和 daemon 健康复核。新增 Docker 29 正例、错误引用反例及 stdout/stderr 组合夹具；Windows Git Bash 与 WSL/Linux 的语法和完整 candidate-check 测试、`git diff --check` 均通过。
 - 本轮没有成功登录线上服务器；未读取或修改生产 Docker、PostgreSQL、Redis、Nginx、配置或流量。下一步为提交本修复、同步 detached clone、以新提交重新隔离构建并重跑 candidate gate；最终切换仍只允许维护者手动执行。
 - 回滚点：本次修复前 `c91226ef2b1a3e9caffd19ddfd8f319e95f772b0`。旧项目 `F:\Sub2Api\SubNexus` 和 fork `main` 未修改。
+
+## 2026-09-04（Asia/Shanghai）— `02774d028` 候选构建与 runtime gate 通过
+
+- 本轮仅在 `F:\MySub2\sub2api` 的 `feature/subnexus-migration` 和专用 WSL daemon `SubNexusBuild20260904` 执行；未读取或修改 `F:\Sub2Api\SubNexus`，未修改 fork `main`，未连接线上服务器、生产 Docker、PostgreSQL、Redis 或 Nginx。
+- 使用提交 `02774d028d076e934a59f04fd1ee98598ac693a1`（tree=`023e96b6c629f7d33e8ac2d43b7bd93f960a36f5`）和外部批准构建脚本 SHA256=`cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3` 完成真实隔离构建。候选镜像 ID 为 `sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`；归档位于 `/root/subnexus-migration/candidate-artifacts/02774d028d076e934a59f04fd1ee98598ac693a1/candidate-image.tar`，大小 `45179904`，SHA256=`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`。
+- 在同一专用 daemon 中完成候选 runtime gate。证据目录为 `/root/subnexus-migration/docker-candidate/20260904T104343Z-2854f544-d1ee-44be-9b58-ff465ee160ac`，证据 SHA256=`7d5dc1141906ee2dcac51dadc17da788e8cf0d4c172d1c71a781a823edc120fb`。结果为 `result=passed`、`cleanup_failed=false`；应用、PostgreSQL、Redis 健康检查，290 条迁移，管理员登录与 `auth/me`，重启前后迁移数一致，数据卷 sentinel 持久化和所有公开 rollout 开关关闭态均通过。
+- gate 只清理本次候选对象；专用 daemon 当前仍保留用于测试的 synthetic `prod-app`/`prod-postgres`/`prod-redis` 容器及网络（无卷），不得对该 daemon 使用全局 prune。旧失败证据 `20260904T101111Z-...` 保留作历史审计，不能用于发布。
+- 当前门禁已从“Docker 待重跑”更新为“候选构建与 runtime gate 通过”；仍必须由维护者人工复核发布清单并批准维护窗口，`cutover_allowed=false`、`manual_review_required=true`。生产迁移、候选上传/启动、停旧容器、切流和功能开关开启均未执行；下一步仅可在维护者批准后准备线上候选资源，并在最终切换前停止。
+- 本轮文档回滚点为提交前 `02774d028d076e934a59f04fd1ee98598ac693a1`；代码和专用 daemon 资产均不因文档回滚删除或恢复。
