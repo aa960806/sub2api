@@ -2306,14 +2306,16 @@ ensure_image_load_log() {
   temporary="$(mktemp "$run_dir/.image-load.log.XXXXXX")" || fail 'cannot create candidate image load log temporary file'
   assert_root_owned_regular "$temporary" 'candidate image load log temporary file'
   chmod 600 -- "$temporary" || fail 'cannot protect candidate image load log temporary file'
-  # Recheck the destination immediately before the rename.  A rename never
-  # follows a destination symlink, and the run directory is held under the
-  # cutover evidence lock for the entire prepare operation.
+  # Recheck the destination immediately before the rename.  GNU mv -T forces
+  # the destination to be treated as one path; it replaces a raced symlink
+  # instead of following a symlink-to-directory into an external tree.  The
+  # run directory is held under the cutover evidence lock for the prepare
+  # operation.
   [[ ! -e "$path" && ! -L "$path" ]] || {
     rm -f -- "$temporary"
     fail 'candidate image load log path appeared during creation'
   }
-  mv -- "$temporary" "$path" || {
+  mv -T -- "$temporary" "$path" || {
     rm -f -- "$temporary"
     fail 'cannot install candidate image load log'
   }

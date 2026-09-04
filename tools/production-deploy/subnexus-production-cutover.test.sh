@@ -257,7 +257,8 @@ assert_contains 'candidate image load log path already exists'
 assert_contains 'mktemp "$run_dir/.image-load.log.XXXXXX"'
 assert_contains 'assert_root_owned_regular "$path" '\''candidate image load log'\'''
 assert_before_text "$load_image_source" 'ensure_image_load_log' 'docker_rpc image inspect'
-assert_before_text "$load_image_source" 'candidate image load log path already exists' 'mv -- "$temporary" "$path"'
+assert_before_text "$load_image_source" 'candidate image load log path already exists' 'mv -T -- "$temporary" "$path"'
+assert_contains 'mv -T -- "$temporary" "$path"'
 
 # Fixture 0b: a preloaded candidate tag still produces a controlled image-load
 # log, and a stale symlink at that path is rejected before Docker is queried.
