@@ -526,6 +526,7 @@ validate_runtime_contract_supported() {
   docker_rpc inspect --format '{{json .}}' "$app_id" |
     python3 -c '
 import json
+import re
 import sys
 
 obj = json.load(sys.stdin)
@@ -651,7 +652,16 @@ reject(host.get("PidMode") not in (None, ""), "HostConfig.PidMode")
 reject(host.get("UTSMode") not in (None, ""), "HostConfig.UTSMode")
 reject(host.get("UsernsMode") not in (None, ""), "HostConfig.UsernsMode")
 reject(host.get("Runtime") not in (None, "", "runc"), "HostConfig.Runtime")
-reject(host.get("ConsoleSize") not in (None, [0, 0]), "HostConfig.ConsoleSize")
+console_size = host.get("ConsoleSize")
+if console_size not in (None, [0, 0]):
+    # Docker 29 records historical console dimensions even when Tty=false.
+    # They are inert in that mode and docker create resets them to [0, 0], so
+    # accept only two non-negative integer dimensions and normalize them in
+    # the runtime contract below. Tty=true remains rejected above.
+    if (config.get("Tty") not in (None, False) or
+        not isinstance(console_size, list) or len(console_size) != 2 or
+        any(type(value) is not int or value < 0 for value in console_size)):
+        reject(True, "HostConfig.ConsoleSize")
 reject(host.get("ShmSize") not in (None, 0, 67108864), "HostConfig.ShmSize")
 
 ipc_mode = host.get("IpcMode")
@@ -662,8 +672,31 @@ reject(cgroupns_mode not in (None, "", "private"), "HostConfig.CgroupnsMode")
 log_config = host.get("LogConfig") or {}
 if not isinstance(log_config, dict):
     reject(True, "HostConfig.LogConfig")
-reject(log_config.get("Type") not in (None, "", "json-file"), "HostConfig.LogConfig.Type")
-reject(nonempty(log_config.get("Config")), "HostConfig.LogConfig.Config")
+reject(any(key not in ("Type", "Config") for key in log_config),
+       "HostConfig.LogConfig.key")
+log_type = log_config.get("Type")
+reject(log_type not in (None, "", "json-file"), "HostConfig.LogConfig.Type")
+log_options = log_config.get("Config")
+if log_options in (None, {}):
+    log_options = {}
+reject(not isinstance(log_options, dict), "HostConfig.LogConfig.Config")
+allowed_log_options = {"max-file", "max-size"}
+reject(any(not isinstance(key, str) or key not in allowed_log_options
+          for key in log_options), "HostConfig.LogConfig.Config.key")
+for key, value in log_options.items():
+    reject(not isinstance(value, str), "HostConfig.LogConfig.Config.value")
+    if key == "max-file":
+        reject(not re.fullmatch(r"[1-9][0-9]{0,3}", value) or int(value) > 1000,
+              "HostConfig.LogConfig.Config.max-file")
+    elif key == "max-size":
+        # Docker json-file accepts a positive byte count with an
+        # optional binary unit.  Disallow zero/unlimited values so rotation
+        # cannot silently be disabled during a cutover.
+        reject(not re.fullmatch(r"[1-9][0-9]{0,9}(?:[bBkKmMgGtT])?", value),
+              "HostConfig.LogConfig.Config.max-size")
+if log_options:
+    reject(set(log_options) != allowed_log_options,
+           "HostConfig.LogConfig.Config.required")
 
 network_names = sorted(str(name) for name in networks)
 reject(not network_names, "NetworkSettings.Networks(empty)")
@@ -880,6 +913,17 @@ contract = {
 }
 contract["Config"]["Healthcheck"] = normalize_healthcheck(config.get("Healthcheck"))
 contract["HostConfig"]["Binds"] = contract_bind_mounts
+if config.get("Tty") in (None, False):
+    contract["HostConfig"]["ConsoleSize"] = [0, 0]
+# Docker may serialize an omitted log driver/type as null while `docker
+# create` reports the daemon default explicitly.  The supported contract is
+# json-file, so canonicalize both forms before hashing.
+log_contract = contract["HostConfig"].get("LogConfig") or {}
+if isinstance(log_contract, dict):
+    contract["HostConfig"]["LogConfig"] = {
+        "Type": log_contract.get("Type") or "json-file",
+        "Config": log_contract.get("Config") or {},
+    }
 for key in ("Env", "ExposedPorts"):
     value = contract["Config"].get(key)
     if isinstance(value, list):
@@ -1167,6 +1211,8 @@ print(json.dumps(obj, sort_keys=True, separators=(",", ":")))
   docker_rpc inspect --format '{{.Config.User}}' "$app_id" > "$run_dir/user.txt"
   docker_rpc inspect --format '{{.HostConfig.Memory}}|{{.HostConfig.MemorySwap}}|{{.HostConfig.MemoryReservation}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.CpuShares}}|{{.HostConfig.CpuQuota}}|{{.HostConfig.CpuPeriod}}|{{.HostConfig.CpusetCpus}}|{{if .HostConfig.PidsLimit}}{{.HostConfig.PidsLimit}}{{else}}0{{end}}' "$app_id" > "$run_dir/resource-policy.txt"
   docker_rpc inspect --format '{{json .Config.Healthcheck}}' "$app_id" > "$run_dir/healthcheck.json"
+  docker_rpc inspect --format '{{json .HostConfig.LogConfig}}' "$app_id" > "$run_dir/log-config.json"
+  validate_log_config_file "$run_dir/log-config.json"
   docker_rpc inspect --format '{{json .HostConfig.Ulimits}}' "$app_id" |
     python3 -c '
 import json,sys
@@ -2073,6 +2119,7 @@ write_initial_manifest() {
     printf 'live_app_name=%s\n' "$app_name"
     printf 'live_app_image_id=%s\n' "$app_image_id"
     printf 'runtime_contract_sha256=%s\n' "$(read_one_line "$run_dir/runtime-contract.sha256")"
+    printf 'log_config_sha256=%s\n' "$(hash_file "$run_dir/log-config.json")"
     printf 'database_id=%s\n' "$database_id"
     printf 'redis_id=%s\n' "$redis_id"
     printf 'database_identity_file=database.identity\n'
@@ -2149,11 +2196,70 @@ validate_resource_policy_file() {
   [[ "$cpuset" =~ ^[0-9,-]*$ ]] || fail 'resource policy CPU set is invalid'
 }
 
+validate_log_config_file() {
+  local file="$1"
+  assert_root_owned_regular "$file" 'log configuration metadata'
+  if ! python3 - "$file" <<'PY'
+import json
+import re
+import sys
+
+def reject(message):
+    raise SystemExit(message)
+
+def reject_duplicate_pairs(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            reject("duplicate log configuration key")
+        value[key] = item
+    return value
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        log_config = json.load(handle, object_pairs_hook=reject_duplicate_pairs)
+except (OSError, ValueError, TypeError) as exc:
+    raise SystemExit("invalid log configuration metadata") from exc
+
+if not isinstance(log_config, dict):
+    reject("log configuration must be an object")
+if any(key not in ("Type", "Config") for key in log_config):
+    reject("unsupported log configuration field")
+log_type = log_config.get("Type")
+if log_type not in (None, "", "json-file"):
+    reject("unsupported log driver")
+options = log_config.get("Config")
+if options in (None, {}):
+    options = {}
+if not isinstance(options, dict):
+    reject("log configuration options must be an object")
+allowed = {"max-file", "max-size"}
+if any(key not in allowed for key in options):
+    reject("unsupported json-file option")
+for key, value in options.items():
+    if not isinstance(value, str):
+        reject("log configuration option values must be strings")
+    if key == "max-file":
+        if not re.fullmatch(r"[1-9][0-9]{0,3}", value) or int(value) > 1000:
+            reject("invalid max-file")
+    elif key == "max-size":
+        if not re.fullmatch(r"[1-9][0-9]{0,9}(?:[bBkKmMgGtT])?", value):
+            reject("invalid max-size")
+if options and set(options) != allowed:
+    reject("max-file and max-size must be supplied together")
+if options and log_type not in ("json-file",):
+    reject("log driver must be explicit when options are supplied")
+PY
+  then
+    fail 'log configuration metadata is unsupported or malformed'
+  fi
+}
+
 validate_runtime_metadata_files() {
   local user network network_id extra count=0 type source name destination mode writable propagation mount_extra mount_count=0 app_data_count=0 line entrypoint_count=0
   local file
-  local -a checked_security_args=()
-  for file in container.env networks.txt network-identities.txt network-aliases.txt security-opt.txt restart-policy.txt restart-retries.txt workdir.txt entrypoint.txt cmd.txt mounts.txt app-data-mount.txt app-data-source.identity ports.txt user.txt resource-policy.txt healthcheck.json ulimits.txt runtime-contract.sha256; do
+  local -a checked_security_args=() checked_log_args=()
+  for file in container.env networks.txt network-identities.txt network-aliases.txt security-opt.txt restart-policy.txt restart-retries.txt workdir.txt entrypoint.txt cmd.txt mounts.txt app-data-mount.txt app-data-source.identity ports.txt user.txt resource-policy.txt healthcheck.json log-config.json ulimits.txt runtime-contract.sha256; do
     assert_root_owned_regular "$run_dir/$file" "runtime metadata $file"
   done
   validate_environment_file "$run_dir/container.env"
@@ -2211,10 +2317,12 @@ validate_runtime_metadata_files() {
     [[ "$line" != *$'\r'* ]] || fail 'command metadata contains a carriage return'
   done < "$run_dir/cmd.txt"
   python3 -c 'import json,sys; value=json.load(open(sys.argv[1])); assert value is None or isinstance(value,dict)' "$run_dir/healthcheck.json" || fail 'healthcheck metadata is malformed'
+  validate_log_config_file "$run_dir/log-config.json"
   while IFS='|' read -r name soft hard extra; do
     [[ -n "${name:-}" && -z "${extra:-}" && "$name" =~ ^[A-Za-z0-9_.-]{1,64}$ && "$soft" =~ ^-?[0-9]+$ && "$hard" =~ ^-?[0-9]+$ ]] || fail 'ulimit metadata is malformed'
   done < "$run_dir/ulimits.txt"
   append_security_opt_args checked_security_args
+  append_log_config_args checked_log_args
   candidate_restart_arg >/dev/null
   validate_mount_recreation_contract
   validate_app_data_source_identity_file
@@ -2428,6 +2536,10 @@ validate_run_directory() {
   mapfile -t captured_ports < "$run_dir/ports.txt"
   mapfile -t captured_mounts < "$run_dir/mounts.txt"
   validate_runtime_metadata_files
+  expected="$(manifest_value log_config_sha256)"
+  valid_sha64 "$expected" || fail 'manifest log configuration SHA is invalid'
+  actual="$(hash_file "$run_dir/log-config.json")" || fail 'cannot hash log configuration metadata'
+  [[ "$expected" == "$actual" ]] || fail 'log configuration metadata changed'
   expected="$(manifest_value runtime_contract_sha256)"
   valid_sha64 "$expected" || fail 'manifest runtime contract hash is invalid'
   [[ "$expected" == "$(read_one_line "$run_dir/runtime-contract.sha256")" ]] || fail 'runtime contract hash changed'
@@ -2536,6 +2648,41 @@ append_resource_args() {
   (( cpu_period > 0 )) && output_args+=(--cpu-period "$cpu_period")
   [[ -z "$cpuset" ]] || output_args+=(--cpuset-cpus "$cpuset")
   [[ "$pids" == 0 ]] || output_args+=(--pids-limit "$pids")
+}
+
+append_log_config_args() {
+  local -n output_args="$1"
+  local encoded kind key value extra
+  validate_log_config_file "$run_dir/log-config.json"
+  encoded="$(python3 - "$run_dir/log-config.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle)
+log_type = value.get("Type") or "json-file"
+options = value.get("Config") or {}
+print("driver|" + log_type)
+for key in sorted(options):
+    print("option|" + key + "|" + options[key])
+PY
+  )" || fail 'log configuration metadata cannot be converted to Docker arguments'
+  while IFS='|' read -r kind key value extra; do
+    [[ -z "${extra:-}" ]] || fail 'log configuration argument metadata has extra fields'
+    case "$kind" in
+      driver)
+        [[ "$key" == json-file && -z "$value" ]] || fail 'log configuration driver metadata is invalid'
+        output_args+=(--log-driver "$key")
+        ;;
+      option)
+        [[ "$key" == max-file || "$key" == max-size ]] || fail 'log configuration option metadata is invalid'
+        [[ -n "$value" ]] || fail 'log configuration option value is empty'
+        output_args+=(--log-opt "$key=$value")
+        ;;
+      '') ;;
+      *) fail 'log configuration argument metadata contains an unknown record' ;;
+    esac
+  done <<< "$encoded"
 }
 
 append_security_opt_args() {
@@ -2674,6 +2821,7 @@ create_candidate_container() {
   manifest_set candidate_container_intent "$candidate_intent"
   args=(create --name "$candidate_name" --label "com.subnexus.cutover.tool=$tool_name" --label 'com.subnexus.cutover.role=candidate' --label "com.subnexus.cutover.run-id=$(manifest_value run_id)" --label "com.subnexus.cutover.target-sha=$(manifest_value target_sha)" --label "com.subnexus.cutover.intent=$candidate_intent" --pull never --restart "$(candidate_restart_arg)")
   append_security_opt_args args
+  append_log_config_args args
   args+=(--env-file "$run_dir/container.env")
   user="$(read_one_line "$run_dir/user.txt")"
   [[ -z "$user" || "$user" =~ ^[A-Za-z0-9_.:-]{1,128}$ ]] || fail 'container user metadata is invalid'

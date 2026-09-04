@@ -58,7 +58,7 @@ for function_name in init_docker acquire_lock prepare_run validate_run_directory
   validate_environment_file validate_settings_snapshot capture_settings_snapshot close_rollout_gates \
   restore_rollout_gates restore_preserved_container rollback_run switch_run \
   rollback_entry write_run_marker assert_run_marker initialize_prepare_backup_budgets \
-  assert_prepare_disk_budget assert_backup_within_budget; do
+  assert_prepare_disk_budget assert_backup_within_budget validate_log_config_file append_log_config_args; do
   assert_contains "$function_name() {"
 done
 
@@ -95,6 +95,7 @@ for marker in \
   'healthcheck.json' \
   'ulimits.txt' \
   'network-aliases.txt' \
+  'log-config.json' \
   'runtime-contract.sha256' \
   'database backup was not restored'; do
   assert_contains "$marker"
@@ -103,6 +104,13 @@ assert_contains 'raw_binds = host.get("Binds") or []'
 assert_contains 'HostConfig.Binds.unmatched'
 assert_contains 'contract_bind_mounts = []'
 assert_contains 'contract["HostConfig"]["Binds"] = contract_bind_mounts'
+assert_contains 'console_size = host.get("ConsoleSize")'
+assert_contains 'contract["HostConfig"]["ConsoleSize"] = [0, 0]'
+assert_contains 'allowed_log_options = {"max-file", "max-size"}'
+assert_contains 'HostConfig.LogConfig.Config.required'
+assert_contains 'log_config_sha256=%s'
+assert_contains 'args+=(--log-driver "$key")'
+assert_contains 'args+=(--log-opt "$key=$value")'
 
 for forbidden in \
   'docker pull' 'docker build' 'docker push' 'docker compose' \
@@ -439,7 +447,7 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&
     trap 'rm -rf -- "$fixture_root"' EXIT
     fixture_json="$fixture_root/inspect.json"
     cat >"$fixture_json" <<'JSON'
-{"Id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{},"HostConfig":{"Binds":["/srv/subnexus-migration/runtime/subnexus-data:/app/data:rw"]},"Mounts":[{"Type":"bind","Source":"/srv/subnexus-migration/runtime/subnexus-data","Destination":"/app/data","Mode":"rw","RW":true,"Propagation":"rprivate"}],"NetworkSettings":{"Networks":{"sub2api-net":{"NetworkID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}}
+{"Id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Tty":false},"HostConfig":{"Binds":["/srv/subnexus-migration/runtime/subnexus-data:/app/data:rw"],"ConsoleSize":[49,202],"LogConfig":{"Type":"json-file","Config":{"max-file":"5","max-size":"20m"}}},"Mounts":[{"Type":"bind","Source":"/srv/subnexus-migration/runtime/subnexus-data","Destination":"/app/data","Mode":"rw","RW":true,"Propagation":"rprivate"}],"NetworkSettings":{"Networks":{"sub2api-net":{"NetworkID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}}
 JSON
     app_id='fixture-app'
     docker_rpc() { [[ "$1" == inspect ]] || return 98; cat "$fixture_json"; }
@@ -463,9 +471,88 @@ PY
     ); then
       fail 'unsupported bind relabel option was accepted'
     fi
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["HostConfig"]["ConsoleSize"] = [49, -1]
+path.write_text(json.dumps(data))
+PY
+    if (
+      fail() { return 77; }
+      validate_runtime_contract_supported >/dev/null 2>&1
+    ); then
+      fail 'negative ConsoleSize dimension was accepted'
+    fi
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["HostConfig"]["ConsoleSize"] = [0, 0]
+data["HostConfig"]["LogConfig"]["Config"]["labels"] = "unexpected"
+path.write_text(json.dumps(data))
+PY
+    if (
+      fail() { return 77; }
+      validate_runtime_contract_supported >/dev/null 2>&1
+    ); then
+      fail 'unsupported log configuration option was accepted'
+    fi
   )
 else
   printf 'subnexus HostConfig.Binds fixtures skipped (requires usable python3)\n'
+fi
+
+# Fixture 5c: json-file rotation options are reproduced exactly and all
+# drivers/options outside the narrow allow-list fail closed.
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&1; then
+  log_config_source="$(
+    extract_function validate_log_config_file
+    extract_function append_log_config_args
+  )"
+  [[ "$log_config_source" == *'validate_log_config_file() {'* &&
+     "$log_config_source" == *'append_log_config_args() {'* ]] ||
+    fail 'log configuration helper source was not found'
+  (
+    set -Eeuo pipefail
+    eval "$log_config_source"
+    fail() { exit 77; }
+    assert_root_owned_regular() { :; }
+    fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-cutover-log.XXXXXX")"
+    trap 'rm -rf -- "$fixture_root"' EXIT
+    run_dir="$fixture_root/run"
+    mkdir -- "$run_dir"
+    printf '%s\n' '{"Type":"json-file","Config":{"max-file":"5","max-size":"20m"}}' > "$run_dir/log-config.json"
+    args=()
+    append_log_config_args args
+    args_text="$(printf '%s\n' "${args[@]}")"
+    [[ "$args_text" == *'--log-driver'* && "$args_text" == *'json-file'* &&
+       "$args_text" == *'--log-opt'* && "$args_text" == *'max-file=5'* &&
+       "$args_text" == *'max-size=20m'* ]] ||
+      fail 'json-file rotation arguments were not reproduced'
+    printf '%s\n' '{"Type":"json-file","Config":{"max-size":"20m"}}' > "$run_dir/log-config.json"
+    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+      fail 'partial json-file rotation configuration was accepted'
+    fi
+    printf '%s\n' '{"Type":"syslog","Config":{}}' > "$run_dir/log-config.json"
+    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+      fail 'unsupported log driver was accepted'
+    fi
+    printf '%s\n' '{"Type":"json-file","Config":{"max-file":"5","max-size":"20m"},"Unexpected":true}' > "$run_dir/log-config.json"
+    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+      fail 'unsupported log configuration field was accepted'
+    fi
+    printf '%s\n' '{"Type":"json-file","Config":{"max-file":"5","labels":"secret"}}' > "$run_dir/log-config.json"
+    if validate_log_config_file "$run_dir/log-config.json" >/dev/null 2>&1; then
+      fail 'unsupported json-file option was accepted'
+    fi
+  )
+else
+  printf 'subnexus log configuration fixtures skipped (requires usable python3)\n'
 fi
 
 # ---------------------------------------------------------------------------
