@@ -1206,3 +1206,12 @@
 - 通过 SSH 只读复核确认服务器已有独立 release source `/srv/subnexus-migration/release-repos/sub2api-02774d028d076e934a59f04fd1ee98598ac693a1`；该路径不覆盖 `/srv/subnexus-repo`，后续只在其通过 root-owned、detached、clean、无 submodule 和 tree 校验后用于 `prepare`。
 - 当前服务器候选归档/evidence/image 仍分别为 `45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`、`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`、`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`；旧应用、PG、Redis、Nginx 和流量仍未改变。
 - 线上只读磁盘剩余约 36.5 GB；准备阶段仍需在不停止服务的前提下生成本次 run 的备份、settings snapshot、manifest 和 `READY`。在 `READY`、人工验收和维护者手动切换前，`switch`、生产迁移、切流及功能开启均禁止。
+
+## 2026-09-04（Asia/Shanghai）— 长数据库备份 Docker 超时边界修复（提交 `c113f7c3d41154cf80f812e5eaae6a539d778da8`）
+
+- 根因：线上 PostgreSQL 只读 dump 约 4.88 GB，切换脚本 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS` 的硬上限 `600` 秒不足；此前两次 `prepare` 均在备份阶段安全失败，未停止、重命名或重启线上应用，也未生成 `READY`。
+- 仅修改 `tools/production-deploy/subnexus-production-cutover.sh` 与对应测试：保持默认 `120` 秒和最小 `10` 秒不变，将最大值提高到有界的 `1800` 秒，并同步错误提示；未改变备份内容、数据库迁移、切换顺序、容器身份或功能开关。
+- 新增动态边界夹具，实际接受 `10/600/601/1800`，拒绝 `9/1801/invalid`；Git Bash 下该测试及全部 5 个 `tools/production-deploy/*test.sh` 均退出码 0，脚本 `bash -n`、`git diff --check` 通过。依赖 Linux/root/真实 Python 的夹具按平台条件跳过并明确输出。
+- 本地提交后切换脚本文件 SHA256=`56d6935418bb3229892653d4d775cefb341e20a44c5adef612b55340741584f4`，Git blob=`deb8782a3817f03a48ded468a58642b5843d1705`；提交尚待推送并以唯一新文件名安装到服务器，旧脚本必须保留。
+- 本轮只访问并修改 `F:\MySub2\sub2api` 迁移分支及本地测试；未读取/修改旧项目、fork `main`，未连接或写入线上服务器、PostgreSQL、Redis、Docker、Nginx，未执行迁移、部署、切流或开关变更。
+- 当前状态：线上仍无 `READY`，不得执行 `switch`；下一步为推送提交、安装新脚本、仅以 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=1800` 重新执行一次无停机 `prepare`，随后只读核验备份和身份合同，核验完成即停在人工切换前。
