@@ -55,7 +55,7 @@ fi
 # ---------------------------------------------------------------------------
 
 for function_name in init_docker acquire_lock prepare_run validate_run_directory \
-  validate_settings_snapshot capture_settings_snapshot close_rollout_gates \
+  validate_environment_file validate_settings_snapshot capture_settings_snapshot close_rollout_gates \
   restore_rollout_gates restore_preserved_container rollback_run switch_run \
   rollback_entry write_run_marker assert_run_marker initialize_prepare_backup_budgets \
   assert_prepare_disk_budget assert_backup_within_budget; do
@@ -91,6 +91,7 @@ for marker in \
   'candidate_container_intent' \
   'com.subnexus.cutover.intent' \
   'assert_dependencies_still_match' \
+  'validate_environment_file' \
   'healthcheck.json' \
   'ulimits.txt' \
   'network-aliases.txt' \
@@ -243,7 +244,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Fixture 3: rollout snapshot validation, gate closure, and restore SQL
+# Fixture 3: environment metadata is deterministic (no duplicate keys)
+# ---------------------------------------------------------------------------
+
+environment_source="$(extract_function validate_environment_file)"
+(
+  set -Eeuo pipefail
+  eval "$environment_source"
+  fail() { exit 77; }
+  assert_root_owned_regular() { :; }
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-cutover-env.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  printf 'DATABASE_HOST=postgres\nDATABASE_PASSWORD=secret=with=equals\n' > "$fixture_root/valid.env"
+  validate_environment_file "$fixture_root/valid.env"
+  printf 'DATABASE_HOST=postgres\nDATABASE_HOST=redis\n' > "$fixture_root/duplicate.env"
+  if (validate_environment_file "$fixture_root/duplicate.env" >/dev/null 2>&1); then
+    fail 'duplicate environment key was accepted'
+  fi
+  printf 'DATABASE-HOST=postgres\n' > "$fixture_root/invalid.env"
+  if (validate_environment_file "$fixture_root/invalid.env" >/dev/null 2>&1); then
+    fail 'invalid environment key was accepted'
+  fi
+  printf 'DATABASE_HOST\n' > "$fixture_root/unassigned.env"
+  if (validate_environment_file "$fixture_root/unassigned.env" >/dev/null 2>&1); then
+    fail 'unassigned environment entry was accepted'
+  fi
+)
+
+# ---------------------------------------------------------------------------
+# Fixture 4: rollout snapshot validation, gate closure, and restore SQL
 # ---------------------------------------------------------------------------
 
 if command -v base64 >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 &&
@@ -342,7 +371,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Fixture 4: healthcheck/ulimit/resource/network-alias argument contracts
+# Fixture 5: healthcheck/ulimit/resource/network-alias argument contracts
 # ---------------------------------------------------------------------------
 
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&1; then
@@ -393,7 +422,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Fixture 5: rollback orchestration keeps the old app and never restores DB
+# Fixture 6: rollback orchestration keeps the old app and never restores DB
 # ---------------------------------------------------------------------------
 
 manifest_source="$(

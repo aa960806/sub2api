@@ -456,6 +456,28 @@ env_value() {
   awk -F= -v wanted="$key" '$1 == wanted {sub(/^[^=]*=/, ""); sub(/\r$/, ""); print; exit}' "$file"
 }
 
+validate_environment_file() {
+  local file="$1" line key value
+  local -A seen=()
+  assert_root_owned_regular "$file" 'container environment metadata'
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" && "$line" != *$'\r'* && "$line" != *$'\n'* ]] ||
+      fail 'container environment metadata contains an empty or multiline entry'
+    [[ "$line" == *=* ]] || fail 'container environment metadata entry has no assignment'
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+      fail "container environment metadata key is invalid: $key"
+    [[ -z "${seen[$key]+x}" ]] ||
+      fail "container environment metadata contains duplicate key: $key"
+    seen[$key]=1
+    # Keep the value expansion explicit so a future change cannot accidentally
+    # treat a leading dash or shell metacharacter as an option/command.
+    [[ "$value" != *$'\r'* && "$value" != *$'\n'* ]] ||
+      fail "container environment metadata value is multiline: $key"
+  done < "$file"
+}
+
 validate_security_options_file() {
   local file="$1" line lower value nnp_seen=0
   assert_root_owned_regular "$file" 'container security option metadata'
@@ -1058,6 +1080,7 @@ if isinstance(config,dict):
 print(json.dumps(obj, sort_keys=True, separators=(",", ":")))
 ' > "$run_dir/live-app.inspect.json"
   docker_rpc inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$app_id" > "$env_file"
+  validate_environment_file "$env_file"
   docker_rpc inspect --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$app_id" | sed '/^[[:space:]]*$/d' > "$run_dir/networks.txt"
   docker_rpc inspect --format '{{range .HostConfig.SecurityOpt}}{{println .}}{{end}}' "$app_id" | sed '/^[[:space:]]*$/d' > "$run_dir/security-opt.txt"
   validate_security_options_file "$run_dir/security-opt.txt"
@@ -2058,6 +2081,7 @@ validate_runtime_metadata_files() {
   for file in container.env networks.txt network-identities.txt network-aliases.txt security-opt.txt restart-policy.txt restart-retries.txt workdir.txt entrypoint.txt cmd.txt mounts.txt app-data-mount.txt app-data-source.identity ports.txt user.txt resource-policy.txt healthcheck.json ulimits.txt runtime-contract.sha256; do
     assert_root_owned_regular "$run_dir/$file" "runtime metadata $file"
   done
+  validate_environment_file "$run_dir/container.env"
   validate_security_options_file "$run_dir/security-opt.txt"
   [[ "$(read_one_line "$run_dir/runtime-contract.sha256")" =~ ^[0-9a-f]{64}$ ]] || fail 'runtime contract hash is invalid'
   assert_root_owned_regular "$run_dir/user.txt" 'container user metadata'
