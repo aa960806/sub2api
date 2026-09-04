@@ -1148,3 +1148,12 @@
 - `subnexus-isolated-image-build.test.sh` 增加静态合同与 Linux/WSL FD 指纹夹具；Git Bash/WSL 语法和隔离构建夹具均通过。该修复会改变构建脚本批准 SHA，必须与本轮 gate 修复一起重新提交、同步、构建和验收。
 - 仅修改 fork 迁移分支和本地测试；未修改旧项目、`main`、线上服务器、生产数据库/Redis/Nginx，未执行线上部署或切换。上一轮 `9ea1d877` 归档不作为最终发布候选。
 - 回滚点：本次提交前 `9ea1d877ae980e47e318d435dce0976b23de1c62`；回滚仅作用于本地代码，不删除或恢复任何线上数据。
+
+## 2026-09-04（Asia/Shanghai）— 最新隔离构建与 Docker 29 清理诊断修复
+
+- 使用提交 `c91226ef2b1a3e9caffd19ddfd8f319e95f772b0` 在专用 WSL daemon `eb03fe50-80ad-4194-a28e-7ad5a786368c` 成功完成真实隔离构建；tree=`b37d04bd3b38ac7a955cb3d0dc3269285f4aba19`，镜像 ID=`sha256:4f453fe2b7a8f11383bd07ddda4d3a22137f329c4d435f8b131cc4d7403f77ab`，归档 SHA256=`82ff92df12a6c1dfb8694492501353e6bf55b633267a5ef7aafb7c3b0bb1de64`，构建脚本 SHA256=`cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3`。
+- 在同一专用 daemon 中用三个无挂载、无端口的 synthetic `prod-*` 容器执行 candidate gate。候选 PostgreSQL、Redis、应用健康检查、290 条空库迁移、关闭态公开设置、管理员登录、数据卷持久化、应用重启和稳定窗口均通过；证据 token=`20260904T101111Z-5258308c-4591-4beb-8c84-ad381333293e`。
+- gate 最终按失败发布证据：Docker 29 对已删除网络返回 `[]` 加 `Error response from daemon: network <id> not found`，旧清理 helper 仅认可 `no such network`，因此所有本次候选对象实际删除后仍记录 `cleanup_failed=true`。该证据必须保留为失败历史，不能用于发布；`cutover_allowed=false`、`manual_review_required=true`。
+- `object_absent` 现只额外接受两种完整形式：精确错误行，或单独 `[]` 行后跟同一精确错误行；错误中的网络引用必须与请求引用一致，随后仍必须通过精确 `docker network ls` 空集和 daemon 健康复核。新增 Docker 29 正例、错误引用反例及 stdout/stderr 组合夹具；Windows Git Bash 与 WSL/Linux 的语法和完整 candidate-check 测试、`git diff --check` 均通过。
+- 本轮没有成功登录线上服务器；未读取或修改生产 Docker、PostgreSQL、Redis、Nginx、配置或流量。下一步为提交本修复、同步 detached clone、以新提交重新隔离构建并重跑 candidate gate；最终切换仍只允许维护者手动执行。
+- 回滚点：本次修复前 `c91226ef2b1a3e9caffd19ddfd8f319e95f772b0`。旧项目 `F:\Sub2Api\SubNexus` 和 fork `main` 未修改。

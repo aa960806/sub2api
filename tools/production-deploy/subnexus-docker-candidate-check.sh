@@ -175,7 +175,7 @@ USAGE
 # runtime variables are resolved when it is called from main().
 object_absent() {
   local kind="$1" object_ref="$2" inspect_output inspect_status listing
-  local inspect_error
+  local inspect_error object_ref_lower network_not_found
 
   case "$kind" in
     container)
@@ -212,13 +212,26 @@ object_absent() {
   # Docker CLI "not found" status can proceed to the corroborating query.
   [[ "$inspect_status" -eq 1 ]] || return 2
   inspect_error="${inspect_output,,}"
-  case "$kind:$inspect_error" in
-    container:*'no such object'*|container:*'no such container'*) ;;
-    network:*'no such object'*|network:*'no such network'*) ;;
-    volume:*'no such object'*|volume:*'no such volume'*) ;;
-    image:*'no such object'*|image:*'no such image'*) ;;
-    *) return 2 ;;
-  esac
+  # Docker 29 reports a removed network as
+  # "Error response from daemon: network <ref> not found". Match the full
+  # diagnostic and the exact requested reference; accepting an arbitrary
+  # "not found" substring could turn a daemon/CLI failure into a deletion
+  # proof.
+  object_ref_lower="${object_ref,,}"
+  network_not_found="error response from daemon: network $object_ref_lower not found"
+  if [[ "$kind" == network &&
+    ( "$inspect_error" == "$network_not_found" ||
+      "$inspect_error" == $'[]\n'"$network_not_found" ) ]]; then
+    :
+  else
+    case "$kind:$inspect_error" in
+      container:*'no such object'*|container:*'no such container'*) ;;
+      network:*'no such object'*|network:*'no such network'*) ;;
+      volume:*'no such object'*|volume:*'no such volume'*) ;;
+      image:*'no such object'*|image:*'no such image'*) ;;
+      *) return 2 ;;
+    esac
+  fi
 
   case "$kind" in
     container)

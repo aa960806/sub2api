@@ -408,6 +408,7 @@ assert_contains 'container ls --all --no-trunc --filter "id=$object_ref"'
 assert_contains 'network ls --no-trunc --filter "id=$object_ref"'
 assert_contains 'volume ls --filter "name=^${object_ref}$"'
 assert_contains 'image ls --no-trunc --filter "reference=$object_ref"'
+assert_contains 'error response from daemon: network $object_ref_lower not found'
 assert_contains 'observed_gate'
 assert_contains 'observed_token'
 assert_contains 'observed_role'
@@ -488,7 +489,7 @@ object_absent_source="$(awk '
             ;;
         esac
         ;;
-      not-found-empty|present)
+      not-found-empty|docker29-network-not-found|docker29-network-wrong-ref|present)
         case "$op:$arg1" in
           info:)
             return 0
@@ -498,7 +499,15 @@ object_absent_source="$(awk '
             return 1
             ;;
           network:inspect)
-            printf 'Error: No such network: %s\n' "$arg2" >&2
+            if [[ "$fixture" == docker29-network-not-found ]]; then
+              printf '[]\n'
+              printf 'Error response from daemon: network %s not found\n' "$arg2" >&2
+            elif [[ "$fixture" == docker29-network-wrong-ref ]]; then
+              printf '[]\n'
+              printf 'Error response from daemon: network another-network not found\n' >&2
+            else
+              printf 'Error: No such network: %s\n' "$arg2" >&2
+            fi
             return 1
             ;;
           volume:inspect)
@@ -561,6 +570,16 @@ object_absent_source="$(awk '
   expect_status 0 volume candidate-volume
   expect_status 0 image candidate-image
   [[ "$(wc -l <"$list_log" | tr -d '[:space:]')" == 4 ]] || fail 'not-found fixture did not perform all exact list corroborations'
+
+  fixture='docker29-network-not-found'
+  : >"$list_log"
+  expect_status 0 network candidate-net
+  [[ "$(wc -l <"$list_log" | tr -d '[:space:]')" == 1 ]] || fail 'Docker 29 network not-found fixture did not perform exact list corroboration'
+
+  fixture='docker29-network-wrong-ref'
+  : >"$list_log"
+  expect_status 2 network candidate-net
+  [[ ! -s "$list_log" ]] || fail 'mismatched Docker 29 network ref performed a list query'
 
   fixture='timeout'
   : >"$list_log"
