@@ -1223,3 +1223,10 @@
 - 每个新 prepare run 生成 root-only `application-data-exclusions.txt`、独立 SHA256 sidecar 和 manifest 字段 `application_data_archive_policy_sha256`；switch 必须校验完整策略证据。后续提交 `b27ae6652` 将该策略证据排除在 rollback 前置条件之外，因为 rollback 不读取任何应用归档或数据库备份；rollback 仍严格校验 Docker daemon、旧容器、依赖、应用数据目录身份和设置快照。
 - Windows Git Bash 和 `SubNexusBuild20260904` WSL/Linux 的 `bash -n`、`subnexus-production-cutover.test.sh` 及五套 `tools/production-deploy/*test.sh` 均通过；Linux 动态夹具实际让活动日志持续写入并验证稳定数据、压缩历史日志和策略哈希。系统 WSL 代理提示不影响退出码。
 - 两个代码提交均已推送至 `origin/feature/subnexus-migration`；`main` 与 `F:\Sub2Api\SubNexus` 未修改。此记录写入时尚未安装最终脚本、尚未重新执行线上 `prepare`，没有停止/重命名/重启生产容器，没有执行 DDL/DML、Nginx 切流或开启任何二开功能。下一步只在服务器保留旧脚本的前提下安装唯一新文件名，并用脱离 SSH 的后台方式重跑无停机 `prepare`；只要未得到完整 `READY` 和人工核验，禁止 `switch`。
+
+## 2026-09-05（Asia/Shanghai）— prepare 参数合同修复与发布前门禁
+
+- 发布前复核发现 `prepare_run` 原先错误接受 9–11 个位置参数，而 usage 合同实际为 8–10 个（`SOURCE_ROOT` 至 `LIVE_APP` 必填，公网健康 URL 与 evidence root 可选）。提交 `b8625ff774db40b0eb6f96850b6d91b88d7d57da` 新增独立 `prepare_argument_count_is_valid`，严格接受 8/9/10、拒绝 7/11，并加入回归夹具；没有改变备份、容器、数据库或切换顺序。
+- 修复后的切换脚本 SHA256=`d88aaabe7d6d474978d52a80a64745d2e283d1b9474fb3aac53cde3b426d9ff9`，测试脚本 SHA256=`b3f1ff9c34da77e0132edac09bcbfad9fbfd79525878c62046c315902c3e6341`。Windows Git Bash 五套测试、语法检查和 `git diff --check` 通过；Linux-only 动态夹具仅在 Windows 按设计跳过。
+- 线上已安装但未执行的历史副本 `ecf1dae36dc7c140299ba5ef2d3dab66c08d53c0ebd9208f2ddab1f7125a2e0a.sh` 保留在 `/srv/subnexus-migration/tools/`；本轮修复脚本必须以全新文件名安装并独立校验 SHA。至此仍未停止、重命名或重启生产容器，未写生产 PostgreSQL/Redis、未切流、未改开关。
+- 只读磁盘复核显示根分区可用约 `27917008896` 字节，`cutover` 历史证据约 `8459786012` 字节，仍有一个失败 PG partial 约 `3386727897` 字节；失败 run 和 partial 均保留作审计，prepare 必须通过自身预算门禁后才继续。当前线上 `subnexus-cutover` 仍 healthy，`READY` 尚不存在。
