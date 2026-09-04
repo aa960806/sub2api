@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v2.0（2026-09-04，Docker runtime gate 与 owner 合同收口已通过）
-> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4、本地夹具、线上只读预检/备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 均已通过。线上 `prepare` 尚待使用最新批准脚本重跑；在 `READY` 和维护者人工批准前，禁止生产迁移、候选连接生产库、切流或开启功能
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4、本地夹具、线上只读预检/备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归、Docker runtime gate 和线上无停机 `prepare` 均已通过。当前已有 `READY=prepared`，仅待维护者在维护窗口手动 `switch`；在切换验收前禁止生产迁移、切流或开启功能
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -25,7 +25,7 @@
 | 项目 | 旧二开 `SubNexus` | 新 fork `sub2api` |
 | --- | --- | --- |
 | 分支 | `alignment/v0.1.181-local` | `main`（本规划从此创建迁移分支） |
-| HEAD | `62ea35e1c78416fd83e1e41bbb310b307941811a` | fork `main`=`d596d0844`；最新上游=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`；迁移分支当前 tip=`67f6f92aea6e988e83a45eef534f38334379a08b`；应用候选=`02774d028d076e934a59f04fd1ee98598ac693a1`（上游同步父提交=`23d6e8ec0`） |
+| HEAD | `62ea35e1c78416fd83e1e41bbb310b307941811a` | fork `main`=`d596d0844`；最新上游=`5097b31457e6dc9f49e5f5c9c72b925ce79543b3`；迁移分支当前 tip=`1bc02739e5dcb2818af7a1727c412506c46ef79c`；应用候选=`02774d028d076e934a59f04fd1ee98598ac693a1`（上游同步父提交=`23d6e8ec0`） |
 | 应用版本 | `0.1.135` | `0.2.0`（最新上游） |
 | Go 版本 | `1.26.6` | `1.27.0` |
 | Git merge-base | 无 | 无 |
@@ -330,7 +330,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
-3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；当前仅线上 `prepare`、维护窗口切换和逐项功能验收尚未执行。
-4. 维护者人工复核发布清单后，才允许服务器拉取固定 release 资产并执行无停机 `prepare`；在 `READY` 前不得执行生产迁移、候选启动或切流。
+3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；线上 `prepare` 已完成，当前仅维护窗口切换和逐项功能验收尚未执行。
+4. 维护者人工复核发布清单后，服务器已安装固定 release 资产并执行无停机 `prepare`；当前 run 已有 `READY=prepared`，不得在人工 `switch` 前执行生产迁移、切流或开启功能。
 
-线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，Redis 8.8.0 RDB 已在服务器无网络/无端口隔离候选中实际加载验证，真实克隆的 migration/adoption、候选关闭态启动、旧版 0.1.135 同库回归和 Docker runtime gate 均已通过。最近一次线上 `prepare` 已成功生成 PostgreSQL、Redis、设置和运行元数据证据，但因活动 `logs/sub2api.log` 在 tar 读取时变化而安全失败，未生成 `READY`、未加载候选镜像、未创建候选容器且未改写生产数据。当前批准脚本已固定在线归档策略：仅排除 `./logs/*.log`，保留压缩历史日志和其他数据，并把策略及 SHA 写入 manifest；非日志归档错误仍失败关闭。生产备份中的 Channel Monitor V3 原为开启，切换脚本必须保存旧值后显式关闭，回滚时可恢复。应用数据目录当前为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复已审核 owner 合同。下一步是在保留旧脚本和失败 run 的前提下重跑无停机 `prepare`；未满足 `READY` 和维护者人工批准前，不得执行生产迁移、打开开关、切流或替换线上版本。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，Redis 8.8.0 RDB 已在服务器无网络/无端口隔离候选中实际加载验证，真实克隆的 migration/adoption、候选关闭态启动、旧版 0.1.135 同库回归和 Docker runtime gate 均已通过。最新线上 `prepare` 已成功生成 PostgreSQL、Redis、设置、应用数据和运行元数据证据，固定 run 为 `/srv/subnexus-migration/cutover/20260904175519-3701605`，`READY=prepared`。当前批准脚本固定在线归档策略：仅排除 `./logs/*.log`，保留压缩历史日志和其他数据，并把策略及 SHA 写入 manifest；非日志归档错误仍失败关闭。生产备份中的 Channel Monitor V3 原为开启，切换脚本会保存旧值后显式关闭，回滚时可恢复。应用数据目录当前为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复已审核 owner 合同。下一步仅为维护者在维护窗口核对无结算任务、入口配置和备份证据后手动 `switch`；未切换验收前不得执行生产迁移、打开开关、切流或替换线上版本。
