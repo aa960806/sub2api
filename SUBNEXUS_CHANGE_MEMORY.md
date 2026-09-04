@@ -1230,3 +1230,10 @@
 - 修复后的切换脚本 SHA256=`d88aaabe7d6d474978d52a80a64745d2e283d1b9474fb3aac53cde3b426d9ff9`，测试脚本 SHA256=`b3f1ff9c34da77e0132edac09bcbfad9fbfd79525878c62046c315902c3e6341`。Windows Git Bash 五套测试、语法检查和 `git diff --check` 通过；Linux-only 动态夹具仅在 Windows 按设计跳过。
 - 线上已安装但未执行的历史副本 `ecf1dae36dc7c140299ba5ef2d3dab66c08d53c0ebd9208f2ddab1f7125a2e0a.sh` 保留在 `/srv/subnexus-migration/tools/`；本轮修复脚本必须以全新文件名安装并独立校验 SHA。至此仍未停止、重命名或重启生产容器，未写生产 PostgreSQL/Redis、未切流、未改开关。
 - 只读磁盘复核显示根分区可用约 `27917008896` 字节，`cutover` 历史证据约 `8459786012` 字节，仍有一个失败 PG partial 约 `3386727897` 字节；失败 run 和 partial 均保留作审计，prepare 必须通过自身预算门禁后才继续。当前线上 `subnexus-cutover` 仍 healthy，`READY` 尚不存在。
+
+## 2026-09-05（Asia/Shanghai）— 预加载候选镜像日志证据与符号链接安全收尾
+
+- 提交 `ba1c6450d` 修复候选镜像已预加载时缺少 `image-load.log` 的证据不完整问题：每个 prepare run 都会创建 root-owned、模式 `0600` 的空日志；已有文件或符号链接会在 Docker 查询前被拒绝。这样复用已核验的候选镜像不会绕过日志文件完整性门禁。
+- 提交 `af82a6877` 将日志证据安装改为 GNU `mv -T`，并保留安装前的目标路径复核；目标在竞态中变成指向目录的符号链接时不会被跟随写入外部目录。测试同时覆盖预加载 tag、空日志、权限和预置符号链接拒绝。
+- Windows Git Bash 五套 `tools/production-deploy/*test.sh`、脚本语法检查和 `git diff --check` 通过；在隔离 WSL 的独立临时副本中五套测试和 Linux 动态夹具也通过。测试期间未连接或修改线上服务器、生产 Docker、PostgreSQL、Redis、Nginx 或流量。
+- 当前迁移分支 HEAD 为 `af82a687746aaf35dd5e6d00dff93a7571355a31`，工作树干净并已与 `origin/feature/subnexus-migration` 同步。应用候选镜像仍固定于 `02774d028d076e934a59f04fd1ee98598ac693a1`；本次仅改部署脚本/测试，不需要重建应用镜像。切换门禁仍为 `cutover_allowed=false`，线上 `prepare`/`switch`/`rollback` 均未由本轮执行。
