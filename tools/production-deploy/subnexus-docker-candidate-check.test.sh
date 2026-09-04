@@ -144,7 +144,8 @@ assert_contains "git_submodules=\"\$(git -C \"\$source_root\" submodule status -
 
 # Archive safety: canonical root-only path, ownership/link/mode/hash checks,
 # bounded members, no traversal/links/special files, one manifest image, exact
-# tag/config ID, and all manifest references present.
+# tag/config digest, content hash, rootfs layer digests, and all references
+# present.
 assert_contains 'validate_candidate_archive_manifest() {'
 assert_contains 'path.is_absolute()'
 assert_contains '".." in path.parts'
@@ -156,8 +157,13 @@ assert_contains 'member.size > 12 * 1024**3'
 assert_contains 'total > 12 * 1024**3'
 assert_contains 'Docker archive must contain exactly one image'
 assert_contains 'entry.get("RepoTags") != [expected_tag]'
-assert_contains 'config.removeprefix("blobs/sha256/").removesuffix(".json")'
-assert_contains 'config_id != expected_id'
+assert_contains 'config_path_re = re.compile'
+assert_contains 'legacy_layer_path_re = re.compile'
+assert_contains 'hashlib.sha256(config_bytes).hexdigest() != config_id'
+assert_contains 'rootfs.get("diff_ids")'
+assert_contains 'len(diff_ids) != len(layers)'
+assert_contains 'layer_digest(bundle, layer_member)'
+assert_contains 'layer digest does not match config rootfs diff ID'
 assert_contains 'manifest references a missing member'
 assert_contains 'candidate image archive must be below the approved root-only artifact directory'
 assert_contains 'candidate_archive_lexical_path="$(realpath -m -s -- "$candidate_archive_path")"'
@@ -167,6 +173,10 @@ assert_contains 'candidate image archive must have exactly one hard link'
 assert_contains 'candidate_archive_fingerprint'
 assert_contains 'candidate image archive SHA256 does not match the approved value'
 assert_contains 'assert_candidate_archive_unchanged'
+assert_contains 'evidence_lock_fingerprint='
+assert_contains 'exec 9<"$evidence_root"'
+assert_contains 'candidate evidence directory changed before locking'
+assert_not_contains '.docker-candidate.lock'
 
 # Candidate runtime must be private and bounded: internal bridge network,
 # exactly one network, no port bindings, read-only roots, explicit tmpfs,
@@ -783,9 +793,24 @@ trap 'rm -rf -- "$fixture_root"' EXIT
 archive_source="$(extract_function validate_candidate_archive_manifest)"
 [[ -n "$archive_source" ]] || fail 'archive validator function not found'
 
-archive_id="$(printf 'a%.0s' {1..64})"
 commit_sha="$(printf 'b%.0s' {1..40})"
 archive_tag="subnexus-release:$commit_sha"
+
+# Build a small Docker-compatible OCI archive fixture.  The config digest is
+# deliberately computed from its exact JSON bytes, while rootfs.diff_ids use
+# the SHA-256 of each layer after gzip decompression, matching Docker's image
+# metadata contract.
+layer_content_root="$fixture_root/layer-content"
+mkdir -p -- "$layer_content_root"
+printf 'SubNexus candidate fixture\n' >"$layer_content_root/payload.txt"
+tar -cf "$fixture_root/layer.tar" -C "$layer_content_root" payload.txt
+layer_diff_id="$(sha256sum "$fixture_root/layer.tar" | awk '{print $1}')"
+gzip -n -c "$fixture_root/layer.tar" >"$fixture_root/layer.blob"
+layer_blob_id="$(sha256sum "$fixture_root/layer.blob" | awk '{print $1}')"
+config_json="$(printf '{"architecture":"amd64","os":"linux","config":{},"rootfs":{"type":"layers","diff_ids":["sha256:%s"]}}' "$layer_diff_id")"
+printf '%s' "$config_json" >"$fixture_root/config.json"
+archive_id="$(sha256sum "$fixture_root/config.json" | awk '{print $1}')"
+expected_image_id="$(printf 'e%.0s' {1..64})"
 
 make_archive() {
   local name="$1"
@@ -793,24 +818,54 @@ make_archive() {
   local root="$fixture_root/$name"
   mkdir -p -- "$root/blobs/sha256"
   printf '%s' "$manifest" >"$root/manifest.json"
-  printf '%s\n' '{}' >"$root/blobs/sha256/$archive_id.json"
-  : >"$root/layer.tar"
-  tar -cf "$fixture_root/$name.tar" -C "$root" manifest.json "blobs/sha256/$archive_id.json" layer.tar
+  cp -- "$fixture_root/config.json" "$root/blobs/sha256/$archive_id"
+  cp -- "$fixture_root/layer.blob" "$root/blobs/sha256/$layer_blob_id"
+  tar -cf "$fixture_root/$name.tar" -C "$root" manifest.json \
+    "blobs/sha256/$archive_id" "blobs/sha256/$layer_blob_id"
 }
 
-safe_manifest="[{\"Config\":\"blobs/sha256/$archive_id.json\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"layer.tar\"]}]"
+safe_manifest="[{\"Config\":\"blobs/sha256/$archive_id\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"blobs/sha256/$layer_blob_id\"]}]"
 make_archive safe "$safe_manifest"
-make_archive wrong-tag "[{\"Config\":\"blobs/sha256/$archive_id.json\",\"RepoTags\":[\"subnexus-release:wrong\"],\"Layers\":[\"layer.tar\"]}]"
-make_archive missing-layer "[{\"Config\":\"blobs/sha256/$archive_id.json\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"missing.tar\"]}]"
-make_archive extra-image "[{\"Config\":\"blobs/sha256/$archive_id.json\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"layer.tar\"]},{\"Config\":\"blobs/sha256/$archive_id.json\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"layer.tar\"]}]"
+make_archive wrong-tag "[{\"Config\":\"blobs/sha256/$archive_id\",\"RepoTags\":[\"subnexus-release:wrong\"],\"Layers\":[\"blobs/sha256/$layer_blob_id\"]}]"
+make_archive missing-layer "[{\"Config\":\"blobs/sha256/$archive_id\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"blobs/sha256/$(printf 'd%.0s' {1..64})\"]}]"
+make_archive extra-image "[{\"Config\":\"blobs/sha256/$archive_id\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"blobs/sha256/$layer_blob_id\"]},{\"Config\":\"blobs/sha256/$archive_id\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"blobs/sha256/$layer_blob_id\"]}]"
+
+# Docker's legacy save layout stores an uncompressed layer.tar beside a
+# <config-digest>.json config. Keep that format covered alongside the Docker
+# 29 OCI layout above so the validator does not accidentally become OCI-only.
+legacy_root="$fixture_root/legacy"
+mkdir -p -- "$legacy_root"
+printf '%s' "[{\"Config\":\"$archive_id.json\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"layer.tar\"]}]" >"$legacy_root/manifest.json"
+cp -- "$fixture_root/config.json" "$legacy_root/$archive_id.json"
+cp -- "$fixture_root/layer.tar" "$legacy_root/layer.tar"
+tar -cf "$fixture_root/legacy.tar" -C "$legacy_root" manifest.json "$archive_id.json" layer.tar
 
 wrong_config_id="$(printf 'c%.0s' {1..64})"
 wrong_config_root="$fixture_root/wrong-config"
 mkdir -p -- "$wrong_config_root/blobs/sha256"
-printf '%s' "[{\"Config\":\"blobs/sha256/$wrong_config_id.json\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"layer.tar\"]}]" >"$wrong_config_root/manifest.json"
-printf '%s\n' '{}' >"$wrong_config_root/blobs/sha256/$wrong_config_id.json"
-: >"$wrong_config_root/layer.tar"
-tar -cf "$fixture_root/wrong-config.tar" -C "$wrong_config_root" manifest.json "blobs/sha256/$wrong_config_id.json" layer.tar
+printf '%s' "[{\"Config\":\"blobs/sha256/$wrong_config_id\",\"RepoTags\":[\"$archive_tag\"],\"Layers\":[\"blobs/sha256/$layer_blob_id\"]}]" >"$wrong_config_root/manifest.json"
+cp -- "$fixture_root/config.json" "$wrong_config_root/blobs/sha256/$wrong_config_id"
+cp -- "$fixture_root/layer.blob" "$wrong_config_root/blobs/sha256/$layer_blob_id"
+tar -cf "$fixture_root/wrong-config.tar" -C "$wrong_config_root" manifest.json \
+  "blobs/sha256/$wrong_config_id" "blobs/sha256/$layer_blob_id"
+
+tampered_config_root="$fixture_root/tampered-config"
+mkdir -p -- "$tampered_config_root/blobs/sha256"
+printf '%s' "$safe_manifest" >"$tampered_config_root/manifest.json"
+printf '%s' '{"architecture":"amd64","os":"linux","config":{}}' >"$tampered_config_root/blobs/sha256/$archive_id"
+cp -- "$fixture_root/layer.blob" "$tampered_config_root/blobs/sha256/$layer_blob_id"
+tar -cf "$fixture_root/tampered-config.tar" -C "$tampered_config_root" manifest.json \
+  "blobs/sha256/$archive_id" "blobs/sha256/$layer_blob_id"
+
+wrong_layer_root="$fixture_root/wrong-layer-digest"
+mkdir -p -- "$wrong_layer_root/blobs/sha256" "$fixture_root/other-layer-content"
+printf 'different layer bytes\n' >"$fixture_root/other-layer-content/payload.txt"
+tar -cf "$fixture_root/other-layer.tar" -C "$fixture_root/other-layer-content" payload.txt
+gzip -n -c "$fixture_root/other-layer.tar" >"$wrong_layer_root/blobs/sha256/$layer_blob_id"
+printf '%s' "$safe_manifest" >"$wrong_layer_root/manifest.json"
+cp -- "$fixture_root/config.json" "$wrong_layer_root/blobs/sha256/$archive_id"
+tar -cf "$fixture_root/wrong-layer-digest.tar" -C "$wrong_layer_root" manifest.json \
+  "blobs/sha256/$archive_id" "blobs/sha256/$layer_blob_id"
 
 python3_fixture() {
   if command -v python >/dev/null 2>&1; then
@@ -889,11 +944,13 @@ make_hostile_archive backslash backslash
   run_archive() {
     candidate_archive_path="$1"
     candidate_image_tag="$archive_tag"
-    expected_candidate_image_id="$archive_id"
+    expected_candidate_image_id="$expected_image_id"
     validate_candidate_archive_manifest
   }
   expanded="$(run_archive "$fixture_root/safe.tar")"
   [[ "$expanded" =~ ^[0-9]+$ && "$expanded" -gt 0 ]] || fail 'safe Docker archive fixture was rejected or not bounded'
+  legacy_expanded="$(run_archive "$fixture_root/legacy.tar")"
+  [[ "$legacy_expanded" =~ ^[0-9]+$ && "$legacy_expanded" -gt 0 ]] || fail 'legacy Docker archive fixture was rejected or not bounded'
   expect_failure() {
     if run_archive "$1" >/dev/null 2>&1; then
       fail "unsafe Docker archive fixture was accepted: $2"
@@ -904,6 +961,8 @@ make_hostile_archive backslash backslash
   expect_failure "$fixture_root/missing-layer.tar" missing-layer
   expect_failure "$fixture_root/extra-image.tar" extra-image
   expect_failure "$fixture_root/wrong-config.tar" wrong-config
+  expect_failure "$fixture_root/tampered-config.tar" tampered-config
+  expect_failure "$fixture_root/wrong-layer-digest.tar" wrong-layer-digest
   expect_failure "$fixture_root/traversal.tar" traversal
   expect_failure "$fixture_root/symlink.tar" symlink
   expect_failure "$fixture_root/special.tar" special

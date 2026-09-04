@@ -17,6 +17,7 @@ unset BASH_ENV ENV CDPATH GLOBIGNORE
 export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 readonly script_name='subnexus-isolated-image-build-v1'
+readonly script_relative_path='tools/production-deploy/subnexus-isolated-image-build.sh'
 readonly gate_label='subnexus-isolated-build-v1'
 readonly default_timeout_seconds=7200
 readonly max_timeout_seconds=21600
@@ -67,7 +68,10 @@ builder_inspect_stage=''
 archive_sha256=''
 archive_size=''
 script_sha256=''
+approved_script_sha256=''
+approved_script_blob_sha256=''
 image_id=''
+rootfs_layers_json=''
 commit_epoch=''
 commit_date=''
 docker_binary=''
@@ -114,6 +118,7 @@ usage() {
 Usage:
   SUBNEXUS_BUILD_DOCKER_CONTEXT=<named-local-context> \
   SUBNEXUS_LOCAL_DOCKER_CONFIRM=I_UNDERSTAND_LOCAL_ONLY \
+  SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256=<64 lowercase hex> \
   SUBNEXUS_CANDIDATE_NODE_IMAGE=<repo@sha256:digest> \
   SUBNEXUS_CANDIDATE_GOLANG_IMAGE=<repo@sha256:digest> \
   SUBNEXUS_CANDIDATE_ALPINE_IMAGE=<repo@sha256:digest> \
@@ -121,7 +126,9 @@ Usage:
   SUBNEXUS_CANDIDATE_BUILDKIT_IMAGE=<repo@sha256:digest> \
   subnexus-isolated-image-build.sh SOURCE_ROOT APPROVED_COMMIT_SHA [ARTIFACT_ROOT]
 
-The Docker context must be explicitly named and local (for example a
+The approved build-script SHA256 is required. It must be independently
+recorded in the release approval and must match both the exact script blob at
+APPROVED_COMMIT_SHA and the file being executed. The Docker context must be explicitly named and local (for example a
 rootless/WSL context named subnexus-local). The default, SSH, TCP, remote,
 and production contexts are rejected. The daemon must have no containers,
 custom networks, or volumes before this script starts; it never prunes them.
@@ -247,7 +254,33 @@ assert_script_unchanged() {
   local current
   [[ -n "$script_source_path" && -f "$script_source_path" && ! -L "$script_source_path" ]] || return 1
   current="$(hash_file "$script_source_path")" || return 1
-  [[ "$current" == "$script_sha256" ]]
+  [[ "$current" == "$script_sha256" && "$current" == "$approved_script_sha256" ]]
+}
+
+validate_approved_build_script_sha256() {
+  local approved_blob_sha256 current_script_sha256
+  [[ -n "$script_source_path" && -f "$script_source_path" && ! -L "$script_source_path" ]] ||
+    fail 'image-build script must remain a non-symlink file' || return 1
+  owner_is_allowed "$script_source_path" || fail 'image-build script owner changed to an unsafe owner' || return 1
+  mode_is_safe "$script_source_path" || fail 'image-build script permissions changed to an unsafe mode' || return 1
+  approved_script_sha256="${SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256:-}"
+  valid_sha256_hex "$approved_script_sha256" ||
+    fail 'SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256 must be a lowercase 64-character SHA256' || return 1
+  current_script_sha256="$(hash_file "$script_source_path")" ||
+    fail 'cannot hash the current image-build script' || return 1
+  valid_sha256_hex "$current_script_sha256" ||
+    fail 'current image-build script SHA256 is invalid' || return 1
+  script_sha256="$current_script_sha256"
+  approved_blob_sha256="$(git -C "$source_root" show "$approved_sha:$script_relative_path" 2>/dev/null |
+    sha256sum | awk 'NF == 2 {print tolower($1)}')" ||
+    fail 'cannot hash the approved build script Git blob' || return 1
+  valid_sha256_hex "$approved_blob_sha256" ||
+    fail 'approved build script Git blob SHA256 is invalid' || return 1
+  approved_script_blob_sha256="$approved_blob_sha256"
+  [[ "$approved_blob_sha256" == "$approved_script_sha256" ]] ||
+    fail 'approved build script SHA256 does not match the approved commit blob' || return 1
+  [[ "$script_sha256" == "$approved_script_sha256" ]] ||
+    fail 'executed build script does not match the approved SHA256' || return 1
 }
 
 safe_remove_stage() {
@@ -550,48 +583,109 @@ validate_context_tree() {
 }
 
 validate_dockerfile_pin_contract() {
-  local dockerfile="$context_root/Dockerfile" line opcode image stage
-  local field_count index from_count=0 syntax_directive_re
+  local dockerfile="$context_root/Dockerfile" physical_line line opcode image stage
+  local arg_token arg_name arg_default required_arg
+  local field_count index from_count=0 syntax_directive_re from_seen='false' logical_line=''
   local -a fields=()
-  local -A seen=()
-  syntax_directive_re='^[[:space:]]*#[[:space:]]*syntax[[:space:]]*='
-  for line in 'ARG NODE_IMAGE=' 'ARG GOLANG_IMAGE=' 'ARG ALPINE_IMAGE=' 'ARG POSTGRES_IMAGE='; do
-    grep -Fq -- "$line" "$dockerfile" || fail "Dockerfile is missing required base argument: $line" || return 1
-  done
-  # Dockerfile opcodes are case-insensitive and may be indented. Parse every
-  # FROM into fields and require the image operand to be exactly one approved
-  # build argument, rather than accepting an allowed substring.
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "${line,,}" =~ $syntax_directive_re ]]; then
+  local -a required_base_args=('ARG NODE_IMAGE=' 'ARG GOLANG_IMAGE=' 'ARG ALPINE_IMAGE=' 'ARG POSTGRES_IMAGE=')
+  local -A seen=() arg_seen=()
+  syntax_directive_re='^[[:space:]]*#[[:space:]]*(syntax|escape)[[:space:]]*='
+  # Dockerfile instructions are case-insensitive, accept leading whitespace,
+  # and may use the default backslash continuation character.  Join continued
+  # physical lines before looking at the opcode so a FROM/ARG-looking command
+  # inside a multiline RUN cannot be mistaken for a real instruction.
+  while IFS= read -r physical_line || [[ -n "$physical_line" ]]; do
+    if [[ "${physical_line,,}" =~ $syntax_directive_re ]]; then
       fail 'external Dockerfile syntax directives are not allowed; use the digest-pinned BuildKit frontend' || return 1
     fi
+
+    # A comment or blank line is independent of a preceding continuation only
+    # when it starts a new logical instruction.  Inside a continuation it is
+    # retained as data and will fail the strict field contract if applicable.
+    if [[ -z "$logical_line" && ( "$physical_line" =~ ^[[:space:]]*$ || "$physical_line" =~ ^[[:space:]]*# ) ]]; then
+      continue
+    fi
+    if [[ -n "$logical_line" ]]; then
+      line="$logical_line $physical_line"
+    else
+      line="$physical_line"
+    fi
+    if [[ "$line" =~ ^(.*)\\[[:space:]]*$ ]]; then
+      logical_line="${BASH_REMATCH[1]}"
+      continue
+    fi
+    logical_line=''
+    [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    fields=()
     read -r -a fields <<< "$line"
     field_count="${#fields[@]}"
     (( field_count > 0 )) || continue
     opcode="${fields[0],,}"
-    [[ "$opcode" == 'from' ]] || continue
-    from_count=$((from_count + 1))
-    index=1
-    if (( index < field_count )) && [[ "${fields[$index]}" == --* ]]; then
-      [[ "${fields[$index]}" == '--platform=${BUILDPLATFORM}' ]] ||
-        fail "Dockerfile FROM has an unapproved flag: $line" || return 1
-      index=$((index + 1))
-    fi
-    (( index < field_count )) || fail "Dockerfile FROM has no image operand: $line" || return 1
-    image="${fields[$index]}"
-    case "$image" in
-      '${NODE_IMAGE}'|'${GOLANG_IMAGE}'|'${ALPINE_IMAGE}'|'${POSTGRES_IMAGE}') ;;
-      *) fail "Dockerfile has an unapproved or mutable FROM: $line" || return 1 ;;
+    case "$opcode" in
+      arg)
+        (( field_count == 2 )) || fail "Dockerfile ARG has invalid syntax: $line" || return 1
+        arg_token="${fields[1]}"
+        if [[ "$arg_token" =~ ^([A-Za-z_][A-Za-z0-9_-]*)=(.*)$ ]]; then
+          arg_name="${BASH_REMATCH[1]}"
+          arg_default="${BASH_REMATCH[2]}"
+        elif [[ "$arg_token" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; then
+          arg_name="$arg_token"
+          arg_default=''
+        else
+          fail "Dockerfile ARG has an invalid name or default value: $line" || return 1
+        fi
+        case "$arg_name" in
+          NODE_IMAGE|GOLANG_IMAGE|ALPINE_IMAGE|POSTGRES_IMAGE)
+            [[ "$arg_token" == *=* ]] ||
+              fail "Dockerfile base ARG must declare a default assignment: $arg_name" || return 1
+            # Required base defaults are only a fallback. They still must be
+            # a single image-like token so substitutions, comments, and
+            # option injection cannot alter a later FROM instruction. Other
+            # ARG values (for example GOPROXY) are intentionally not subject
+            # to this image-reference contract.
+            [[ -z "$arg_default" || "$arg_default" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@-]*$ ]] ||
+              fail "Dockerfile ARG has an unsafe default value: $line" || return 1
+            [[ "$from_seen" == 'false' ]] ||
+              fail "Dockerfile base ARG must appear before the first FROM: $arg_name" || return 1
+            [[ "${arg_seen[$arg_name]:-0}" -eq 0 ]] ||
+              fail "Dockerfile base ARG is declared more than once: $arg_name" || return 1
+            arg_seen["$arg_name"]=1
+            ;;
+        esac
+        ;;
+      from)
+        from_seen='true'
+        from_count=$((from_count + 1))
+        index=1
+        if (( index < field_count )) && [[ "${fields[$index]}" == --* ]]; then
+          [[ "${fields[$index]}" == '--platform=${BUILDPLATFORM}' ]] ||
+            fail "Dockerfile FROM has an unapproved flag: $line" || return 1
+          index=$((index + 1))
+        fi
+        (( index < field_count )) || fail "Dockerfile FROM has no image operand: $line" || return 1
+        image="${fields[$index]}"
+        case "$image" in
+          '${NODE_IMAGE}'|'${GOLANG_IMAGE}'|'${ALPINE_IMAGE}'|'${POSTGRES_IMAGE}') ;;
+          *) fail "Dockerfile has an unapproved or mutable FROM: $line" || return 1 ;;
+        esac
+        seen["$image"]=$(( ${seen["$image"]:-0} + 1 ))
+        index=$((index + 1))
+        if (( index < field_count )); then
+          (( index + 2 == field_count )) || fail "Dockerfile FROM has unsupported trailing fields: $line" || return 1
+          [[ "${fields[$index],,}" == 'as' ]] || fail "Dockerfile FROM has an invalid stage alias: $line" || return 1
+          stage="${fields[$((index + 1))]}"
+          [[ "$stage" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || fail "Dockerfile FROM stage name is unsafe: $line" || return 1
+        fi
+        ;;
     esac
-    seen["$image"]=$(( ${seen["$image"]:-0} + 1 ))
-    index=$((index + 1))
-    if (( index < field_count )); then
-      (( index + 2 == field_count )) || fail "Dockerfile FROM has unsupported trailing fields: $line" || return 1
-      [[ "${fields[$index],,}" == 'as' ]] || fail "Dockerfile FROM has an invalid stage alias: $line" || return 1
-      stage="${fields[$((index + 1))]}"
-      [[ "$stage" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || fail "Dockerfile FROM stage name is unsafe: $line" || return 1
-    fi
   done <"$dockerfile"
+  [[ -z "$logical_line" ]] || fail 'Dockerfile has an unterminated line continuation' || return 1
+  for required_arg in "${required_base_args[@]}"; do
+    arg_name="${required_arg#ARG }"
+    arg_name="${arg_name%=}"
+    [[ "${arg_seen[$arg_name]:-0}" -eq 1 ]] || fail "Dockerfile is missing required base argument: $required_arg" || return 1
+  done
   [[ "$from_count" -eq 4 ]] || fail 'Dockerfile must contain exactly four FROM instructions' || return 1
   for image in '${NODE_IMAGE}' '${GOLANG_IMAGE}' '${ALPINE_IMAGE}' '${POSTGRES_IMAGE}'; do
     [[ "${seen["$image"]:-0}" -eq 1 ]] || fail "Dockerfile must use $image exactly once" || return 1
@@ -887,6 +981,9 @@ prepare_tags_and_archive() {
   [[ "$image_id" != "$node_image_id" && "$image_id" != "$golang_image_id" &&
     "$image_id" != "$alpine_image_id" && "$image_id" != "$postgres_image_id" &&
     "$image_id" != "$buildkit_image_id" ]] || fail 'candidate image unexpectedly equals a base image' || return 1
+  rootfs_layers_json="$(docker_call image inspect --format '{{json .RootFS.Layers}}' "$release_tag")" ||
+    fail 'built release image RootFS layers could not be inspected' || return 1
+  [[ "$rootfs_layers_json" =~ ^\[.*\]$ ]] || fail 'built release image RootFS layers are invalid' || return 1
   release_image_created='true'
   if existing_id="$(capture_image_id "$gate_tag" 2>/dev/null)"; then
     gate_tag_preexisting='true'
@@ -907,13 +1004,25 @@ prepare_tags_and_archive() {
     fail 'saved Docker archive is outside the approved size range' || return 1
   archive_sha256="$(hash_file "$archive_tmp")" || return 1
   valid_sha256_hex "$archive_sha256" || fail 'saved Docker archive SHA256 is invalid' || return 1
-  python3 - "$archive_tmp" "$gate_tag" "$image_id" <<'PY'
+  python3 - "$archive_tmp" "$gate_tag" "$rootfs_layers_json" <<'PY'
+import hashlib
 import json
 import pathlib
+import re
 import tarfile
 import sys
 
-archive, expected_tag, expected_id = sys.argv[1:]
+archive, expected_tag, expected_layers_json = sys.argv[1:]
+config_path_re = re.compile(r"^(?:blobs/sha256/([0-9a-f]{64})|([0-9a-f]{64})\.json)$")
+try:
+    expected_layers = json.loads(expected_layers_json)
+except json.JSONDecodeError as exc:
+    raise SystemExit("built image RootFS layers are not valid JSON") from exc
+if (not isinstance(expected_layers, list) or not expected_layers or
+        any(not isinstance(layer, str) or
+            not re.fullmatch(r"sha256:[0-9a-f]{64}", layer)
+            for layer in expected_layers)):
+    raise SystemExit("built image RootFS layers are invalid")
 with tarfile.open(archive, mode="r:") as bundle:
     members = bundle.getmembers()
     if not members or len(members) > 100000:
@@ -932,15 +1041,35 @@ with tarfile.open(archive, mode="r:") as bundle:
     if not isinstance(manifest, list) or len(manifest) != 1:
         raise SystemExit("Docker archive must contain exactly one image")
     entry = manifest[0]
-    if entry.get("RepoTags") != [expected_tag]:
+    if not isinstance(entry, dict) or entry.get("RepoTags") != [expected_tag]:
         raise SystemExit("Docker archive must contain exactly the candidate gate tag")
     config = entry.get("Config")
     layers = entry.get("Layers")
     if not isinstance(config, str) or not isinstance(layers, list) or not layers:
         raise SystemExit("Docker archive manifest fields are invalid")
-    config_id = pathlib.PurePosixPath(config).name.removesuffix(".json")
-    if config_id != expected_id:
-        raise SystemExit("Docker archive config does not match the built image ID")
+    config_match = config_path_re.fullmatch(config)
+    if config_match is None:
+        raise SystemExit("Docker archive config path is invalid")
+    config_id = config_match.group(1) or config_match.group(2)
+    config_member = bundle.getmember(config)
+    if config_member.size <= 0 or config_member.size > 16 * 1024 * 1024:
+        raise SystemExit("Docker archive config size is unsafe")
+    config_file = bundle.extractfile(config_member)
+    if config_file is None:
+        raise SystemExit("Docker archive config is unreadable")
+    config_bytes = config_file.read(16 * 1024 * 1024 + 1)
+    if len(config_bytes) != config_member.size:
+        raise SystemExit("Docker archive config could not be read completely")
+    if hashlib.sha256(config_bytes).hexdigest() != config_id:
+        raise SystemExit("Docker archive config digest does not match its content")
+    try:
+        config_json = json.loads(config_bytes)
+    except json.JSONDecodeError as exc:
+        raise SystemExit("Docker archive config is not valid JSON") from exc
+    rootfs = config_json.get("rootfs")
+    actual_layers = rootfs.get("diff_ids") if isinstance(rootfs, dict) else None
+    if actual_layers != expected_layers:
+        raise SystemExit("Docker archive config rootfs.diff_ids do not match the built image")
     for referenced in [config, *layers]:
         if referenced not in names:
             raise SystemExit("Docker archive references a missing member")
@@ -956,6 +1085,8 @@ write_metadata() {
   {
     printf 'BUILD_SCRIPT=%s\n' "$script_name"
     printf 'BUILD_SCRIPT_SHA256=%s\n' "$script_sha256"
+    printf 'APPROVED_BUILD_SCRIPT_SHA256=%s\n' "$approved_script_sha256"
+    printf 'APPROVED_BUILD_SCRIPT_BLOB_SHA256=%s\n' "$approved_script_blob_sha256"
     printf 'RUN_TOKEN=%s\n' "$run_token"
     printf 'APPROVED_COMMIT_SHA=%s\n' "$approved_sha"
     printf 'TREE_SHA=%s\n' "$tree_sha"
@@ -1317,6 +1448,7 @@ main() {
   script_sha256="$(hash_file "$script_source_path")" || fail 'cannot hash the image-build script' || return 1
   valid_sha256_hex "$script_sha256" || fail 'image-build script SHA256 is invalid' || return 1
   validate_source_tree
+  validate_approved_build_script_sha256
   if [[ -z "$artifact_root" ]]; then
     artifact_root="$(dirname -- "$source_root")/.subnexus-candidate-artifacts"
   fi

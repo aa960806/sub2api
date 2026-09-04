@@ -43,6 +43,12 @@ assert_contains 'script_sha256'
 assert_contains "export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'"
 assert_contains 'SUBNEXUS_BUILD_DOCKER_CONTEXT'
 assert_contains 'SUBNEXUS_LOCAL_DOCKER_CONFIRM=I_UNDERSTAND_LOCAL_ONLY'
+assert_contains 'SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256'
+assert_contains 'script_relative_path='
+assert_contains 'validate_approved_build_script_sha256() {'
+assert_contains 'approved_script_blob_sha256'
+assert_contains 'git -C "$source_root" show "$approved_sha:$script_relative_path"'
+assert_contains 'executed build script does not match the approved SHA256'
 assert_contains 'default, SSH, TCP, remote,'
 assert_contains 'production contexts are rejected'
 assert_contains 'valid_context_name() {'
@@ -85,7 +91,13 @@ assert_contains '"$relative" == "backend/migrations/$basename"'
 assert_contains '^[0-9]{3,}[a-z]?_'
 assert_contains 'validate_dockerfile_pin_contract() {'
 assert_contains 'local -A seen=()'
+assert_contains 'local -A seen=() arg_seen=()'
 assert_contains 'opcode="${fields[0],,}"'
+assert_contains 'from_seen='
+assert_contains 'Dockerfile base ARG must appear before the first FROM'
+assert_contains 'Dockerfile base ARG must declare a default assignment'
+assert_contains 'Dockerfile ARG has an unsafe default value'
+assert_contains 'Dockerfile has an unterminated line continuation'
 assert_contains 'Dockerfile must contain exactly four FROM instructions'
 assert_contains 'external Dockerfile syntax directives are not allowed'
 assert_contains 'exec 9<"$artifact_root"'
@@ -180,7 +192,16 @@ assert_contains 'com.subnexus.candidate.token=$run_token'
 assert_contains 'com.subnexus.candidate.commit=$approved_sha'
 assert_contains 'com.subnexus.candidate.tree=$tree_sha'
 assert_contains 'org.opencontainers.image.revision=$approved_sha'
+assert_contains 'APPROVED_BUILD_SCRIPT_SHA256=%s\n'
+assert_contains 'APPROVED_BUILD_SCRIPT_BLOB_SHA256=%s\n'
 assert_contains 'CANDIDATE_GATE_TAG'
+approval_call_line="$(awk '/^  validate_approved_build_script_sha256$/{print NR; exit}' "$subject")"
+source_tree_call_line="$(awk '/^  validate_source_tree$/{print NR; exit}' "$subject")"
+first_docker_call_line="$(awk '/context_info=.*docker_call context inspect/{print NR; exit}' "$subject")"
+[[ "$source_tree_call_line" =~ ^[0-9]+$ && "$approval_call_line" =~ ^[0-9]+$ &&
+  "$first_docker_call_line" =~ ^[0-9]+$ && "$source_tree_call_line" -lt "$approval_call_line" &&
+  "$approval_call_line" -lt "$first_docker_call_line" ]] ||
+  fail 'source and external script approval checks must precede Docker operations'
 assert_contains 'docker save'
 assert_contains 'candidate-image.tar'
 assert_contains 'IMAGE_ARCHIVE_SHA256'
@@ -188,12 +209,19 @@ assert_contains 'SHA256SUMS'
 assert_contains 'metadata.env'
 assert_contains 'manifest.json'
 assert_contains 'RepoTags'
+assert_contains "image inspect --format '{{json .RootFS.Layers}}'"
+assert_contains 'rootfs_layers_json'
+assert_contains 'hashlib.sha256(config_bytes).hexdigest()'
+assert_contains 'config digest does not match its content'
+assert_contains 'rootfs.diff_ids do not match the built image'
+assert_contains 'config_path_re = re.compile'
 assert_contains 'atomic stage rename'
 assert_contains 'mv -- "$stage_dir" "$final_dir"'
 
 # Exercise pure Bash validators without sourcing the script's main entrypoint.
 validator_source="$(sed -n '/^valid_immutable_image_ref() {$/,/^}$/p' "$subject")"
 repository_validator_source="$(sed -n '/^valid_repository_digest_ref() {$/,/^}$/p' "$subject")"
+approved_script_source="$(sed -n '/^validate_approved_build_script_sha256() {$/,/^}$/p' "$subject")"
 context_source="$(sed -n '/^valid_context_name() {$/,/^}$/p' "$subject")"
 tag_source="$(sed -n '/^valid_tag() {$/,/^}$/p' "$subject")"
 env_example_source="$(sed -n '/^is_safe_env_example_path() {$/,/^}$/p' "$subject")"
@@ -206,7 +234,48 @@ swap_support_source="$(sed -n '/^swap_limit_supported_from_warnings() {$/,/^}$/p
 mount_validator_source="$(sed -n '/^validate_builder_mounts() {$/,/^}$/p' "$subject")"
 cleanup_network_source="$(sed -n '/^validate_builder_cleanup_network() {$/,/^cleanup_builder_and_network() {$/p' "$subject" | sed '$d')"
 cleanup_source="$(sed -n '/^cleanup_builder_and_network() {$/,/^cleanup_release_tags() {$/p' "$subject" | sed '$d')"
-[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" && -n "$swap_support_source" && -n "$mount_validator_source" && -n "$cleanup_network_source" && -n "$cleanup_source" ]] || fail 'validator functions not found'
+[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$approved_script_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" && -n "$swap_support_source" && -n "$mount_validator_source" && -n "$cleanup_network_source" && -n "$cleanup_source" ]] || fail 'validator functions not found'
+
+# The external approval must bind the exact Git blob and the file that Bash is
+# executing.  These checks run without Docker and cover missing, malformed,
+# blob-mismatch, and executable-file-mismatch approvals.
+(
+  eval "$approved_script_source"
+  valid_sha256_hex() { [[ "${1:-}" =~ ^[0-9a-f]{64}$ ]]; }
+  fail() { return 1; }
+  source_root='fixture-source'
+  approved_sha="$(printf 'c%.0s' {1..40})"
+  script_relative_path='tools/production-deploy/subnexus-isolated-image-build.sh'
+  script_fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-script-approval-test.XXXXXX")"
+  trap 'rm -rf -- "$script_fixture_root"' EXIT
+  script_source_path="$script_fixture_root/subnexus-isolated-image-build.sh"
+  printf '%s\n' fixture >"$script_source_path"
+  owner_is_allowed() { return 0; }
+  mode_is_safe() { return 0; }
+  blob_content='approved-build-script-blob'
+  blob_sha256="$(printf '%s' "$blob_content" | sha256sum | awk '{print tolower($1)}')"
+  current_file_sha256="$blob_sha256"
+  script_sha256="$(printf 'f%.0s' {1..64})"
+  hash_file() { printf '%s' "$current_file_sha256"; }
+  git() {
+    [[ "$1" == '-C' && "$2" == "$source_root" && "$3" == 'show' &&
+      "$4" == "$approved_sha:$script_relative_path" ]] || return 1
+    printf '%s' "$blob_content"
+  }
+  SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256="$blob_sha256"
+  validate_approved_build_script_sha256 || fail 'matching external script approval was rejected'
+  [[ "$script_sha256" == "$blob_sha256" ]] || fail 'current script SHA was not refreshed after source validation'
+  [[ "$approved_script_blob_sha256" == "$blob_sha256" ]] || fail 'approved blob digest was not retained'
+  unset SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256
+  if validate_approved_build_script_sha256; then fail 'missing external script approval was accepted'; fi
+  SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256="${blob_sha256^^}"
+  if validate_approved_build_script_sha256; then fail 'uppercase external script approval was accepted'; fi
+  SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256="$(printf 'd%.0s' {1..64})"
+  if validate_approved_build_script_sha256; then fail 'blob-mismatched external script approval was accepted'; fi
+  SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256="$blob_sha256"
+  current_file_sha256="$(printf 'e%.0s' {1..64})"
+  if validate_approved_build_script_sha256; then fail 'executable-file-mismatched approval was accepted'; fi
+)
 (
   eval "$validator_source"
   eval "$repository_validator_source"
@@ -424,6 +493,7 @@ ARG NODE_IMAGE=
 ARG GOLANG_IMAGE=
 ARG ALPINE_IMAGE=
 ARG POSTGRES_IMAGE=
+ARG GOPROXY=https://goproxy.cn,direct
   from --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
 FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
 FROM ${POSTGRES_IMAGE} AS pg-client
@@ -432,6 +502,39 @@ DOCKERFILE
   }
   write_valid_dockerfile
   validate_dockerfile_pin_contract || { printf 'TEST ERROR: valid Dockerfile contract was rejected\n' >&2; exit 1; }
+  cat >"$context_root/Dockerfile" <<'DOCKERFILE'
+  aRg NODE_IMAGE=
+arg GOLANG_IMAGE=
+    ARG ALPINE_IMAGE=
+ArG POSTGRES_IMAGE=
+ARG GOPROXY=https://goproxy.cn,direct
+  from --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
+FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
+FROM ${POSTGRES_IMAGE} AS pg-client
+FROM ${ALPINE_IMAGE}
+DOCKERFILE
+  validate_dockerfile_pin_contract || { printf 'TEST ERROR: case/indent ARG or FROM was rejected\n' >&2; exit 1; }
+  write_valid_dockerfile
+  sed -i '1s/^/# /' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: commented ARG was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i '1i # FROM ubuntu' "$context_root/Dockerfile"
+  validate_dockerfile_pin_contract || { printf 'TEST ERROR: FROM in a comment was counted\n' >&2; exit 1; }
+  write_valid_dockerfile
+  printf '\nARG NODE_IMAGE=\n' >>"$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: base ARG after the first FROM was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i '2i ARG NODE_IMAGE=' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: duplicate base ARG was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i '1c ARG NODE_IMAGE' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: base ARG without a default assignment was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i '1c ARG NODE_IMAGE=not valid' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: base ARG with an extra default token was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i '1c ARG NODE_IMAGE=$(untrusted)' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: base ARG with a substitution default was accepted\n' >&2; exit 1; fi
   sed -i 's|  from --platform=${BUILDPLATFORM} ${NODE_IMAGE}|  from ubuntu|' "$context_root/Dockerfile"
   if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: lowercase mutable FROM was accepted\n' >&2; exit 1; fi
   write_valid_dockerfile
@@ -443,6 +546,16 @@ DOCKERFILE
   write_valid_dockerfile
   sed -i 's|${POSTGRES_IMAGE} AS pg-client|${NODE_IMAGE} AS pg-client|' "$context_root/Dockerfile"
   if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: duplicate base argument was accepted\n' >&2; exit 1; fi
+)
+
+# Run the same strict parser against the repository Dockerfile. This catches
+# legitimate non-image ARG defaults such as GOPROXY while retaining the
+# immutable base-image contract.
+(
+  context_root="$(cd -- "$(dirname -- "$root_dockerfile")" && pwd)"
+  eval "$dockerfile_contract_source"
+  fail() { return 1; }
+  validate_dockerfile_pin_contract || fail 'repository Dockerfile pin contract was rejected'
 )
 
 # Image absence fixture: transient inspect failures and unrelated errors must
@@ -525,6 +638,76 @@ PY
   [[ "$(stat -c '%a' "$fixture_root/context/nested/exec.sh")" == 755 ]] || fail 'executable file mode was not normalized to 0755'
 else
   printf 'context mode dynamic fixture skipped: usable python3 is unavailable\n'
+fi
+
+# Exercise the embedded Docker-save archive validator with a real config
+# digest and RootFS diff-ID list.  Windows Git Bash may expose only the
+# AppInstaller python3 redirector, so this fixture is skipped unless a real
+# interpreter can execute a trivial program.
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import hashlib, json, sys; print(sys.version_info[:2])' >/dev/null 2>&1; then
+  archive_validator_source="$(awk '/^  python3 - "\$archive_tmp" "\$gate_tag" "\$rootfs_layers_json" <<'"'"'PY'"'"'$/{capture=1; next} capture && /^PY$/{exit} capture{print}' "$subject")"
+  [[ -n "$archive_validator_source" ]] || fail 'embedded archive validator was not found'
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-archive-validator-test.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  printf '%s\n' "$archive_validator_source" >"$fixture_root/validator.py"
+  python3 - "$fixture_root/make-fixtures.py" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+import tarfile
+
+root = pathlib.Path(sys.argv[1]).parent
+tag = "subnexus-release:" + "b" * 40
+layers = ["sha256:" + "a" * 64, "sha256:" + "c" * 64]
+config_bytes = json.dumps({"rootfs": {"type": "layers", "diff_ids": layers}}, separators=(",", ":")).encode()
+config_id = hashlib.sha256(config_bytes).hexdigest()
+manifest = [{"Config": f"blobs/sha256/{config_id}", "RepoTags": [tag], "Layers": ["layer.tar"]}]
+with tarfile.open(root / "valid.tar", "w:") as archive:
+    info = tarfile.TarInfo("manifest.json")
+    manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
+    info.size = len(manifest_bytes)
+    archive.addfile(info, __import__("io").BytesIO(manifest_bytes))
+    info = tarfile.TarInfo(f"blobs/sha256/{config_id}")
+    info.size = len(config_bytes)
+    archive.addfile(info, __import__("io").BytesIO(config_bytes))
+    archive.addfile(tarfile.TarInfo("layer.tar"), __import__("io").BytesIO())
+
+bad_bytes = config_bytes.replace(b"a" * 64, b"d" * 64)
+with tarfile.open(root / "bad-rootfs.tar", "w:") as archive:
+    info = tarfile.TarInfo("manifest.json")
+    manifest_bytes = json.dumps([{"Config": f"blobs/sha256/{hashlib.sha256(bad_bytes).hexdigest()}", "RepoTags": [tag], "Layers": ["layer.tar"]}], separators=(",", ":")).encode()
+    info.size = len(manifest_bytes)
+    archive.addfile(info, __import__("io").BytesIO(manifest_bytes))
+    info = tarfile.TarInfo(f"blobs/sha256/{hashlib.sha256(bad_bytes).hexdigest()}")
+    info.size = len(bad_bytes)
+    archive.addfile(info, __import__("io").BytesIO(bad_bytes))
+    archive.addfile(tarfile.TarInfo("layer.tar"), __import__("io").BytesIO())
+
+bad_hash = config_bytes + b"\n"
+with tarfile.open(root / "bad-hash.tar", "w:") as archive:
+    info = tarfile.TarInfo("manifest.json")
+    manifest_bytes = json.dumps([{"Config": f"blobs/sha256/{config_id}", "RepoTags": [tag], "Layers": ["layer.tar"]}], separators=(",", ":")).encode()
+    info.size = len(manifest_bytes)
+    archive.addfile(info, __import__("io").BytesIO(manifest_bytes))
+    info = tarfile.TarInfo(f"blobs/sha256/{config_id}")
+    info.size = len(bad_hash)
+    archive.addfile(info, __import__("io").BytesIO(bad_hash))
+    archive.addfile(tarfile.TarInfo("layer.tar"), __import__("io").BytesIO())
+
+(root / "tag").write_text(tag)
+(root / "layers.json").write_text(json.dumps(layers, separators=(",", ":")))
+PY
+  archive_tag="$(<"$fixture_root/tag")"
+  archive_layers="$(<"$fixture_root/layers.json")"
+  python3 "$fixture_root/validator.py" "$fixture_root/valid.tar" "$archive_tag" "$archive_layers"
+  for invalid_archive in bad-rootfs.tar bad-hash.tar; do
+    if python3 "$fixture_root/validator.py" "$fixture_root/$invalid_archive" "$archive_tag" "$archive_layers" >/dev/null 2>&1; then
+      fail "archive validator accepted invalid fixture: $invalid_archive"
+    fi
+  done
+else
+  printf 'archive validator dynamic fixture skipped: usable python3 is unavailable\n'
 fi
 
 # Ensure line endings do not make the shell contract platform-dependent.

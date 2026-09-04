@@ -1113,3 +1113,13 @@
 - 只读 inspect 将残留对象完整绑定到本次随机 builder 名称/token、固定 BuildKit image ID和带 gate/token 标签的网络；随后仅对该精确 builder 执行 `buildx rm --force`，确认容器和唯一 state 卷消失，再按完整网络 ID删除已为空的专用网络。没有使用 prune 或删除镜像，daemon 已恢复五个固定镜像、0 容器/卷、仅默认网络。
 - 按真实 Buildx 0.30.1 / Docker 29.1.3 元数据校准合同：Driver/Status 使用锚定空白正则；bootstrap 初始 `MemorySwap=-1`、`PidsLimit=<nil>` 只允许用于项目 build 前失败清理；正常路径在运行项目 Dockerfile 前用 `docker update` 统一设置内存 4 GiB、memory-swap 4 GiB、CPU quota/period、PID 512 和 restart=no，并在 strict inspect 中要求精确值。
 - 新版 Buildx builder 容器的 Config.Labels 为空，因此不再依赖旧 labels；身份校验改为同时要求随机精确名称、固定 BuildKit image ID、专用网络 ID/名称、唯一 `buildx_buildkit_<builder>0_state` 卷挂载到 `/var/lib/buildkit`、私有 IPC/cgroup namespace、init、无端口/设备/docker.sock 及完整资源合同。Git Bash/WSL 的语法与 isolated-image-build 测试通过；真实构建仍待新提交后重跑。
+
+## 2026-09-04（Asia/Shanghai）— 构建批准锚点、归档兼容与锁路径收尾
+
+- 本轮仅修改 `F:\MySub2\sub2api` 的 `feature/subnexus-migration` 工作树；未读取或修改 `F:\Sub2Api\SubNexus`，未修改 fork `main`，未连接线上服务器、生产 PostgreSQL/Redis/Nginx，也未执行部署、迁移、重启、切流或开关变更。
+- `subnexus-isolated-image-build.sh` 现在要求外部独立批准值 `SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256`。在任何 Docker RPC 前，脚本重新检查执行文件的非符号链接/owner/mode，重新计算当前文件 SHA，并将其与批准提交中的 Git blob SHA 及外部值逐项比较；运行期间的自检也继续要求三者一致。`metadata.env` 记录 `BUILD_SCRIPT_SHA256`、`APPROVED_BUILD_SCRIPT_SHA256`、`APPROVED_BUILD_SCRIPT_BLOB_SHA256`。
+- Dockerfile 合同解析已改为处理大小写/缩进/续行后的真实指令：四个基础 `ARG` 必须在首个 `FROM` 前各出现一次并带安全默认值；注释伪造、重复/缺失声明、可变或带额外字段的 `FROM`、syntax/escape 指令均拒绝。合法 `GOPROXY=https://goproxy.cn,direct` 等非镜像参数保留兼容。
+- 隔离构建归档校验不再把 Docker image ID 与 archive Config digest 混淆：读取并校验 Config 内容 SHA-256，核对 `rootfs.diff_ids` 与构建前 `.RootFS.Layers`；候选 gate 同时校验 Docker 29 OCI Config、旧式 `<digest>.json`、gzip layer 和旧式未压缩 `layer.tar` 的解压后 SHA-256。候选 gate 的并发锁改为锁定已校验证据目录 inode，并在打开 FD 后复核设备/inode/owner/mode，移除可被替换的锁文件路径。
+- Windows Git Bash：四个发布脚本 `bash -n`、isolated-image-build、Docker candidate-check、readonly-preflight、Redis restore-check 夹具均通过；Windows 的动态 Python 夹具因系统只有 AppInstaller redirector 按设计跳过。WSL/Linux：同四套 `bash -n`/夹具均通过，动态归档、context 权限与 legacy/gzip layer 夹具实际执行并通过；`git diff --check` 通过（仅报告工作树 CRLF 转换提示）。
+- 当前状态仍为“本地代码门禁通过，真实 Docker Release Gate 未通过/待重跑”：尚未生成新的候选镜像归档，不能据此替换线上版本。BuildKit 使用专用 daemon 仍有 privileged 容器和构建网络出站的残余风险；生产候选 gate 不读取无独立签名的 `metadata.env`/`SHA256SUMS`，发布清单必须在外部保存并复核构建脚本 SHA。下一步是提交本轮改动、同步 `/work/sub2api` detached clone，复核专用 daemon 五镜像/零对象基线后再重跑真实隔离构建。
+- 本轮回滚点：提交前本地 HEAD `058657b94682d1aa0088e148d4fa1e41ddadd273`；此前已验证的代码回滚点 `79ce84dfd976002134500f27bbf8d0df75a19ca4`。本轮提交 SHA、脚本 SHA及真实构建证据须在后续追加记录中补齐。

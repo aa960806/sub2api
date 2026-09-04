@@ -66,14 +66,48 @@ PREFLIGHT_VERIFY_AND_RUN
 
 脚本对应用、Docker、PostgreSQL 和 Redis 只执行读取；唯一写入是证据目录中的 `evidence.txt`、SHA-256 文件和并发锁文件，不执行迁移、备份、DDL/DML、重启或切流。数据库和 Redis 命令在各自的依赖容器内执行，因此只能证明依赖服务自身可连接，不能替代应用容器实际连接路径的 smoke 测试。PostgreSQL 查询设置了会话级超时和只读模式；外层 Docker 超时仍可能留下服务器端 `docker exec` 进程，Redis 命令没有等价的服务端命令超时，超时后应人工确认并清理残留进程。脚本会全量记录 `schema_migrations`（含旧编号）、Atlas revision 摘要、活动相关对象、旧/新活动设置 key 和估算行数，并输出脱敏的存储摘要及 Nginx 存在性/版本标记；有效 Nginx 配置必须按单独的维护者审查步骤采集。请把脱敏后的内容回传到本地台账。证据中不得包含密码、Token、Cookie、JWT/TOTP secret、API Key、完整环境变量或完整 Nginx 配置。
 
-## 3. 备份与候选启动
+## 3. 本地隔离构建与脚本批准
+
+隔离构建只允许在专用本地/WSL Docker daemon 中执行，绝不使用默认 Docker Desktop、远程 context 或生产 socket。构建入口保留原有位置参数 `SOURCE_ROOT APPROVED_COMMIT_SHA [ARTIFACT_ROOT]`；新增且必填的环境变量 `SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256` 必须来自维护者批准的发布清单，使用 64 位小写 SHA-256。该值不能在同一条命令中现算现批，否则没有独立批准意义。
+
+执行前应使用受信 wrapper 从批准提交提取脚本 blob 到一次性非符号链接文件，再以该文件启动构建。wrapper 先核对批准清单中的脚本 SHA、Git blob SHA 和临时文件 SHA；构建脚本随后再次核对 Git blob、实际执行文件和外部环境值，并在任何 Docker RPC 之前失败关闭。构建输出 `BUILD_SCRIPT_SHA256`、`APPROVED_BUILD_SCRIPT_SHA256` 和 `APPROVED_BUILD_SCRIPT_BLOB_SHA256`，三者必须一致后才可把归档交给候选 gate。
+
+下面是本地示例。`<approved-build-script-sha256>` 必须从独立审核记录填写，不要用命令替换占位符；示例不会访问服务器或生产数据库：
+
+```bash
+set -Eeuo pipefail
+source_root='/work/sub2api'
+approved_commit_sha='<approved-40-character-commit-sha>'
+expected_build_script_sha256='<approved-build-script-sha256>'
+script_relative_path='tools/production-deploy/subnexus-isolated-image-build.sh'
+script_blob_sha256="$(git -C "$source_root" show "$approved_commit_sha:$script_relative_path" | sha256sum | awk '{print tolower($1)}')"
+test "$script_blob_sha256" = "$expected_build_script_sha256"
+verified_script="$(mktemp /tmp/subnexus-isolated-image-build.XXXXXX)"
+trap 'rm -f -- "$verified_script"' EXIT
+chmod 700 -- "$verified_script"
+git -C "$source_root" show "$approved_commit_sha:$script_relative_path" >"$verified_script"
+test "$(sha256sum "$verified_script" | awk '{print tolower($1)}')" = "$expected_build_script_sha256"
+SUBNEXUS_APPROVED_BUILD_SCRIPT_SHA256="$expected_build_script_sha256" \
+SUBNEXUS_BUILD_DOCKER_CONTEXT='subnexus-local-20260904' \
+SUBNEXUS_LOCAL_DOCKER_CONFIRM='I_UNDERSTAND_LOCAL_ONLY' \
+SUBNEXUS_CANDIDATE_NODE_IMAGE='<repo@sha256:digest>' \
+SUBNEXUS_CANDIDATE_GOLANG_IMAGE='<repo@sha256:digest>' \
+SUBNEXUS_CANDIDATE_ALPINE_IMAGE='<repo@sha256:digest>' \
+SUBNEXUS_CANDIDATE_POSTGRES_IMAGE='<repo@sha256:digest>' \
+SUBNEXUS_CANDIDATE_BUILDKIT_IMAGE='<repo@sha256:digest>' \
+bash "$verified_script" "$source_root" "$approved_commit_sha" '/work/subnexus-artifacts'
+```
+
+缺少该环境变量、格式错误、Git blob 与批准值不一致，或执行文件被替换时，脚本必须在 Docker context inspect 之前退出。任何脚本变更都要重新生成批准提交/脚本 SHA 并重新审核。
+
+## 4. 备份与候选启动
 
 1. 维护窗口开始前停止旧应用的写流量或将入口置于维护页；数据库和 Redis 保持运行。
 2. 生成并校验最终 PostgreSQL custom-format 备份和 Redis 恢复点，同时保存应用镜像及旧容器元数据。备份路径必须落在服务器专用证据目录，权限 `0700/0600`。
 3. 构建候选镜像时使用审核过的完整 SHA；候选使用与旧实例相同的数据库、Redis、JWT secret、TOTP encryption key 和持久化目录。
 4. 候选启动时保持所有迁移开关为 `false`。如果应用启动触发新增迁移，应先在候选日志确认完成，再进行健康和鉴权 smoke；不要手工重复执行同一迁移。
 
-## 4. 切流与观察
+## 5. 切流与观察
 
 1. 确认旧容器没有运行中的结算、迁移或奖励任务后停止旧应用容器，并立即启动候选容器。
 2. 先访问候选本地端口 `/health`、登录、用户/API Key、余额、订阅、订单、用量、模型列表和管理端只读接口。
@@ -81,10 +115,10 @@ PREFLIGHT_VERIFY_AND_RUN
 4. 切流后执行公网健康、登录、网关只读请求和支付回调模拟；观察至少一个完整任务/结算周期。
 5. 只在当前批次验收记录签字后开启一个功能开关。开关开启顺序：活动基础 → 首充/邀请 → 发票 → Battle Pass。任一异常先关闭对应开关并保留候选实例，禁止直接删除新表。
 
-## 5. 数据核对
+## 6. 数据核对
 
 切换前后记录并比较用户数、余额总额、未完成订单、订阅数、用量窗口、API Key 数量及每项迁移新增表的行数。金额和订单状态以数据库查询结果为准；抽样账户使用脱敏 ID/哈希，不在聊天或日志中传输敏感凭据。
 
-## 6. 保留策略
+## 7. 保留策略
 
 旧容器、旧镜像、旧源码和配置、切换前数据库/Redis 备份、Nginx 备份及服务器证据至少保留至维护者确认可以清理。禁止在验收完成前执行 `docker system prune -a`、`docker volume prune` 或删除回滚脚本。

@@ -74,7 +74,7 @@ candidate_archive_expanded_size=''
 candidate_archive_fingerprint=''
 observed_archive_sha256=''
 create_cidfile=''
-lock_file=''
+evidence_lock_fingerprint=''
 run_token=''
 source_root=''
 approved_sha=''
@@ -367,8 +367,6 @@ evidence_root="$(realpath -m -- "$evidence_root")" || fail 'cannot normalize evi
 evidence_parent="${evidence_root%/*}"
 [[ -d "$evidence_parent" && ! -L "$evidence_parent" ]] || fail 'evidence parent directory is missing or symbolic'
 [[ "$(stat -c '%u' -- "$evidence_parent")" == '0' ]] || fail 'evidence parent must be root-owned'
-lock_file="$evidence_root/.docker-candidate.lock"
-
 for docker_override in DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION; do
   [[ -z "${!docker_override:-}" ]] || fail "$docker_override must be unset for a local Docker gate"
 done
@@ -830,12 +828,71 @@ tree_sha="$(git -C "$source_root" rev-parse "$approved_sha^{tree}" 2>/dev/null)"
 
 validate_candidate_archive_manifest() {
   timeout --foreground --kill-after=10s 120s python3 - "$candidate_archive_path" "$candidate_image_tag" "$expected_candidate_image_id" <<'PY'
+import gzip
+import hashlib
+import io
 import json
 import pathlib
+import re
 import sys
 import tarfile
 
-archive, expected_tag, expected_id = sys.argv[1:]
+archive, expected_tag, _expected_id = sys.argv[1:]
+sha256_re = re.compile(r"^[0-9a-f]{64}$")
+config_path_re = re.compile(r"^(?:blobs/sha256/([0-9a-f]{64})|([0-9a-f]{64})\.json)$")
+layer_blob_path_re = re.compile(r"^blobs/sha256/[0-9a-f]{64}$")
+legacy_layer_path_re = re.compile(r"^(?:[^/]+/)?layer\.tar$")
+max_expanded_layer_bytes = 12 * 1024**3
+
+
+class PrefixReader(io.RawIOBase):
+    """Expose bytes already consumed while probing a layer's compression."""
+
+    def __init__(self, prefix, stream):
+        self._prefix = memoryview(prefix)
+        self._offset = 0
+        self._stream = stream
+
+    def readable(self):
+        return True
+
+    def readinto(self, target):
+        remaining = len(self._prefix) - self._offset
+        if remaining:
+            count = min(len(target), remaining)
+            target[:count] = self._prefix[self._offset:self._offset + count]
+            self._offset += count
+            return count
+        chunk = self._stream.read(len(target))
+        if not chunk:
+            return 0
+        target[:len(chunk)] = chunk
+        return len(chunk)
+
+
+def layer_digest(bundle, member):
+    source = bundle.extractfile(member)
+    if source is None:
+        raise SystemExit("Docker archive layer is unreadable")
+    prefix = source.read(2)
+    reader = PrefixReader(prefix, source)
+    if prefix == b"\x1f\x8b":
+        stream = gzip.GzipFile(fileobj=io.BufferedReader(reader), mode="rb")
+    else:
+        stream = io.BufferedReader(reader)
+    digest = hashlib.sha256()
+    expanded = 0
+    while True:
+        chunk = stream.read(1024 * 1024)
+        if not chunk:
+            break
+        expanded += len(chunk)
+        if expanded > max_expanded_layer_bytes:
+            raise SystemExit("Docker archive expanded layer exceeds 12 GiB")
+        digest.update(chunk)
+    return digest.hexdigest(), expanded
+
+
 with tarfile.open(archive, mode="r:") as bundle:
     members = bundle.getmembers()
     if not members or len(members) > 50000:
@@ -865,18 +922,63 @@ with tarfile.open(archive, mode="r:") as bundle:
     if not isinstance(manifest, list) or len(manifest) != 1:
         raise SystemExit("Docker archive must contain exactly one image")
     entry = manifest[0]
-    if entry.get("RepoTags") != [expected_tag]:
+    if not isinstance(entry, dict) or entry.get("RepoTags") != [expected_tag]:
         raise SystemExit("Docker archive contains an unexpected tag")
     config = entry.get("Config")
     layers = entry.get("Layers")
-    if not isinstance(config, str) or not isinstance(layers, list) or not layers:
+    if (
+        not isinstance(config, str)
+        or not isinstance(layers, list)
+        or not layers
+        or any(not isinstance(layer, str) for layer in layers)
+    ):
         raise SystemExit("Docker archive manifest fields are invalid")
-    config_id = config.removeprefix("blobs/sha256/").removesuffix(".json")
-    if config_id != expected_id:
-        raise SystemExit("Docker archive config does not match the approved image ID")
+    config_match = config_path_re.fullmatch(config)
+    if config_match is None:
+        raise SystemExit("Docker archive config path is invalid")
+    config_id = config_match.group(1) or config_match.group(2)
+    if not sha256_re.fullmatch(config_id):
+        raise SystemExit("Docker archive config digest is invalid")
     for referenced in [config, *layers]:
         if not isinstance(referenced, str) or referenced not in names:
             raise SystemExit("Docker archive manifest references a missing member")
+    config_member = bundle.getmember(config)
+    config_file = bundle.extractfile(config_member)
+    if config_file is None or config_member.size > 16 * 1024 * 1024:
+        raise SystemExit("Docker archive config is unreadable or too large")
+    config_bytes = config_file.read()
+    if hashlib.sha256(config_bytes).hexdigest() != config_id:
+        raise SystemExit("Docker archive config digest does not match its contents")
+    try:
+        image_config = json.loads(config_bytes)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit("Docker archive config is not valid JSON") from exc
+    if not isinstance(image_config, dict):
+        raise SystemExit("Docker archive config must be a JSON object")
+    rootfs = image_config.get("rootfs")
+    diff_ids = rootfs.get("diff_ids") if isinstance(rootfs, dict) else None
+    if (
+        not isinstance(rootfs, dict)
+        or rootfs.get("type") != "layers"
+        or not isinstance(diff_ids, list)
+        or len(diff_ids) != len(layers)
+        or not diff_ids
+    ):
+        raise SystemExit("Docker archive config rootfs does not match manifest layers")
+    for diff_id in diff_ids:
+        if not isinstance(diff_id, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", diff_id):
+            raise SystemExit("Docker archive config contains an invalid rootfs diff ID")
+    expanded_layers = 0
+    for layer_path, expected_diff_id in zip(layers, diff_ids):
+        if not (layer_blob_path_re.fullmatch(layer_path) or legacy_layer_path_re.fullmatch(layer_path)):
+            raise SystemExit("Docker archive layer path is invalid")
+        layer_member = bundle.getmember(layer_path)
+        observed_diff_id, expanded = layer_digest(bundle, layer_member)
+        expanded_layers += expanded
+        if expanded_layers > max_expanded_layer_bytes:
+            raise SystemExit("Docker archive expanded layers exceed 12 GiB")
+        if observed_diff_id != expected_diff_id.removeprefix("sha256:"):
+            raise SystemExit("Docker archive layer digest does not match config rootfs diff ID")
 print(total)
 PY
 }
@@ -946,14 +1048,13 @@ base_images_file="$evidence_stage_dir/base-images.txt"
 
 [[ ! -e "$evidence_stage_dir" && ! -L "$evidence_stage_dir" ]] || fail 'candidate evidence stage already exists'
 [[ ! -e "$evidence_final_dir" && ! -L "$evidence_final_dir" ]] || fail 'candidate evidence destination already exists'
-[[ ! -e "$lock_file" || -f "$lock_file" ]] || fail 'candidate lock path is not a regular file'
-[[ ! -L "$lock_file" ]] || fail 'candidate lock path must not be symbolic'
-if [[ -e "$lock_file" ]]; then
-  [[ "$(stat -c '%u' -- "$lock_file")" == '0' ]] || fail 'candidate lock must be root-owned'
-  [[ "$(stat -c '%h' -- "$lock_file")" == '1' ]] || fail 'candidate lock must have one hard link'
-fi
-exec 9>>"$lock_file"
-chmod 600 -- "$lock_file"
+# Lock the already-validated evidence directory inode.  A separate pathname
+# lock file would be replaceable by a symlink between validation and redirection.
+evidence_lock_fingerprint="$(stat -Lc '%d|%i|%u|%a' -- "$evidence_root")" ||
+  fail 'cannot fingerprint candidate evidence directory for locking'
+exec 9<"$evidence_root" || fail 'cannot open candidate evidence directory for locking'
+[[ "$(stat -Lc '%d|%i|%u|%a' -- "/proc/$$/fd/9")" == "$evidence_lock_fingerprint" ]] ||
+  fail 'candidate evidence directory changed before locking'
 flock -n 9 || fail 'another Docker candidate gate is running'
 main_bashpid="$BASHPID"
 
