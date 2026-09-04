@@ -130,10 +130,11 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 ## 4. 备份与候选启动
 
-1. 维护窗口开始前停止旧应用的写流量或将入口置于维护页；数据库和 Redis 保持运行。
-2. 生成并校验最终 PostgreSQL custom-format 备份和 Redis 恢复点，同时保存应用镜像及旧容器元数据。备份路径必须落在服务器专用证据目录，权限 `0700/0600`。
-3. 构建候选镜像时使用审核过的完整 SHA；候选使用与旧实例相同的数据库、Redis、JWT secret、TOTP encryption key 和持久化目录。
-4. 候选启动时保持所有迁移开关为 `false`。如果应用启动触发新增迁移，应先在候选日志确认完成，再进行健康和鉴权 smoke；不要手工重复执行同一迁移。
+1. 先让旧应用继续正常服务，使用已批准脚本执行在线 `prepare`；该阶段不得停止、重命名或重启旧应用，不创建候选容器，也不执行生产迁移、DDL/DML 或开关修改。
+2. `prepare` 生成并校验 PostgreSQL custom-format 备份、catalog、Redis RDB/校验报告、设置快照、应用持久化数据归档、旧容器运行合同和依赖身份。所有文件必须位于 root-only 证据目录并通过 SHA-256、owner、mode、inode 和预算校验。
+3. 在线应用数据归档固定排除 `./logs/*.log`，因为这些活动文本日志在服务期间持续写入；`./logs/*.gz` 和其他应用数据继续归档，任何其他变化或 tar 错误仍 fail-closed。日志轮转若正在原地更新 `.log.gz`，本次 prepare 可能安全失败并需稍后重试，不会为了成功而忽略错误。每个 run 必须包含 `application-data-exclusions.txt`、其 SHA256 sidecar 和 manifest hash；因此该归档不得描述为“包含活动日志的全量副本”。活动日志和旧容器本身继续原地保留。
+4. `READY` 只能在镜像 ID/归档/gate 证据、全部备份哈希、设置快照、应用数据源身份、线上容器和 PostgreSQL/Redis 依赖身份再次一致后生成。没有 `READY` 时禁止执行 `switch`。
+5. 候选镜像使用审核过的应用提交，所有迁移功能仍默认关闭。候选容器只在维护者执行最终 `switch` 后创建和启动；如启动触发新增迁移，应核对自动迁移日志，不得手工重复执行同一迁移。
 
 ## 5. 切流与观察
 

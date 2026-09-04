@@ -1215,3 +1215,11 @@
 - 本地提交后切换脚本文件 SHA256=`56d6935418bb3229892653d4d775cefb341e20a44c5adef612b55340741584f4`，Git blob=`deb8782a3817f03a48ded468a58642b5843d1705`；提交尚待推送并以唯一新文件名安装到服务器，旧脚本必须保留。
 - 本轮只访问并修改 `F:\MySub2\sub2api` 迁移分支及本地测试；未读取/修改旧项目、fork `main`，未连接或写入线上服务器、PostgreSQL、Redis、Docker、Nginx，未执行迁移、部署、切流或开关变更。
 - 当前状态：线上仍无 `READY`，不得执行 `switch`；下一步为推送提交、安装新脚本、仅以 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=1800` 重新执行一次无停机 `prepare`，随后只读核验备份和身份合同，核验完成即停在人工切换前。
+
+## 2026-09-05（Asia/Shanghai）— 在线应用数据归档活动日志安全修复
+
+- 上一次线上 `prepare` 在应用数据归档阶段安全失败，原因是实时写入的 `/srv/subnexus-migration/runtime/subnexus-data/logs/sub2api.log` 被 GNU tar 报告为 `file changed as we read it`。失败发生在镜像加载、候选容器创建、数据库写入和线上容器操作之前；失败 run、已有备份和日志均保留，线上应用仍为 `be459424b327...`/healthy。
+- 提交 `9c0033aa1b152f75e4e15f06f70a15d39e46f4d6` 仅修改 fork 迁移分支的生产切换脚本及夹具：在线应用数据归档固定只排除 `./logs/*.log`，保留 `./logs/*.gz` 和其他数据；不使用 `--ignore-failed-read` 或抑制 `file changed` 警告，因此非日志文件的变化仍 fail-closed。若日志轮转正在原地更新 `.log.gz`，prepare 会安全失败并稍后重试。脚本同时清除 `TAR_OPTIONS`/`GZIP` 环境注入，避免归档参数被外部环境改变。
+- 每个新 prepare run 生成 root-only `application-data-exclusions.txt`、独立 SHA256 sidecar 和 manifest 字段 `application_data_archive_policy_sha256`；switch 必须校验完整策略证据。后续提交 `b27ae6652` 将该策略证据排除在 rollback 前置条件之外，因为 rollback 不读取任何应用归档或数据库备份；rollback 仍严格校验 Docker daemon、旧容器、依赖、应用数据目录身份和设置快照。
+- Windows Git Bash 和 `SubNexusBuild20260904` WSL/Linux 的 `bash -n`、`subnexus-production-cutover.test.sh` 及五套 `tools/production-deploy/*test.sh` 均通过；Linux 动态夹具实际让活动日志持续写入并验证稳定数据、压缩历史日志和策略哈希。系统 WSL 代理提示不影响退出码。
+- 两个代码提交均已推送至 `origin/feature/subnexus-migration`；`main` 与 `F:\Sub2Api\SubNexus` 未修改。此记录写入时尚未安装最终脚本、尚未重新执行线上 `prepare`，没有停止/重命名/重启生产容器，没有执行 DDL/DML、Nginx 切流或开启任何二开功能。下一步只在服务器保留旧脚本的前提下安装唯一新文件名，并用脱离 SSH 的后台方式重跑无停机 `prepare`；只要未得到完整 `READY` 和人工核验，禁止 `switch`。
