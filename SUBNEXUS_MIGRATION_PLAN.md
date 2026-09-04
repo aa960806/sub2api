@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
-> 版本：v1.9（2026-09-03，真实生产克隆 migration/adoption 与旧版回归已通过）
-> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4、本地夹具、线上只读预检/备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态和旧版回归已通过。Docker 候选仍待完成；通过前禁止生产迁移、候选连接生产库、切流或开启功能
+> 版本：v2.0（2026-09-04，Docker runtime gate 与 owner 合同收口已通过）
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4、本地夹具、线上只读预检/备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 均已通过。线上 `prepare` 尚待使用最新批准脚本重跑；在 `READY` 和维护者人工批准前，禁止生产迁移、候选连接生产库、切流或开启功能
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -133,17 +133,17 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 门禁：扫描器在关闭时不读取/写入 `usage_logs`；充值任务只计算允许的订单状态和净额；邀请任务复用现有 Affiliate 关系但不写返利账；进度重算、退款减少进度、重复发奖、赛季草稿/发布/归档和未来赛季可见性均有测试。
 
-### Batch 5：集成验收和文档收敛（PG、Redis、主机候选 smoke 与旧版回滚通过；Docker 待办）
+### Batch 5：集成验收和文档收敛（PG、Redis、主机候选 smoke、旧版回滚与 Docker runtime gate 通过）
 
-- 执行 PostgreSQL/Redis Testcontainers 或等价隔离环境测试、Docker 候选镜像启动和健康检查；后端全量/重点包测试、前端 typecheck/Vitest/build 已完成。隔离 PostgreSQL 16 的目标迁移、旧迁移和同库接管矩阵已通过（目标 290、旧版 268、接管后 371 条记录）。使用本机 miniredis（`127.0.0.1:56379`）完成非持久化候选主机进程 smoke（`18180`，health、setup、管理员登录、关闭态和二次启动）；旧版 `0.1.135` 在同一 371-record 克隆（`18183`）完成 health、setup、公共设置、有效管理员登录、`auth/me`、管理员只读接口及重启幂等回归。线上备份的 Redis 8.8.0 RDB 已在无网络/无端口隔离候选中加载验证，`RDB_TOTAL=39026` 且生产 Redis 身份未变化。当前前端全量为 282 个测试文件/1954 个测试。仅 Docker daemon/候选镜像运行仍待办；本机 Docker Desktop 当前因 Inference manager 路径错误不可用，不得为此连接线上服务或执行生产命令。
+- 已完成 PostgreSQL/Redis 等价隔离环境测试、Docker 候选镜像启动和健康检查；后端全量/重点包测试、前端 typecheck/Vitest/build 已完成。隔离 PostgreSQL 16 的目标迁移、旧迁移和同库接管矩阵已通过（目标 290、旧版 268、接管后 371 条记录）。使用本机 miniredis（`127.0.0.1:56379`）完成非持久化候选主机进程 smoke（`18180`，health、setup、管理员登录、关闭态和二次启动）；旧版 `0.1.135` 在同一 371-record 克隆（`18183`）完成 health、setup、公共设置、有效管理员登录、`auth/me`、管理员只读接口及重启幂等回归。线上备份的 Redis 8.8.0 RDB 已在无网络/无端口隔离候选中加载验证，`RDB_TOTAL=39026` 且生产 Redis 身份未变化。Docker runtime gate 已在专用 daemon 通过，证据和候选 SHA 见迁移台账；当前前端全量为 282 个测试文件/1954 个测试。本机 Docker Desktop 仍不可用，不得将其用于发布或连接线上服务。
 - 运行上游核心回归矩阵：认证、API Key、余额、订阅、订单、退款、用量计费、模型列表、Gateway 各协议、插件、Model Plaza、Grok、批量生图和安全设置。
 - 形成并持续维护精简上下文、功能矩阵、迁移台账、切换手册和回滚手册；当前文档已同步本地候选状态，不把历史记忆误当作当前实现状态。
 
 ### Release Gate：维护者本地验收后的上传与生产验证
 
 - 维护者先验收本地 Batch 1-5 的功能矩阵、默认关闭行为、测试和候选镜像；验收前不推送新的迁移提交，不让服务器拉取。
-- 迁移分支已推送并固定远端发布指针，生产只读 preflight 和 PostgreSQL/Redis/应用数据备份创建及结构校验已经完成；PostgreSQL 18.4 与 Redis 8.8.0 隔离恢复能力已取得证据，Docker 候选仍待证明。
-- 本机 PostgreSQL 18/Redis 8 隔离恢复库的 restore、adoption、候选启动和旧版本回归已通过；Docker 候选镜像门禁及维护者验收通过后，才允许服务器构建固定 release SHA 并进入受控切换。
+- 迁移分支已推送并固定远端发布指针，生产只读 preflight 和 PostgreSQL/Redis/应用数据备份创建及结构校验已经完成；PostgreSQL 18.4 与 Redis 8.8.0 隔离恢复能力及 Docker runtime gate 均已取得证据。
+- 本机 PostgreSQL 18/Redis 8 隔离恢复库的 restore、adoption、候选启动、旧版本回归和 Docker 候选镜像门禁均已通过；维护者人工复核发布清单后，才允许服务器准备固定 release SHA 并进入受控切换。
 
 每个 Batch 使用独立提交；提交信息包含功能名、开关、迁移文件、测试命令和回滚提交。当前先完成 Batch 1 的签到、排行榜、活动中心和公告扩展，再按顺序进入 Batch 2-4；未通过门禁的批次不得依赖后续批次继续开发或开启。维护者验收前只允许本地代码/测试/文档操作，禁止向 `origin` 推送、禁止服务器拉取和任何线上数据库或开关操作。
 
@@ -330,7 +330,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
-3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机和旧版本回滚矩阵，向维护者提交本地验收报告；仅 Docker 候选镜像仍需在运行环境可用后补齐。
-4. 维护者验收前只保留本地提交，不再推送，不要求服务器拉取或运行任何迁移资产。
+3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；当前仅线上 `prepare`、维护窗口切换和逐项功能验收尚未执行。
+4. 维护者人工复核发布清单后，才允许服务器拉取固定 release 资产并执行无停机 `prepare`；在 `READY` 前不得执行生产迁移、候选启动或切流。
 
-线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和切换前备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，Redis 8.8.0 RDB 已在服务器无网络/无端口隔离候选中实际加载验证，真实克隆的 migration/adoption、候选关闭态启动和旧版 0.1.135 同库回归均已通过。Release Gate 仍缺 Docker 候选镜像证据；生产备份中的 Channel Monitor V3 原为开启，切换脚本必须保存旧值后显式关闭，回滚时可恢复。未满足剩余门禁时不得让候选连接生产库、执行生产迁移、打开开关、切流或替换线上版本。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和切换前备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，Redis 8.8.0 RDB 已在服务器无网络/无端口隔离候选中实际加载验证，真实克隆的 migration/adoption、候选关闭态启动、旧版 0.1.135 同库回归和 Docker runtime gate 均已通过。线上 `prepare` 尚待使用最新批准脚本重跑；生产备份中的 Channel Monitor V3 原为开启，切换脚本必须保存旧值后显式关闭，回滚时可恢复。应用数据目录当前为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复已审核 owner 合同。未满足 `READY` 和维护者人工批准前，不得执行生产迁移、打开开关、切流或替换线上版本。

@@ -1,6 +1,16 @@
 # SubNexus 回滚手册
 
-回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络和 release SHA；不得使用历史文档中的硬编码值代替实时 inspect。
+回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络和 release SHA；不得使用历史文档中的硬编码值代替实时 inspect。对于本次 `subnexus-production-cutover.sh` 生成的 prepared run，优先使用该 run 对应的脚本 `rollback RUN_DIRECTORY`，不要用手工 `docker stop/start` 绕过 manifest、owner 和依赖身份校验。
+
+本次线上应用数据目录的已审核 owner 是 `1000:1000`、叶目录 mode `0755`。执行 `prepare`、`switch` 或 `rollback` 时，只有在实时 `stat` 与 prepared manifest 一致的前提下，才同时传入以下三项环境变量；不得通过 `chown` 来“修复”不一致：
+
+```text
+SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER
+SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+```
+
+没有 owner 字段的历史 manifest 按 legacy root-UID 兼容路径读取，仅用于旧版本回滚；新建 run 不得省略现代 owner 合同。
 
 ## 1. 功能异常
 
@@ -11,10 +21,14 @@
 适用于隔离演练已证明旧版本兼容新增表/可选字段的情况：
 
 ```bash
+SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /root/subnexus-production-cutover-<approved-sha>-<script-sha>.sh rollback <RUN_DIRECTORY>
+```
+
+先用 `docker ps`/`docker inspect` 和 `nginx -t` 做只读确认；上面的脚本会按 manifest 精确停止候选、恢复旧容器和设置。切流恢复仍需由维护者根据实际 Nginx 配置手动执行，再访问健康接口：
+
+```bash
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 docker inspect <旧容器名> <候选容器名> --format '{{.Name}} {{.Config.Image}} {{.State.Running}}'
-docker stop <候选容器名>
-docker start <旧容器名>
 nginx -t && nginx -s reload
 curl -fsS --max-time 8 https://<公网健康域名>/health
 ```

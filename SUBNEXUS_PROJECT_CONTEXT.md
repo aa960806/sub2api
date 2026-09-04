@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-03（真实生产克隆迁移、关闭态候选、旧版回归和 Redis 8 隔离恢复已通过；Docker 和切换仍待完成）
+> 最后更新：2026-09-04（真实生产克隆迁移、关闭态候选、旧版回归、Redis 8 隔离恢复和 Docker runtime gate 已通过；线上 prepare 待重跑，切换仍待维护者手动执行）
 
 ## 项目身份
 
@@ -20,13 +20,13 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态和旧版回归已完成；Docker 和受控切换仍待完成 |
+| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已完成；线上 prepare 待重跑，受控切换仍待维护者手动执行 |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 已执行只读盘点和 `pg_dump` 备份；未执行生产 SQL DDL/DML、迁移或候选连接，Redis 仅执行 `BGSAVE` 生成恢复点并在隔离容器验证恢复 |
 | 生产部署/切换 | 未执行 |
 | 生产开关 | 未修改 |
-| 工作区 | `feature/subnexus-migration` 已推送 fork；当前远端发布指针 `1da1e85dd7be761b22cd219c2c93d92fd48c6bcf`，本地继续收敛文档/门禁提交；功能代码候选仍为 `b26c42e08fb190f3915f08949aaaba48dbe61a26`；业务依赖、前端 lockfile 和 VERSION 未改 |
+| 工作区 | `feature/subnexus-migration` 已推送 fork；最新 owner 合同提交 `66cb41b26`；候选应用仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1`；业务依赖、前端 lockfile 和 VERSION 未改 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
@@ -106,4 +106,4 @@ registration_ip_cooldown_enabled
 
 1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
 2. 备份已下载并通过 20 个文件 SHA256；PostgreSQL 18.4 原始恢复库、真实克隆 migration/adoption、候选全部关闭态、旧版回归和 Redis 8.8.0 RDB 隔离加载均通过。Redis 证据位于台账记录的 root-only 路径。
-3. 仅 Docker 候选门禁和维护者验收通过后才进入短维护窗口切换；切换前先保存并关闭现有 `channel_monitor_enabled=true`，在此之前不得执行生产迁移、切流或开启任何迁移功能。
+3. Docker 候选门禁和维护者验收已通过；下一步只在服务器安装已批准的切换脚本并执行无停机 `prepare`。线上实时应用数据目录为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复 owner 合同；`READY` 生成后停止，切换、生产迁移、切流和功能开启仍只能由维护者手动执行。

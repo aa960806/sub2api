@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。当前已完成线上只读 preflight、切换前备份结构校验和 Redis 8 RDB 隔离恢复；候选 Docker 验证和维护窗口切换尚未完成，因此仍禁止生产迁移、候选连接生产库、替换容器、切流或功能开启。
+本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。当前线上只读 preflight、备份结构校验、PostgreSQL/Redis 隔离恢复、候选 Docker runtime gate 均已通过；线上 `prepare` 尚待重新执行，维护窗口切换仍未执行，因此仍禁止生产迁移、替换容器、切流或功能开启。
 
 ## 1. 发布前硬门禁
 
@@ -115,6 +115,18 @@ SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256=SERVER_TRUSTED_PROXIES=<最终出
 `EXPECTED_SHA256` 是同名键最后一次出现的值的 SHA-256，不是键名、整行或环境文件的哈希。批准值必须来自单独的只读复核记录；不要在调用 `prepare` 的同一条命令中读取明文、现算现批或把值写入 shell 历史。键和哈希列表必须按键排序、无重复，并且每个重复键都要有对应哈希。确认值、键清单或哈希任一缺失/不匹配，脚本都会在备份、数据库写入、容器停止之前失败关闭。
 
 通过后，脚本只把每个键最后一项写入 root-only 的 `container.env`（0600），并在 `environment-duplicates.tsv` 中记录出现次数、位置和各值哈希；证据文件不记录环境明文。manifest 固定规范化环境文件和证据文件的 SHA-256。`switch` 前会重新检查 live 容器的键序列、选中值哈希和规范化环境哈希；live 序列发生漂移会停止切换。候选容器若由 Docker 创建时已经把重复项规范化为唯一键，这是允许的，前提是规范化文件哈希仍与 prepare 完全一致。旧的无该 evidence 字段的 prepared run 按历史严格无重复合同兼容读取，不会获得 last-wins 豁免。
+
+### 3.2 应用数据目录 owner 合同
+
+应用数据源默认要求 root-owned、目录链不可写且无符号链接。当前线上实时目录 `/srv/subnexus-migration/runtime/subnexus-data` 为 UID/GID `1000:1000`、mode `0755`；这是唯一已审核的非 root 兼容 owner。执行 `prepare` 时必须同时提供：
+
+```text
+SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER
+SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+```
+
+脚本只允许该非 root owner 出现在最终 `/app/data` 叶目录；父目录仍必须由 root 持有且不得对 group/other 可写。`prepare`、`switch` 和 `rollback` 会重复校验 owner、mode、设备号和 inode；不得为迁移而 `chown` 或修改线上数据目录。没有 owner 字段的旧 manifest 只走 legacy root-UID 兼容路径（保留旧脚本只校验 UID 的行为），不允许借此为新 prepare 绕过现代 `1000:1000` 合同。
 
 ## 4. 备份与候选启动
 
