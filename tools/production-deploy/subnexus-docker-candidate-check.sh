@@ -1795,7 +1795,11 @@ create_candidate_containers() {
   totp_key="$(random_hex_32)" || fail 'cannot generate candidate TOTP encryption key'
   [[ "$totp_key" =~ ^[0-9a-f]{64}$ ]] || fail 'candidate TOTP encryption key must be exactly 64 lowercase hexadecimal characters'
 
-  create_candidate_container postgres "$postgres_name" "$postgres_volume" /var/lib/postgresql/data '' "$postgres_runtime_image_id" \
+  # PostgreSQL 18+ stores its major-version-specific PGDATA below
+  # /var/lib/postgresql and rejects a direct /var/lib/postgresql/data volume.
+  # Mount the parent directory so both the current 18.x image and older
+  # official images retain their image-defined PGDATA layout.
+  create_candidate_container postgres "$postgres_name" "$postgres_volume" /var/lib/postgresql '' "$postgres_runtime_image_id" \
     --name "$postgres_name" \
     --pull never \
     --label "com.subnexus.candidate.gate=$gate_name" --label "com.subnexus.candidate.token=$run_token" --label 'com.subnexus.candidate.role=postgres' \
@@ -1804,9 +1808,9 @@ create_candidate_containers() {
     --read-only --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID --cap-add SETUID \
     --security-opt no-new-privileges:true --cgroupns private --ipc private --shm-size 64m --log-driver none \
     --tmpfs '/tmp:rw,nosuid,nodev,noexec,size=64m' --tmpfs '/run/postgresql:rw,nosuid,nodev,noexec,size=16m' \
-    --mount "type=volume,src=$postgres_volume,dst=/var/lib/postgresql/data" \
+    --mount "type=volume,src=$postgres_volume,dst=/var/lib/postgresql" \
     --env "POSTGRES_USER=$pg_user" --env "POSTGRES_PASSWORD=$pg_password" --env "POSTGRES_DB=$pg_database" \
-    --env 'PGDATA=/var/lib/postgresql/data/pgdata' --env 'TZ=UTC' \
+    --env 'TZ=UTC' \
     --health-cmd "pg_isready -U $pg_user -d $pg_database" --health-interval 5s --health-timeout 3s --health-retries 30 --health-start-period 5s \
     "sha256:$postgres_runtime_image_id"
 
@@ -1848,7 +1852,7 @@ create_candidate_containers() {
     --health-cmd 'wget -q -T 5 -O /dev/null http://127.0.0.1:8080/health' --health-interval 5s --health-timeout 5s --health-retries 30 --health-start-period 20s \
     "sha256:$candidate_image_id"
 
-  validate_candidate_container "$postgres_id" postgres "$postgres_runtime_image_id" "$postgres_volume" /var/lib/postgresql/data '' false || fail 'candidate PostgreSQL isolation check failed'
+  validate_candidate_container "$postgres_id" postgres "$postgres_runtime_image_id" "$postgres_volume" /var/lib/postgresql '' false || fail 'candidate PostgreSQL isolation check failed'
   validate_candidate_container "$redis_id" redis "$redis_runtime_image_id" "$redis_volume" /data '' false || fail 'candidate Redis isolation check failed'
   validate_candidate_container "$app_id" app "$candidate_image_id" "$app_volume" /app/data '' false || fail 'candidate application isolation check failed'
   assert_candidate_env || fail 'candidate application environment is not fail-closed'
@@ -1908,7 +1912,7 @@ wait_for_candidate_health() {
 
 start_candidate_services() {
   docker_checked candidate_start_postgres start "$postgres_id" >/dev/null || fail 'cannot start candidate PostgreSQL'
-  validate_candidate_container "$postgres_id" postgres "$postgres_runtime_image_id" "$postgres_volume" /var/lib/postgresql/data '' true || fail 'candidate PostgreSQL start isolation check failed'
+  validate_candidate_container "$postgres_id" postgres "$postgres_runtime_image_id" "$postgres_volume" /var/lib/postgresql '' true || fail 'candidate PostgreSQL start isolation check failed'
   wait_for_candidate_health postgres "$postgres_id"
   validate_pid1_security "$postgres_id" || fail 'candidate PostgreSQL must run as non-root with NoNewPrivs and no effective capabilities'
 
