@@ -619,8 +619,9 @@ create_builder_network() {
 }
 
 validate_builder_container() {
-  local id="$1" validation_mode="${2:-strict}" observed_name observed_image network_mode ports privileged pid_mode ipc_mode mounts labels
+  local id="$1" validation_mode="${2:-strict}" observed_name observed_image network_mode ports privileged pid_mode ipc_mode mounts
   local memory memory_swap cpu_quota cpu_period pids_limit restart_policy security_opt devices device_requests volumes_from
+  local cgroupns_mode init readonly_rootfs expected_mount
   [[ "$id" =~ ^[0-9a-f]{64}$ ]] || return 1
   observed_name="$(docker_call inspect --format '{{.Name}}' "$id")" || return 1
   observed_image="$(docker_call inspect --format '{{.Image}}' "$id")" || return 1
@@ -634,24 +635,32 @@ validate_builder_container() {
   privileged="$(docker_call inspect --format '{{.HostConfig.Privileged}}' "$id")" || return 1
   pid_mode="$(docker_call inspect --format '{{.HostConfig.PidMode}}' "$id")" || return 1
   ipc_mode="$(docker_call inspect --format '{{.HostConfig.IpcMode}}' "$id")" || return 1
-  mounts="$(docker_call inspect --format '{{range .Mounts}}{{printf "%s|%s|%s\n" .Type .Source .Destination}}{{end}}' "$id")" || return 1
-  labels="$(docker_call inspect --format '{{json .Config.Labels}}' "$id")" || return 1
+  mounts="$(docker_call inspect --format '{{range .Mounts}}{{printf "%s|%s|%s|%t\n" .Type .Name .Destination .RW}}{{end}}' "$id")" || return 1
   restart_policy="$(docker_call inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$id")" || return 1
   security_opt="$(docker_call inspect --format '{{json .HostConfig.SecurityOpt}}' "$id")" || return 1
   devices="$(docker_call inspect --format '{{json .HostConfig.Devices}}' "$id")" || return 1
   device_requests="$(docker_call inspect --format '{{json .HostConfig.DeviceRequests}}' "$id")" || return 1
   volumes_from="$(docker_call inspect --format '{{json .HostConfig.VolumesFrom}}' "$id")" || return 1
+  cgroupns_mode="$(docker_call inspect --format '{{.HostConfig.CgroupnsMode}}' "$id")" || return 1
+  init="$(docker_call inspect --format '{{.HostConfig.Init}}' "$id")" || return 1
+  readonly_rootfs="$(docker_call inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$id")" || return 1
+  expected_mount="volume|buildx_buildkit_${builder_name}0_state|/var/lib/buildkit|true"
   [[ "$observed_name" == "/buildx_buildkit_${builder_name}0" &&
     "$observed_image" == "sha256:$buildkit_image_id" &&
     ( "$network_mode" == "$builder_network_name" || "$network_mode" == "$builder_network_id" ) &&
-    "$memory" == '4294967296' && "$memory_swap" == '4294967296' &&
+    "$memory" == '4294967296' &&
     "$cpu_quota" == '200000' && "$cpu_period" == '100000' &&
     ( "$ports" == '{}' || "$ports" == 'null' ) && "$pid_mode" == '' && "$ipc_mode" == 'private' &&
-    "$restart_policy" == 'no' &&
-    "$labels" == *'com.docker.buildx.builder'* && "$labels" == *'com.docker.buildx.driver'* ]] || return 1
+    "$restart_policy" == 'no' && "$cgroupns_mode" == 'private' && "$init" == 'true' &&
+    "$readonly_rootfs" == 'false' && "$mounts" == "$expected_mount" ]] || return 1
   case "$validation_mode" in
-    strict) [[ "$pids_limit" == '512' ]] || return 1 ;;
-    prebuild-cleanup) [[ "$pids_limit" == '0' || "$pids_limit" == '512' ]] || return 1 ;;
+    strict)
+      [[ "$memory_swap" == '4294967296' && "$pids_limit" == '512' ]] || return 1
+      ;;
+    prebuild-cleanup)
+      [[ "$memory_swap" == '-1' || "$memory_swap" == '4294967296' ]] || return 1
+      [[ "$pids_limit" == '<nil>' || "$pids_limit" == '0' || "$pids_limit" == '512' ]] || return 1
+      ;;
     *) return 1 ;;
   esac
   [[ "$privileged" == 'true' || "$privileged" == 'false' ]] || return 1
@@ -677,14 +686,15 @@ create_builder() {
   builder_created='true'
   docker_call buildx inspect --bootstrap "$builder_name" >"$builder_inspect_stage" 2>&1 ||
     fail 'isolated BuildKit builder failed to bootstrap' || return 1
-  grep -Fq 'Driver: docker-container' "$builder_inspect_stage" || fail 'builder driver is not docker-container' || return 1
-  grep -Fq 'Status: running' "$builder_inspect_stage" || fail 'isolated BuildKit builder is not running' || return 1
+  grep -Eq '^Driver:[[:space:]]+docker-container[[:space:]]*$' "$builder_inspect_stage" || fail 'builder driver is not docker-container' || return 1
+  grep -Eq '^Status:[[:space:]]+running[[:space:]]*$' "$builder_inspect_stage" || fail 'isolated BuildKit builder is not running' || return 1
   builder_listing="$(docker_call ps --all --no-trunc --filter "name=^/buildx_buildkit_${builder_name}0$" --format '{{.ID}}')" ||
     fail 'cannot locate isolated BuildKit container' || return 1
   [[ "$builder_listing" =~ ^[0-9a-f]{64}$ ]] || fail 'BuildKit builder container identity is ambiguous' || return 1
   builder_id="$builder_listing"
-  docker_call update --pids-limit 512 "$builder_id" >/dev/null ||
-    fail 'cannot apply the BuildKit container PID limit' || return 1
+  docker_call update --memory 4g --memory-swap 4g \
+    --cpu-period 100000 --cpu-quota 200000 --pids-limit 512 --restart no "$builder_id" >/dev/null ||
+    fail 'cannot apply the BuildKit container resource limits' || return 1
   validate_builder_container "$builder_id" || fail 'BuildKit builder container isolation validation failed' || return 1
   builder_validated='true'
 }

@@ -135,11 +135,16 @@ assert_contains "--driver-opt 'cpu-quota=200000'"
 assert_contains "--driver-opt 'cpu-period=100000'"
 assert_contains "--driver-opt 'restart-policy=no'"
 assert_not_contains "--driver-opt 'pids-limit=512'"
-assert_contains 'docker_call update --pids-limit 512 "$builder_id"'
-assert_contains 'cannot apply the BuildKit container PID limit'
+assert_contains 'docker_call update --memory 4g --memory-swap 4g'
+assert_contains '--cpu-period 100000 --cpu-quota 200000 --pids-limit 512 --restart no "$builder_id"'
+assert_contains 'cannot apply the BuildKit container resource limits'
 assert_contains "builder_validated='true'"
 assert_contains 'validate_builder_container "$builder_id" prebuild-cleanup'
-assert_contains "prebuild-cleanup) [[ \"\$pids_limit\" == '0' || \"\$pids_limit\" == '512' ]]"
+assert_contains 'expected_mount="volume|buildx_buildkit_${builder_name}0_state|/var/lib/buildkit|true"'
+assert_contains "\"\$pids_limit\" == '<nil>' || \"\$pids_limit\" == '0' || \"\$pids_limit\" == '512'"
+assert_contains "\"\$memory_swap\" == '-1' || \"\$memory_swap\" == '4294967296'"
+assert_contains "^Driver:[[:space:]]+docker-container[[:space:]]*\$"
+assert_contains "^Status:[[:space:]]+running[[:space:]]*\$"
 assert_contains 'setsid --wait'
 assert_contains 'build_pid_file'
 assert_contains 'subnexus-build-wrapper'
@@ -151,8 +156,6 @@ assert_contains 'kill -TERM -- "-$build_pgid"'
 assert_contains 'kill -KILL -- "-$build_pgid"'
 assert_contains 'wait "$build_pid"'
 assert_contains 'build_status="$status"'
-assert_contains 'Driver: docker-container'
-assert_contains 'Status: running'
 assert_contains 'docker.sock'
 assert_contains 'network options or labels are invalid'
 assert_contains 'builder_cleanup_done'

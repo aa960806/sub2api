@@ -1106,3 +1106,10 @@
 - 失败路径已自动删除临时 builder/network/staging；人工复核仍为五个固定基础镜像、0 容器、0 卷、仅 `bridge/host/none`，没有候选镜像或归档，Docker Desktop 和服务器均未访问。
 - 保留 PID 上限，不再把 `pids-limit` 作为 Buildx driver option；脚本在 bootstrap 后用唯一完整 builder 容器 ID 执行 `docker update --pids-limit 512`，随后继续通过 inspect 强制验证 `HostConfig.PidsLimit=512`，验证完成前不会运行项目 build。若 update/验证失败，清理仅在其他完整身份合同仍匹配且 PID 为默认 0 或目标 512 时删除该预构建容器；已验证/已构建路径仍严格要求 512。
 - 测试明确拒绝重新加入无效 driver option，并要求容器级 PID 更新与失败诊断；Git Bash/WSL 的 `bash -n` 和 isolated-image-build 测试通过。修复提交后须再次同步 detached clone 并从完整 daemon 基线重跑。
+
+## 2026-09-04（Asia/Shanghai）— Buildx 0.30.1 运行时合同校准
+
+- 使用提交 `2e6c800cad711cb3bb49d7324bbdbf7ffe9581a2` 重试时，BuildKit builder 已 bootstrap，但脚本因把对齐输出误写成固定文本 `Driver: docker-container` 而在项目 build 前停止；失败对象基线门禁正确发现 builder 容器、state 卷和专用网络未被旧校验逻辑清理，未产生候选镜像或归档。
+- 只读 inspect 将残留对象完整绑定到本次随机 builder 名称/token、固定 BuildKit image ID和带 gate/token 标签的网络；随后仅对该精确 builder 执行 `buildx rm --force`，确认容器和唯一 state 卷消失，再按完整网络 ID删除已为空的专用网络。没有使用 prune 或删除镜像，daemon 已恢复五个固定镜像、0 容器/卷、仅默认网络。
+- 按真实 Buildx 0.30.1 / Docker 29.1.3 元数据校准合同：Driver/Status 使用锚定空白正则；bootstrap 初始 `MemorySwap=-1`、`PidsLimit=<nil>` 只允许用于项目 build 前失败清理；正常路径在运行项目 Dockerfile 前用 `docker update` 统一设置内存 4 GiB、memory-swap 4 GiB、CPU quota/period、PID 512 和 restart=no，并在 strict inspect 中要求精确值。
+- 新版 Buildx builder 容器的 Config.Labels 为空，因此不再依赖旧 labels；身份校验改为同时要求随机精确名称、固定 BuildKit image ID、专用网络 ID/名称、唯一 `buildx_buildkit_<builder>0_state` 卷挂载到 `/var/lib/buildkit`、私有 IPC/cgroup namespace、init、无端口/设备/docker.sock 及完整资源合同。Git Bash/WSL 的语法与 isolated-image-build 测试通过；真实构建仍待新提交后重跑。
