@@ -100,7 +100,13 @@ assert_contains 'Dockerfile ARG has an unsafe default value'
 assert_contains 'Dockerfile has an unterminated line continuation'
 assert_contains 'Dockerfile must contain exactly four FROM instructions'
 assert_contains 'external Dockerfile syntax directives are not allowed'
+assert_contains 'directory_fingerprint() {'
+assert_contains "stat -Lc '%d|%i|%F|%u|%g|%a'"
+assert_contains 'artifact_root_fingerprint='
+assert_contains 'artifact_root_fd_fingerprint='
 assert_contains 'exec 9<"$artifact_root"'
+assert_contains '"/proc/${BASHPID:-$$}/fd/9"'
+assert_contains "artifact directory changed before locking"
 assert_not_contains '.build.lock'
 assert_contains 'safe_remove_context "$context_root"'
 assert_contains 'expected_images='
@@ -231,13 +237,32 @@ env_example_source="$(sed -n '/^is_safe_env_example_path() {$/,/^}$/p' "$subject
 dump_path_source="$(sed -n '/^is_database_dump_path() {$/,/^}$/p' "$subject")"
 dockerfile_contract_source="$(sed -n '/^validate_dockerfile_pin_contract() {$/,/^}$/p' "$subject")"
 remove_context_source="$(sed -n '/^safe_remove_context() {$/,/^}$/p' "$subject")"
+directory_fingerprint_source="$(sed -n '/^directory_fingerprint() {$/,/^}$/p' "$subject")"
 baseline_objects_source="$(sed -n '/^assert_baseline_objects_unchanged() {$/,/^}$/p' "$subject")"
 absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
 swap_support_source="$(sed -n '/^swap_limit_supported_from_warnings() {$/,/^}$/p' "$subject")"
 mount_validator_source="$(sed -n '/^validate_builder_mounts() {$/,/^}$/p' "$subject")"
 cleanup_network_source="$(sed -n '/^validate_builder_cleanup_network() {$/,/^cleanup_builder_and_network() {$/p' "$subject" | sed '$d')"
 cleanup_source="$(sed -n '/^cleanup_builder_and_network() {$/,/^cleanup_release_tags() {$/p' "$subject" | sed '$d')"
-[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$approved_script_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" && -n "$swap_support_source" && -n "$mount_validator_source" && -n "$cleanup_network_source" && -n "$cleanup_source" ]] || fail 'validator functions not found'
+[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$approved_script_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$directory_fingerprint_source" && -n "$baseline_objects_source" && -n "$absence_source" && -n "$swap_support_source" && -n "$mount_validator_source" && -n "$cleanup_network_source" && -n "$cleanup_source" ]] || fail 'validator functions not found'
+
+# The artifact lock must bind the directory that was validated, not merely the
+# pathname that happened to be opened.  On Linux/WSL, compare the directory's
+# stat tuple with the same tuple through the process FD symlink.  Git Bash may
+# not expose a procfs FD view, so retain the static contract above and skip only
+# the runtime half when procfs is unavailable.
+(
+  eval "$directory_fingerprint_source"
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-directory-lock-test.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  before="$(directory_fingerprint "$fixture_root")" || fail 'directory fingerprint fixture could not inspect root'
+  if [[ -e "/proc/${BASHPID:-$$}/fd/0" ]]; then
+    exec 9<"$fixture_root" || fail 'directory fingerprint fixture could not open root'
+    through_fd="$(directory_fingerprint "/proc/${BASHPID:-$$}/fd/9")" ||
+      fail 'directory fingerprint fixture could not inspect opened FD'
+    [[ "$through_fd" == "$before" ]] || fail 'opened FD fingerprint differs from path fingerprint'
+  fi
+)
 
 # The external approval must bind the exact Git blob and the file that Bash is
 # executing.  These checks run without Docker and cover missing, malformed,

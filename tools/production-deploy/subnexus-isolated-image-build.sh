@@ -53,6 +53,8 @@ source_root=''
 approved_sha=''
 tree_sha=''
 artifact_root=''
+artifact_root_fingerprint=''
+artifact_root_fd_fingerprint=''
 stage_dir=''
 final_dir=''
 context_root=''
@@ -244,6 +246,10 @@ ensure_secure_directory() {
   fi
   validate_secure_directory "$path" || fail "unsafe artifact directory: $path" || return 1
   chmod 700 -- "$path" || fail "cannot protect artifact directory: $path" || return 1
+}
+
+directory_fingerprint() {
+  stat -Lc '%d|%i|%F|%u|%g|%a' -- "$1"
 }
 
 hash_file() {
@@ -1469,9 +1475,16 @@ main() {
   esac
   [[ -d "${artifact_root%/*}" ]] || fail 'artifact root parent directory must already exist' || return 1
   ensure_secure_directory "$artifact_root"
-  # Lock the already-validated directory inode. This avoids a separate lock
-  # path whose open could otherwise follow a swapped symbolic link.
+  # Lock the already-validated directory inode. Capture the path identity
+  # before opening, then compare the opened FD identity so a path replacement
+  # between validation and redirection cannot move the lock to another object.
+  artifact_root_fingerprint="$(directory_fingerprint "$artifact_root")" ||
+    fail 'cannot fingerprint artifact directory before locking' || return 1
   exec 9<"$artifact_root" || fail 'cannot open artifact directory for locking' || return 1
+  artifact_root_fd_fingerprint="$(directory_fingerprint "/proc/${BASHPID:-$$}/fd/9")" ||
+    fail 'cannot fingerprint opened artifact directory' || return 1
+  [[ "$artifact_root_fd_fingerprint" == "$artifact_root_fingerprint" ]] ||
+    fail 'artifact directory changed before locking' || return 1
   flock -n 9 || fail 'another isolated image build is already running' || return 1
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   run_uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null)" || fail 'cannot obtain kernel UUID' || return 1

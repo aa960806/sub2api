@@ -1141,3 +1141,10 @@
 - `subnexus-docker-candidate-check.test.sh` 新增四个 helper 的独立 `bash -n` 检查，以及 PostgreSQL/Redis/HTTP 的参数和 stdin 夹具，确认 `SELECT 1;`、`PING`、payload/token 不会被调用方控制文本污染。Git Bash 与 WSL/Linux 的 candidate-check 夹具、四个发布脚本语法检查和 `git diff --check` 均通过；夹具中预期的负面错误输出不代表测试失败。
 - 本轮只修改 fork 的迁移分支；未修改 `F:\Sub2Api\SubNexus`、`main`、线上服务器、生产 Docker/PostgreSQL/Redis/Nginx，未执行生产迁移、部署、重启、切流或开关变更。修复提交后必须重新同步 WSL detached clone，从五个固定基础镜像/零运行对象基线重建并重跑 candidate gate；在 gate 通过前 `cutover_allowed=false`。
 - 回滚点：本次提交前 `93d48e257e51d939b6e56623b478ab15e469d005`（仅代码回退，不得复用其失败候选归档上线）。
+
+## 2026-09-04（Asia/Shanghai）— 隔离构建锁目录身份复核
+
+- 独立安全复核指出，构建脚本虽然直接对 artifact 目录 FD 加 `flock`，但在路径校验与 FD 打开之间仍缺少身份复核。现新增 `directory_fingerprint`，在 `exec 9<"$artifact_root"` 前后比较设备/inode/类型/owner/mode，路径被替换时立即失败；不创建或跟随可替换的 `.build.lock` 文件。
+- `subnexus-isolated-image-build.test.sh` 增加静态合同与 Linux/WSL FD 指纹夹具；Git Bash/WSL 语法和隔离构建夹具均通过。该修复会改变构建脚本批准 SHA，必须与本轮 gate 修复一起重新提交、同步、构建和验收。
+- 仅修改 fork 迁移分支和本地测试；未修改旧项目、`main`、线上服务器、生产数据库/Redis/Nginx，未执行线上部署或切换。上一轮 `9ea1d877` 归档不作为最终发布候选。
+- 回滚点：本次提交前 `9ea1d877ae980e47e318d435dce0976b23de1c62`；回滚仅作用于本地代码，不删除或恢复任何线上数据。
