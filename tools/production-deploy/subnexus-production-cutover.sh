@@ -362,8 +362,8 @@ docker_rpc() {
 validate_docker_timeout() {
   docker_timeout_seconds="${SUBNEXUS_DOCKER_TIMEOUT_SECONDS:-120}"
   [[ "$docker_timeout_seconds" =~ ^[0-9]+$ ]] || fail 'SUBNEXUS_DOCKER_TIMEOUT_SECONDS must be an integer'
-  (( docker_timeout_seconds >= 10 && docker_timeout_seconds <= 600 )) ||
-    fail 'SUBNEXUS_DOCKER_TIMEOUT_SECONDS must be between 10 and 600 seconds'
+  (( docker_timeout_seconds >= 10 && docker_timeout_seconds <= 1800 )) ||
+    fail 'SUBNEXUS_DOCKER_TIMEOUT_SECONDS must be between 10 and 1800 seconds'
 }
 
 init_docker() {

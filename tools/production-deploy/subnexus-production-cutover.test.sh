@@ -135,6 +135,26 @@ assert_contains 'log_config_sha256=%s'
 assert_contains 'args+=(--log-driver "$key")'
 assert_contains 'args+=(--log-opt "$key=$value")'
 
+# Docker operations remain bounded, while allowing enough time for a large
+# read-only database dump streamed through `docker exec`.
+docker_timeout_source="$(extract_function validate_docker_timeout)"
+[[ "$docker_timeout_source" == *'validate_docker_timeout() {'* ]] ||
+  fail 'validate_docker_timeout source was not found'
+eval "$docker_timeout_source"
+unset SUBNEXUS_DOCKER_TIMEOUT_SECONDS
+validate_docker_timeout
+[[ "$docker_timeout_seconds" == 120 ]] || fail 'Docker timeout default changed unexpectedly'
+for accepted_timeout in 10 600 601 1800; do
+  SUBNEXUS_DOCKER_TIMEOUT_SECONDS="$accepted_timeout" validate_docker_timeout
+  [[ "$docker_timeout_seconds" == "$accepted_timeout" ]] ||
+    fail "Docker timeout was not preserved: $accepted_timeout"
+done
+for rejected_timeout in 9 1801 invalid; do
+  if (SUBNEXUS_DOCKER_TIMEOUT_SECONDS="$rejected_timeout" validate_docker_timeout >/dev/null 2>&1); then
+    fail "invalid Docker timeout was accepted: $rejected_timeout"
+  fi
+done
+
 # The owner acknowledgement is intentionally declared exactly once.  A
 # duplicate readonly declaration aborts Bash before any phase can fail closed.
 [[ "$(grep -Ec '^readonly app_data_owner_approval_token=' "$subject")" == 1 ]] ||
