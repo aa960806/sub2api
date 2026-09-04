@@ -2300,11 +2300,32 @@ validate_archive() {
   (( docker_free_bytes >= required )) || fail "insufficient Docker storage for candidate image load ($docker_free_bytes < $required bytes)"
 }
 
+ensure_image_load_log() {
+  local path="$run_dir/image-load.log" temporary
+  [[ ! -e "$path" && ! -L "$path" ]] || fail 'candidate image load log path already exists'
+  temporary="$(mktemp "$run_dir/.image-load.log.XXXXXX")" || fail 'cannot create candidate image load log temporary file'
+  assert_root_owned_regular "$temporary" 'candidate image load log temporary file'
+  chmod 600 -- "$temporary" || fail 'cannot protect candidate image load log temporary file'
+  # Recheck the destination immediately before the rename.  A rename never
+  # follows a destination symlink, and the run directory is held under the
+  # cutover evidence lock for the entire prepare operation.
+  [[ ! -e "$path" && ! -L "$path" ]] || {
+    rm -f -- "$temporary"
+    fail 'candidate image load log path appeared during creation'
+  }
+  mv -- "$temporary" "$path" || {
+    rm -f -- "$temporary"
+    fail 'cannot install candidate image load log'
+  }
+  assert_root_owned_regular "$path" 'candidate image load log'
+}
+
 load_and_validate_candidate_image() {
   local tag="$candidate_tag_prefix$target_sha" existing_id loaded_id labels image_env inspect_error inspect_status actual_archive_sha
   assert_root_owned_regular "$candidate_archive" 'candidate image archive'
   actual_archive_sha="$(hash_file "$candidate_archive")" || fail 'cannot hash candidate image archive before load'
   [[ "$actual_archive_sha" == "$candidate_archive_sha" ]] || fail 'candidate image archive changed before load'
+  ensure_image_load_log
   inspect_error="$run_dir/candidate-image-inspect.err"
   if existing_id="$(docker_rpc image inspect --format '{{.Id}}' "$tag" 2>"$inspect_error")"; then
     rm -f -- "$inspect_error"

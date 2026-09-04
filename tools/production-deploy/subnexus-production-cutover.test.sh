@@ -59,7 +59,7 @@ for function_name in init_docker acquire_lock prepare_argument_count_is_valid pr
   restore_rollout_gates restore_preserved_container rollback_run switch_run \
   rollback_entry write_run_marker assert_run_marker initialize_prepare_backup_budgets \
   assert_prepare_disk_budget assert_backup_within_budget validate_log_config_file append_log_config_args \
-  write_application_data_archive_policy validate_application_data_archive_policy; do
+  write_application_data_archive_policy validate_application_data_archive_policy ensure_image_load_log; do
   assert_contains "$function_name() {"
 done
 
@@ -245,6 +245,72 @@ assert_before_text "$prepare_source" 'assert_prepare_disk_budget before_image_lo
 assert_before_text "$prepare_source" 'load_and_validate_candidate_image' 'assert_prepare_disk_budget after_image_load'
 assert_not_contains 'docker_rpc stop' <(printf '%s\n' "$prepare_source")
 assert_not_contains 'docker_rpc rename' <(printf '%s\n' "$prepare_source")
+
+load_image_source="$(
+  extract_function ensure_image_load_log
+  extract_function load_and_validate_candidate_image
+)"
+[[ "$load_image_source" == *'ensure_image_load_log() {'* &&
+   "$load_image_source" == *'load_and_validate_candidate_image() {'* ]] ||
+  fail 'candidate image load helper source was not found'
+assert_contains 'candidate image load log path already exists'
+assert_contains 'mktemp "$run_dir/.image-load.log.XXXXXX"'
+assert_contains 'assert_root_owned_regular "$path" '\''candidate image load log'\'''
+assert_before_text "$load_image_source" 'ensure_image_load_log' 'docker_rpc image inspect'
+assert_before_text "$load_image_source" 'candidate image load log path already exists' 'mv -- "$temporary" "$path"'
+
+# Fixture 0b: a preloaded candidate tag still produces a controlled image-load
+# log, and a stale symlink at that path is rejected before Docker is queried.
+if [[ "$OSTYPE" == linux* ]] && command -v stat >/dev/null 2>&1; then
+  (
+    set -Eeuo pipefail
+    eval "$load_image_source"
+    fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-image-load-log.XXXXXX")"
+    trap 'rm -rf -- "$fixture_root"' EXIT
+    run_dir="$fixture_root/run"
+    mkdir -- "$run_dir"
+    chmod 700 -- "$run_dir"
+    candidate_archive="$fixture_root/candidate.tar"
+    printf 'approved archive fixture\n' > "$candidate_archive"
+    candidate_archive_sha='fixture-archive-sha'
+    candidate_tag_prefix='subnexus-release:'
+    target_sha="$(printf 'a%.0s' {1..40})"
+    expected_image_id="$(printf 'b%.0s' {1..64})"
+    load_calls=0
+    assert_root_owned_regular() { :; }
+    hash_file() { printf '%s\n' "$candidate_archive_sha"; }
+    fail() { printf 'image-load-log fixture failure: %s\n' "$*" >&2; exit 77; }
+    docker_rpc() {
+      [[ "$1" == image && "$2" == inspect ]] || {
+        [[ "$1" == image && "$2" == load ]] && { load_calls=$((load_calls + 1)); return 99; }
+        return 98
+      }
+      case "${4:-}" in
+        '{{.Id}}')
+          printf 'sha256:%s\n' "$expected_image_id"
+          ;;
+        '{{index .Config.Labels "com.subnexus.release.gate"}}|{{index .Config.Labels "com.subnexus.candidate.commit"}}|{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          printf 'subnexus-isolated-build-v1|%s|%s\n' "$target_sha" "$target_sha"
+          ;;
+        '{{.Os}}|{{.Architecture}}') printf 'linux|amd64\n' ;;
+        '{{range .Config.Env}}{{println .}}{{end}}') printf 'SAFE_FIXTURE=1\n' ;;
+        *) return 97 ;;
+      esac
+    }
+    load_and_validate_candidate_image
+    [[ "$load_calls" == 0 ]] || fail 'preloaded tag unexpectedly triggered image load'
+    [[ -f "$run_dir/image-load.log" && ! -L "$run_dir/image-load.log" ]] || fail 'preloaded tag did not create a regular image-load log'
+    [[ "$(stat -c '%a' -- "$run_dir/image-load.log")" == 600 ]] || fail 'image-load log mode is not 600'
+    [[ ! -s "$run_dir/image-load.log" ]] || fail 'preloaded image-load log should be empty'
+    rm -f -- "$run_dir/image-load.log"
+    ln -s -- "$fixture_root/escape" "$run_dir/image-load.log"
+    if ( ensure_image_load_log ); then
+      fail 'symbolic image-load log path was accepted'
+    fi
+  )
+else
+  printf 'subnexus preloaded image-load log fixture skipped (requires Linux stat)\n'
+fi
 
 assert_before_text "$switch_source" 'assert_runtime_still_matches_prepare' 'docker_rpc stop --time'
 assert_before_text "$switch_source" 'docker_rpc stop --time' 'docker_rpc rename "$app_id" "$preserved_name"'
