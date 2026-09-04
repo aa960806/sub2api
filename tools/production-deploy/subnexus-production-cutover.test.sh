@@ -54,7 +54,7 @@ fi
 # Static safety and phase contracts
 # ---------------------------------------------------------------------------
 
-for function_name in init_docker acquire_lock prepare_run validate_run_directory \
+for function_name in init_docker acquire_lock prepare_argument_count_is_valid prepare_run validate_run_directory \
   validate_environment_file validate_settings_snapshot capture_settings_snapshot close_rollout_gates \
   restore_rollout_gates restore_preserved_container rollback_run switch_run \
   rollback_entry write_run_marker assert_run_marker initialize_prepare_backup_budgets \
@@ -203,13 +203,28 @@ for forbidden in \
 done
 
 prepare_source="$(extract_function prepare_run)"
+prepare_argument_count_source="$(extract_function prepare_argument_count_is_valid)"
 validate_run_source="$(extract_function validate_run_directory)"
 manifest_writer_source="$(extract_function write_initial_manifest)"
 switch_source="$(extract_function switch_run)"
 rollback_source="$(extract_function rollback_run)"
 [[ "$prepare_source" == *'prepare_run() {'* ]] || fail 'prepare_run source was not found'
+[[ "$prepare_argument_count_source" == *'prepare_argument_count_is_valid() {'* ]] ||
+  fail 'prepare argument-count helper source was not found'
 [[ "$switch_source" == *'switch_run() {'* ]] || fail 'switch_run source was not found'
 [[ "$rollback_source" == *'rollback_run() {'* ]] || fail 'rollback_run source was not found'
+
+eval "$prepare_argument_count_source"
+for accepted_argument_count in 8 9 10; do
+  prepare_argument_count_is_valid "$accepted_argument_count" ||
+    fail "valid prepare argument count was rejected: $accepted_argument_count"
+done
+for rejected_argument_count in 7 11; do
+  if prepare_argument_count_is_valid "$rejected_argument_count"; then
+    fail "invalid prepare argument count was accepted: $rejected_argument_count"
+  fi
+done
+assert_contains 'prepare_argument_count_is_valid "$#"' <(printf '%s\n' "$prepare_source")
 
 assert_before_text "$prepare_source" 'require_commands' 'init_docker'
 assert_before_text "$prepare_source" 'init_docker' 'validate_source_tree'

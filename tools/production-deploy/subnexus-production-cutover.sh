@@ -188,6 +188,13 @@ database backup.
 USAGE
 }
 
+prepare_argument_count_is_valid() {
+  case "${1:-}" in
+    8|9|10) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 log() {
   printf '[%s] %s\n' "$tool_name" "$*"
 }
@@ -3072,7 +3079,7 @@ validate_runtime_metadata_files() {
 }
 
 prepare_run() {
-  [[ "$#" -ge 9 && "$#" -le 11 ]] || { usage; exit 2; }
+  prepare_argument_count_is_valid "$#" || { usage; exit 2; }
   source_root="$1"; target_sha="$2"; approved_script_sha="$3"; expected_image_id="$4"; candidate_archive="$5"; candidate_archive_sha="$6"; candidate_gate_evidence="$7"; live_app_ref="$8"; public_url="${9:-}"; evidence_root="${10:-$default_evidence_root}"
   [[ "$EUID" -eq 0 ]] || fail 'prepare must run as root'
   validate_app_data_owner_inputs
