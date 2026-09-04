@@ -141,6 +141,7 @@ docker_timeout_source="$(extract_function validate_docker_timeout)"
 [[ "$docker_timeout_source" == *'validate_docker_timeout() {'* ]] ||
   fail 'validate_docker_timeout source was not found'
 eval "$docker_timeout_source"
+mode=prepare
 unset SUBNEXUS_DOCKER_TIMEOUT_SECONDS
 validate_docker_timeout
 [[ "$docker_timeout_seconds" == 120 ]] || fail 'Docker timeout default changed unexpectedly'
@@ -149,11 +150,36 @@ for accepted_timeout in 10 600 601 1800; do
   [[ "$docker_timeout_seconds" == "$accepted_timeout" ]] ||
     fail "Docker timeout was not preserved: $accepted_timeout"
 done
+SUBNEXUS_DOCKER_TIMEOUT_SECONDS=010 validate_docker_timeout
+[[ "$docker_timeout_seconds" == 10 ]] || fail 'leading-zero Docker timeout was not parsed as decimal 10'
 for rejected_timeout in 9 1801 invalid; do
   if (SUBNEXUS_DOCKER_TIMEOUT_SECONDS="$rejected_timeout" validate_docker_timeout >/dev/null 2>&1); then
     fail "invalid Docker timeout was accepted: $rejected_timeout"
   fi
 done
+for malformed_timeout in 00009 01800 10000 18446744073709551626; do
+  if (SUBNEXUS_DOCKER_TIMEOUT_SECONDS="$malformed_timeout" validate_docker_timeout >/dev/null 2>&1); then
+    fail "malformed/overflow Docker timeout was accepted: $malformed_timeout"
+  fi
+done
+mode=switch
+for accepted_timeout in 10 600; do
+  SUBNEXUS_DOCKER_TIMEOUT_SECONDS="$accepted_timeout" validate_docker_timeout
+done
+for rejected_timeout in 601 1800; do
+  if (SUBNEXUS_DOCKER_TIMEOUT_SECONDS="$rejected_timeout" validate_docker_timeout >/dev/null 2>&1); then
+    fail "switch accepted prepare-only Docker timeout: $rejected_timeout"
+  fi
+done
+mode=rollback
+SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 validate_docker_timeout
+if (SUBNEXUS_DOCKER_TIMEOUT_SECONDS=1800 validate_docker_timeout >/dev/null 2>&1); then
+  fail 'rollback accepted prepare-only Docker timeout'
+fi
+mode=unexpected
+if (SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 validate_docker_timeout >/dev/null 2>&1); then
+  fail 'unknown cutover phase accepted a Docker timeout'
+fi
 
 # The owner acknowledgement is intentionally declared exactly once.  A
 # duplicate readonly declaration aborts Bash before any phase can fail closed.

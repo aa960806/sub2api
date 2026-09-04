@@ -360,10 +360,19 @@ docker_rpc() {
 }
 
 validate_docker_timeout() {
-  docker_timeout_seconds="${SUBNEXUS_DOCKER_TIMEOUT_SECONDS:-120}"
-  [[ "$docker_timeout_seconds" =~ ^[0-9]+$ ]] || fail 'SUBNEXUS_DOCKER_TIMEOUT_SECONDS must be an integer'
-  (( docker_timeout_seconds >= 10 && docker_timeout_seconds <= 1800 )) ||
-    fail 'SUBNEXUS_DOCKER_TIMEOUT_SECONDS must be between 10 and 1800 seconds'
+  local requested max_timeout phase
+  requested="${SUBNEXUS_DOCKER_TIMEOUT_SECONDS:-120}"
+  [[ "$requested" =~ ^[0-9]{1,4}$ ]] ||
+    fail 'SUBNEXUS_DOCKER_TIMEOUT_SECONDS must be 1..4 decimal digits'
+  docker_timeout_seconds=$((10#$requested))
+  phase="${mode:-prepare}"
+  case "$phase" in
+    prepare) max_timeout=1800 ;;
+    switch|rollback) max_timeout=600 ;;
+    *) fail "cannot validate Docker timeout for unknown phase: $phase" ;;
+  esac
+  (( docker_timeout_seconds >= 10 && docker_timeout_seconds <= max_timeout )) ||
+    fail "SUBNEXUS_DOCKER_TIMEOUT_SECONDS must be between 10 and ${max_timeout} seconds for ${phase}"
 }
 
 init_docker() {
