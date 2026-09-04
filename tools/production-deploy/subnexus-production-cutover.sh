@@ -22,7 +22,7 @@ case "$-" in
 esac
 
 umask 077
-unset BASH_ENV ENV CDPATH GLOBIGNORE
+unset BASH_ENV ENV CDPATH GLOBIGNORE TAR_OPTIONS GZIP
 export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 readonly tool_name='subnexus-production-cutover-v1'
@@ -46,6 +46,8 @@ readonly postgresql_dump_budget_limit=12884901888
 readonly redis_rdb_budget_limit=4294967296
 readonly app_data_archive_budget_limit=8589934592
 readonly prepare_metadata_budget_bytes=536870912
+readonly app_data_archive_exclusion_pattern='./logs/*.log'
+readonly app_data_archive_policy_version='exclude-active-logs-v1'
 
 # These are the target-fork rollout controls.  They are intentionally kept in
 # one allow-list so a typo cannot make rollback modify an unrelated setting.
@@ -106,6 +108,7 @@ evidence_lock_root=''
 postgresql_dump_budget_bytes=''
 redis_rdb_budget_bytes=''
 app_data_archive_budget_bytes=''
+app_data_archive_policy_sha256=''
 docker_timeout_seconds=''
 script_path=''
 script_sha256=''
@@ -2710,12 +2713,68 @@ assert_app_data_source_identity() {
   [[ "$actual" == "$expected" ]] || fail 'application data source identity changed after prepare'
 }
 
+write_application_data_archive_policy() {
+  local file="$run_dir/application-data-exclusions.txt" sidecar="$run_dir/application-data-exclusions.txt.sha256" tmp sidecar_tmp
+  [[ ! -e "$file" && ! -L "$file" && ! -e "$sidecar" && ! -L "$sidecar" ]] ||
+    fail 'application data archive policy paths already exist'
+  tmp="$(mktemp "$run_dir/.application-data-exclusions.XXXXXX")" || fail 'cannot create application data archive policy temporary file'
+  if ! {
+    printf 'policy=%s\n' "$app_data_archive_policy_version"
+    printf 'exclude=%s\n' "$app_data_archive_exclusion_pattern"
+    printf 'retain=./logs/*.gz and all other application data\n'
+    printf 'reason=live application log files are excluded because they may change while the online backup runs\n'
+  } > "$tmp"; then
+    rm -f -- "$tmp"
+    fail 'cannot write application data archive policy'
+  fi
+  chmod 600 -- "$tmp"
+  assert_root_owned_regular "$tmp" 'application data archive policy temporary file'
+  mv -f -- "$tmp" "$file"
+  assert_root_owned_regular "$file" 'application data archive policy'
+  sidecar_tmp="$(mktemp "$run_dir/.application-data-exclusions.sha256.XXXXXX")" || fail 'cannot create application data archive policy hash temporary file'
+  if ! hash_file "$file" > "$sidecar_tmp"; then
+    rm -f -- "$sidecar_tmp"
+    fail 'cannot hash application data archive policy'
+  fi
+  chmod 600 -- "$sidecar_tmp"
+  assert_root_owned_regular "$sidecar_tmp" 'application data archive policy hash temporary file'
+  mv -f -- "$sidecar_tmp" "$sidecar"
+  assert_root_owned_regular "$sidecar" 'application data archive policy hash'
+  app_data_archive_policy_sha256="$(read_one_line "$sidecar")"
+  valid_sha64 "$app_data_archive_policy_sha256" || fail 'application data archive policy hash is invalid'
+}
+
+validate_application_data_archive_policy() {
+  local file="$run_dir/application-data-exclusions.txt" sidecar="$run_dir/application-data-exclusions.txt.sha256" line count=0 expected actual
+  assert_root_owned_regular "$file" 'application data archive policy'
+  while IFS= read -r line; do
+    case "$count" in
+      0) [[ "$line" == "policy=$app_data_archive_policy_version" ]] || fail 'application data archive policy version is invalid' ;;
+      1) [[ "$line" == "exclude=$app_data_archive_exclusion_pattern" ]] || fail 'application data archive exclusion is invalid' ;;
+      2) [[ "$line" == 'retain=./logs/*.gz and all other application data' ]] || fail 'application data archive retention policy is invalid' ;;
+      3) [[ "$line" == 'reason=live application log files are excluded because they may change while the online backup runs' ]] || fail 'application data archive policy reason is invalid' ;;
+      *) fail 'application data archive policy contains unexpected lines' ;;
+    esac
+    count=$((count + 1))
+  done < "$file"
+  [[ "$count" == 4 ]] || fail 'application data archive policy is incomplete'
+  assert_root_owned_regular "$sidecar" 'application data archive policy hash'
+  expected="$(read_one_line "$sidecar")"
+  valid_sha64 "$expected" || fail 'application data archive policy hash is invalid'
+  actual="$(hash_file "$file")" || fail 'cannot hash application data archive policy'
+  [[ "$actual" == "$expected" ]] || fail 'application data archive policy hash changed'
+  app_data_archive_policy_sha256="$actual"
+}
+
 backup_application_data() {
   local source="$1" archive="$run_dir/application-data.tar.gz" partial file_limit_kib
+  local -a tar_args=()
+  validate_application_data_archive_policy
   partial="$(mktemp "$run_dir/.application-data.partial.XXXXXX")" || fail 'cannot create application data backup temporary file'
   [[ "$app_data_archive_budget_bytes" =~ ^[0-9]+$ ]] || fail 'application data backup budget is not initialized'
   file_limit_kib=$((app_data_archive_budget_bytes / 1024))
-  if ! (ulimit -f "$file_limit_kib" && exec tar --xattrs --acls --numeric-owner --one-file-system -C "$source" -czf "$partial" .); then
+  tar_args=(--xattrs --acls --numeric-owner --one-file-system "--exclude=$app_data_archive_exclusion_pattern" -C "$source" -czf "$partial")
+  if ! (ulimit -f "$file_limit_kib" && exec tar "${tar_args[@]}" .); then
     rm -f -- "$partial"
     fail 'application data backup failed or exceeded its bounded output size; live app was not stopped'
   fi
@@ -2730,6 +2789,12 @@ backup_application_data() {
 
 assert_backup_hashes() {
   local file expected actual manifest_key manifest_expected
+  validate_application_data_archive_policy
+  if [[ -f "${manifest_file:-}" ]]; then
+    manifest_expected="$(manifest_value application_data_archive_policy_sha256)"
+    valid_sha64 "$manifest_expected" || fail 'manifest application data archive policy SHA is invalid'
+    [[ "$manifest_expected" == "$app_data_archive_policy_sha256" ]] || fail 'manifest application data archive policy hash mismatch'
+  fi
   for file in postgresql.dump postgresql.list redis.rdb redis-check-rdb.txt application-data.tar.gz; do
     [[ -f "$run_dir/$file" && -f "$run_dir/$file.sha256" ]] || fail "prepared backup is missing: $file"
     assert_root_owned_regular "$run_dir/$file" "prepared backup $file"
@@ -2803,6 +2868,7 @@ write_initial_manifest() {
     printf 'redis_rdb_sha256=%s\n' "$(read_one_line "$run_dir/redis.rdb.sha256")"
     printf 'redis_check_rdb_sha256=%s\n' "$(read_one_line "$run_dir/redis-check-rdb.txt.sha256")"
     printf 'application_data_sha256=%s\n' "$(read_one_line "$run_dir/application-data.tar.gz.sha256")"
+    printf 'application_data_archive_policy_sha256=%s\n' "$(read_one_line "$run_dir/application-data-exclusions.txt.sha256")"
     printf 'settings_snapshot_sha256=%s\n' "$(read_one_line "$run_dir/settings-before.tsv.sha256")"
     printf 'app_data_source_identity_sha256=%s\n' "$(hash_file "$run_dir/app-data-source.identity")"
     printf 'local_port=%s\n' "$local_port"
@@ -3064,6 +3130,7 @@ prepare_run() {
   assert_prepare_disk_budget before_redis
   backup_redis
   assert_prepare_disk_budget before_application_data
+  write_application_data_archive_policy
   backup_application_data "$app_data_source"
   assert_prepare_disk_budget before_image_load
   load_and_validate_candidate_image
@@ -3083,7 +3150,7 @@ prepare_run() {
 }
 
 validate_run_directory() {
-  local validation_scope="${2:-switch}" info resolved root state expected actual gate_info manifest_gate_sha daemon_expected archive_info live_image_id identity_expected closed_hash closed_sidecar_hash
+  local validation_scope="${2:-switch}" info resolved root state expected actual gate_info manifest_gate_sha daemon_expected archive_info live_image_id identity_expected closed_hash closed_sidecar_hash archive_policy_hash
   [[ "$validation_scope" == switch || "$validation_scope" == rollback ]] || fail 'unknown run-directory validation scope'
   [[ "$1" == /* ]] || fail 'run directory must be an absolute path'
   info="$(assert_approved_path "$1" evidence)"
@@ -3156,6 +3223,18 @@ validate_run_directory() {
   actual="$(hash_file "$run_dir/app-data-source.identity")" || fail 'cannot hash application data source identity'
   [[ "$identity_expected" == "$actual" ]] || fail 'application data source identity hash mismatch'
   validate_app_data_source_identity_file
+  if manifest_has_key application_data_archive_policy_sha256; then
+    archive_policy_hash="$(manifest_value application_data_archive_policy_sha256)"
+    validate_application_data_archive_policy
+    valid_sha64 "$archive_policy_hash" || fail 'manifest application data archive policy SHA is invalid'
+    [[ "$archive_policy_hash" == "$app_data_archive_policy_sha256" ]] || fail 'manifest application data archive policy hash mismatch'
+  else
+    [[ "$validation_scope" == rollback ]] || fail 'manifest application data archive policy SHA is missing'
+    [[ ! -e "$run_dir/application-data-exclusions.txt" && ! -L "$run_dir/application-data-exclusions.txt" &&
+       ! -e "$run_dir/application-data-exclusions.txt.sha256" && ! -L "$run_dir/application-data-exclusions.txt.sha256" ]] ||
+      fail 'legacy run has partial application data archive policy evidence'
+    log 'Legacy run has no application data archive policy evidence; rollback does not read the archive.'
+  fi
   closed_hash="$(manifest_value settings_closed_snapshot_sha256)"
   case "$state" in
     prepared)

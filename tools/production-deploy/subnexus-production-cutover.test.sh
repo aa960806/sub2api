@@ -58,13 +58,15 @@ for function_name in init_docker acquire_lock prepare_run validate_run_directory
   validate_environment_file validate_settings_snapshot capture_settings_snapshot close_rollout_gates \
   restore_rollout_gates restore_preserved_container rollback_run switch_run \
   rollback_entry write_run_marker assert_run_marker initialize_prepare_backup_budgets \
-  assert_prepare_disk_budget assert_backup_within_budget validate_log_config_file append_log_config_args; do
+  assert_prepare_disk_budget assert_backup_within_budget validate_log_config_file append_log_config_args \
+  write_application_data_archive_policy validate_application_data_archive_policy; do
   assert_contains "$function_name() {"
 done
 
 for marker in \
   'for override in DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION' \
   'validate_docker_timeout' \
+  'unset BASH_ENV ENV CDPATH GLOBIGNORE TAR_OPTIONS GZIP' \
   'docker_rpc context show' \
   'docker_rpc context inspect' \
   'default Docker endpoint must be the local system Docker socket' \
@@ -134,6 +136,13 @@ assert_contains 'HostConfig.LogConfig.Config.required'
 assert_contains 'log_config_sha256=%s'
 assert_contains 'args+=(--log-driver "$key")'
 assert_contains 'args+=(--log-opt "$key=$value")'
+assert_contains 'app_data_archive_exclusion_pattern='
+assert_contains 'application-data-exclusions.txt'
+assert_contains "app_data_archive_exclusion_pattern='./logs/*.log'"
+assert_contains 'legacy run has partial application data archive policy evidence'
+assert_contains 'Legacy run has no application data archive policy evidence'
+assert_not_contains '--ignore-failed-read'
+assert_not_contains 'warning=no-file-changed'
 
 # Docker operations remain bounded, while allowing enough time for a large
 # read-only database dump streamed through `docker exec`.
@@ -212,10 +221,12 @@ assert_contains 'validate_app_data_owner_manifest' <(printf '%s\n' "$validate_ru
 for owner_manifest_key in app_data_owner_policy app_data_owner_uid app_data_owner_gid app_data_owner_mode; do
   assert_contains "${owner_manifest_key}=%s" <(printf '%s\n' "$manifest_writer_source")
 done
+assert_contains 'application_data_archive_policy_sha256=%s' <(printf '%s\n' "$manifest_writer_source")
 assert_before_text "$prepare_source" 'initialize_prepare_backup_budgets "$app_data_source"' 'backup_postgresql'
 assert_before_text "$prepare_source" 'assert_prepare_disk_budget before_postgresql' 'backup_postgresql'
 assert_before_text "$prepare_source" 'assert_prepare_disk_budget before_redis' 'backup_redis'
 assert_before_text "$prepare_source" 'assert_prepare_disk_budget before_application_data' 'backup_application_data "$app_data_source"'
+assert_before_text "$prepare_source" 'write_application_data_archive_policy' 'backup_application_data "$app_data_source"'
 assert_before_text "$prepare_source" 'assert_prepare_disk_budget before_image_load' 'load_and_validate_candidate_image'
 assert_before_text "$prepare_source" 'load_and_validate_candidate_image' 'assert_prepare_disk_budget after_image_load'
 assert_not_contains 'docker_rpc stop' <(printf '%s\n' "$prepare_source")
@@ -1163,6 +1174,96 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&
   )
 else
   printf 'subnexus log configuration fixtures skipped (requires usable python3)\n'
+fi
+
+# Fixture 5d: online application-data backup excludes only the reviewed active
+# log glob.  A writer keeps the active log changing for the whole archive; the
+# stable data and compressed historical log must still be present.
+if [[ "$OSTYPE" == linux* ]] &&
+   command -v tar >/dev/null 2>&1 && command -v gzip >/dev/null 2>&1 &&
+   command -v sha256sum >/dev/null 2>&1; then
+  archive_source="$(
+    extract_function read_one_line
+    extract_function valid_sha64
+    extract_function hash_file
+    extract_function write_application_data_archive_policy
+    extract_function validate_application_data_archive_policy
+    extract_function backup_application_data
+  )"
+  [[ "$archive_source" == *'backup_application_data() {'* &&
+     "$archive_source" == *'validate_application_data_archive_policy() {'* ]] ||
+    fail 'application data archive helper source was not found'
+  (
+    set -Eeuo pipefail
+    eval "$archive_source"
+    fail() { printf 'application data archive fixture failure: %s\n' "$*" >&2; exit 77; }
+    assert_root_owned_regular() { :; }
+    assert_backup_within_budget() {
+      local path="$1" budget="$2" label="$3" size
+      size="$(stat -c '%s' -- "$path")" || fail "cannot inspect $label size"
+      (( size > 0 && size <= budget )) || fail "$label exceeded fixture budget"
+    }
+    app_data_archive_policy_version='exclude-active-logs-v1'
+    app_data_archive_exclusion_pattern='./logs/*.log'
+    app_data_archive_budget_bytes=536870912
+    fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-cutover-archive.XXXXXX")"
+    writer_pid=''
+    cleanup_archive_fixture() {
+      if [[ -n "$writer_pid" ]]; then
+        kill "$writer_pid" 2>/dev/null || true
+        wait "$writer_pid" 2>/dev/null || true
+      fi
+      rm -rf -- "$fixture_root"
+    }
+    trap cleanup_archive_fixture EXIT
+    source="$fixture_root/source"
+    run_dir="$fixture_root/run"
+    mkdir -p -- "$source/logs/history" "$run_dir"
+    printf 'stable application data\n' > "$source/config.txt"
+    printf 'compressed historical log\n' | gzip -c > "$source/logs/history/2026-09-03.log.gz"
+    active="$source/logs/sub2api.log"
+    printf 'initial active log\n' > "$active"
+    write_application_data_archive_policy
+    (
+      while :; do
+        printf 'active log update %s\n' "$RANDOM" >> "$active"
+        sleep 0.001
+      done
+    ) &
+    writer_pid=$!
+    backup_application_data "$source"
+    [[ -s "$active" ]] || fail 'active log writer did not run'
+    kill "$writer_pid" 2>/dev/null || true
+    wait "$writer_pid" 2>/dev/null || true
+    writer_pid=''
+    listing="$fixture_root/listing.txt"
+    tar -tzf "$run_dir/application-data.tar.gz" > "$listing"
+    grep -Fqx './config.txt' "$listing" || fail 'stable application data was omitted'
+    grep -Fqx './logs/history/2026-09-03.log.gz' "$listing" || fail 'compressed historical log was omitted'
+    if grep -Fqx './logs/sub2api.log' "$listing"; then
+      fail 'active log was included despite the fixed exclusion policy'
+    fi
+    [[ "$(tar -xOzf "$run_dir/application-data.tar.gz" ./config.txt)" == 'stable application data' ]] ||
+      fail 'stable application data content changed'
+    validate_application_data_archive_policy
+    printf 'exclude=./logs/*.log\n' > "$run_dir/application-data-exclusions.txt"
+    if (validate_application_data_archive_policy >/dev/null 2>&1); then
+      fail 'truncated application data archive policy was accepted'
+    fi
+    {
+      printf 'policy=%s\n' "$app_data_archive_policy_version"
+      printf 'exclude=%s\n' "$app_data_archive_exclusion_pattern"
+      printf 'retain=./logs/*.gz and all other application data\n'
+      printf 'reason=live application log files are excluded because they may change while the online backup runs\n'
+    } > "$run_dir/application-data-exclusions.txt"
+    hash_file "$run_dir/application-data-exclusions.txt" > "$run_dir/application-data-exclusions.txt.sha256"
+    validate_application_data_archive_policy
+    [[ -s "$run_dir/application-data.tar.gz.sha256" &&
+       "$(cat "$run_dir/application-data.tar.gz.sha256")" == "$(hash_file "$run_dir/application-data.tar.gz")" ]] ||
+      fail 'application data archive hash sidecar is invalid'
+  )
+else
+  printf 'subnexus application-data archive fixture skipped (requires Linux tar/gzip)\n'
 fi
 
 # ---------------------------------------------------------------------------
