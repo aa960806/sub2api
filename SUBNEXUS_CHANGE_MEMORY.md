@@ -1251,3 +1251,4 @@
 
 - 提交 `c9d03df0b5e552416b4e466860077fa31e0583e7` 仅更新四份迁移记忆/运行手册，已推送并与 `origin/feature/subnexus-migration` 同步；没有修改应用代码、部署脚本、候选镜像或 `main`。部署脚本 SHA256 仍为 `ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064`。
 - 当前本地工作树干净，流程保持在 `READY=prepared` / `cutover_allowed=false` 的人工切换前节点；本轮未执行 `switch` 或 `rollback`，所有二开功能继续关闭。
+- 后续手册命令显式清除 `DOCKER_HOST`、`DOCKER_CONTEXT`、`DOCKER_CONFIG`、`DOCKER_TLS_VERIFY`、`DOCKER_CERT_PATH`、`DOCKER_API_VERSION`，以满足脚本的本地默认 Docker daemon 门禁并避免服务器终端继承错误上下文；该调整仅为文档安全收口。
