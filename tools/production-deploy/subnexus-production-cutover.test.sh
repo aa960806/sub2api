@@ -110,6 +110,16 @@ for marker in \
   'environment_observed_mode' \
   'manifest_has_key' \
   'runtime_env_mode != "last-wins"' \
+  'app_data_owner_approval_token' \
+  'SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM' \
+  'SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID' \
+  'SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID' \
+  'app_data_owner_policy' \
+  'app_data_owner_mode' \
+  'app_data_owner_mode_is_safe' \
+  'validate_app_data_owner_inputs' \
+  'validate_app_data_owner_manifest' \
+  'validate_app_data_owner_runtime_inputs' \
   'database backup was not restored'; do
   assert_contains "$marker"
 done
@@ -125,6 +135,11 @@ assert_contains 'log_config_sha256=%s'
 assert_contains 'args+=(--log-driver "$key")'
 assert_contains 'args+=(--log-opt "$key=$value")'
 
+# The owner acknowledgement is intentionally declared exactly once.  A
+# duplicate readonly declaration aborts Bash before any phase can fail closed.
+[[ "$(grep -Ec '^readonly app_data_owner_approval_token=' "$subject")" == 1 ]] ||
+  fail 'application data owner approval token must have exactly one declaration'
+
 for forbidden in \
   'docker pull' 'docker build' 'docker push' 'docker compose' \
   'ssh ' 'scp ' 'docker system prune' 'docker container prune' \
@@ -134,6 +149,8 @@ for forbidden in \
 done
 
 prepare_source="$(extract_function prepare_run)"
+validate_run_source="$(extract_function validate_run_directory)"
+manifest_writer_source="$(extract_function write_initial_manifest)"
 switch_source="$(extract_function switch_run)"
 rollback_source="$(extract_function rollback_run)"
 [[ "$prepare_source" == *'prepare_run() {'* ]] || fail 'prepare_run source was not found'
@@ -144,6 +161,11 @@ assert_before_text "$prepare_source" 'require_commands' 'init_docker'
 assert_before_text "$prepare_source" 'init_docker' 'validate_source_tree'
 assert_before_text "$prepare_source" 'capture_settings_snapshot "$run_dir/settings-before.tsv"' 'write_closed_settings_snapshot'
 assert_before_text "$prepare_source" 'write_closed_settings_snapshot' 'write_initial_manifest'
+assert_before_text "$prepare_source" 'validate_app_data_owner_inputs' 'init_docker'
+assert_contains 'validate_app_data_owner_manifest' <(printf '%s\n' "$validate_run_source")
+for owner_manifest_key in app_data_owner_policy app_data_owner_uid app_data_owner_gid app_data_owner_mode; do
+  assert_contains "${owner_manifest_key}=%s" <(printf '%s\n' "$manifest_writer_source")
+done
 assert_before_text "$prepare_source" 'initialize_prepare_backup_budgets "$app_data_source"' 'backup_postgresql'
 assert_before_text "$prepare_source" 'assert_prepare_disk_budget before_postgresql' 'backup_postgresql'
 assert_before_text "$prepare_source" 'assert_prepare_disk_budget before_redis' 'backup_redis'
@@ -180,6 +202,149 @@ assert_contains 'assert_run_marker READY prepared'
 assert_contains 'for metadata_file in "$run_dir"/*.json "$run_dir"/*.env "$run_dir"/*.txt; do'
 assert_contains '[[ -f "$metadata_file" && ! -L "$metadata_file" ]] || continue'
 assert_not_contains 'chmod 600 "$run_dir"/*.sha256'
+
+# ---------------------------------------------------------------------------
+# Fixture 0a: application-data owner input and manifest contracts
+# ---------------------------------------------------------------------------
+
+owner_input_source="$(
+  extract_function validate_app_data_owner_inputs
+  extract_function app_data_owner_mode_is_safe
+  extract_function validate_app_data_owner_runtime_inputs
+)"
+[[ "$owner_input_source" == *'validate_app_data_owner_inputs() {'* &&
+   "$owner_input_source" == *'validate_app_data_owner_runtime_inputs() {'* ]] ||
+  fail 'application data owner input helper source was not found'
+(
+  set -Eeuo pipefail
+  eval "$owner_input_source"
+  fail() { printf 'owner input fixture failure: %s\n' "$*" >&2; exit 77; }
+  app_data_owner_approval_token='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+  app_data_owner_compat_uid='1000'
+  app_data_owner_compat_gid='1000'
+
+  unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM \
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID \
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID
+  validate_app_data_owner_inputs
+  [[ "$app_data_owner_policy" == root-only && "$app_data_owner_uid" == 0 &&
+     "$app_data_owner_gid" == 0 ]] || fail 'unset owner inputs did not select root-only'
+
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+  validate_app_data_owner_inputs
+  [[ "$app_data_owner_policy" == explicit-uid-gid &&
+     "$app_data_owner_uid" == 1000 && "$app_data_owner_gid" == 1000 ]] ||
+    fail 'approved non-root owner inputs were not accepted'
+
+  expect_failure() {
+    if ( "$@" >/dev/null 2>&1 ); then
+      return 1
+    fi
+    return 0
+  }
+  # Every non-root input is independently required.
+  unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM
+  expect_failure validate_app_data_owner_inputs || fail 'missing owner token was accepted'
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+  unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID
+  expect_failure validate_app_data_owner_inputs || fail 'missing owner UID was accepted'
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+  unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID
+  expect_failure validate_app_data_owner_inputs || fail 'missing owner GID was accepted'
+
+  # Only the reviewed 1000:1000 compatibility owner is allowed.
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1001
+  expect_failure validate_app_data_owner_inputs || fail 'unreviewed owner GID was accepted'
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=0
+  expect_failure validate_app_data_owner_inputs || fail 'root UID was accepted as non-root opt-in'
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=4294967296
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+  expect_failure validate_app_data_owner_inputs || fail 'out-of-range owner UID was accepted'
+
+  # Runtime validation rejects stale owner variables for a root-only run and
+  # requires the same explicit values for an opted-in run.
+  unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM \
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID \
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID
+  app_data_owner_policy=root-only
+  app_data_owner_uid=0
+  app_data_owner_gid=0
+  validate_app_data_owner_runtime_inputs
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+  expect_failure validate_app_data_owner_runtime_inputs || fail 'owner input leaked into root-only runtime policy'
+  app_data_owner_policy=explicit-uid-gid
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+  validate_app_data_owner_runtime_inputs
+
+  for accepted_mode in 700 750 755; do
+    app_data_owner_mode_is_safe "$accepted_mode" || fail "safe owner mode was rejected: $accepted_mode"
+  done
+  for rejected_mode in 770 707 600 1777 4755 0755; do
+    if app_data_owner_mode_is_safe "$rejected_mode"; then
+      fail "unsafe owner mode was accepted: $rejected_mode"
+    fi
+  done
+)
+
+owner_manifest_source="$(
+  extract_function manifest_value
+  extract_function manifest_has_key
+  extract_function validate_app_data_owner_inputs
+  extract_function app_data_owner_mode_is_safe
+  extract_function validate_app_data_owner_runtime_inputs
+  extract_function validate_app_data_owner_manifest
+)"
+[[ "$owner_manifest_source" == *'validate_app_data_owner_manifest() {'* ]] ||
+  fail 'application data owner manifest helper source was not found'
+(
+  set -Eeuo pipefail
+  eval "$owner_manifest_source"
+  fail() { printf 'owner manifest fixture failure: %s\n' "$*" >&2; exit 77; }
+  app_data_owner_approval_token='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+  app_data_owner_compat_uid='1000'
+  app_data_owner_compat_gid='1000'
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-cutover-owner-manifest.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  manifest_file="$fixture_root/manifest.env"
+  app_data_owner_policy=root-only
+  app_data_owner_uid=0
+  app_data_owner_gid=0
+  app_data_owner_mode=''
+  unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM \
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID \
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID
+
+  # A fully absent owner field set is the explicit legacy root-only path.
+  printf 'state=prepared\n' > "$manifest_file"
+  validate_app_data_owner_manifest
+  [[ "$app_data_owner_manifest_legacy" == 1 &&
+     "$app_data_owner_policy" == root-only ]] || fail 'legacy owner manifest was not root-only'
+
+  # Partial fields are not a legacy manifest and must fail closed.
+  printf 'app_data_owner_policy=root-only\napp_data_owner_uid=0\n' > "$manifest_file"
+  if (validate_app_data_owner_manifest >/dev/null 2>&1); then
+    fail 'partial owner manifest was accepted'
+  fi
+
+  printf 'app_data_owner_policy=explicit-uid-gid\napp_data_owner_uid=1000\napp_data_owner_gid=1000\napp_data_owner_mode=755\n' > "$manifest_file"
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+  validate_app_data_owner_manifest
+  [[ "$app_data_owner_manifest_legacy" == 0 &&
+     "$app_data_owner_policy" == explicit-uid-gid &&
+     "$app_data_owner_uid" == 1000 && "$app_data_owner_gid" == 1000 &&
+     "$app_data_owner_mode" == 755 ]] || fail 'explicit owner manifest was not loaded exactly'
+  unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM
+  if (validate_app_data_owner_manifest >/dev/null 2>&1); then
+    fail 'explicit owner manifest without repeated acknowledgement was accepted'
+  fi
+)
 
 # ---------------------------------------------------------------------------
 # Fixture 1: inspect errors are distinguished from an absent container
@@ -225,6 +390,8 @@ path_source="$(
   extract_function mode_is_safe
   extract_function assert_root_owned_regular
   extract_function assert_root_owned_dir
+  extract_function app_data_owner_mode_is_safe
+  extract_function assert_app_data_path_chain
   extract_function assert_root_owned_path_chain
   extract_function acquire_lock
 )"
@@ -266,6 +433,176 @@ if [[ "$OSTYPE" == linux* && "${EUID:-1}" == 0 && -r /proc/self/fd ]] && command
   )
 else
   printf 'subnexus cutover directory-lock success fixture skipped (requires Linux /proc, root, and flock)\n'
+fi
+
+# ---------------------------------------------------------------------------
+# Fixture 2a: application-data owner leaf, parent-chain, and identity guards
+# ---------------------------------------------------------------------------
+
+owner_path_source="$(
+  extract_function mode_is_safe
+  extract_function app_data_owner_mode_is_safe
+  extract_function assert_app_data_path_chain
+  extract_function assert_root_owned_path_chain
+  extract_function path_overlaps
+  extract_function resolve_app_data_source
+  extract_function manifest_value
+  extract_function manifest_has_key
+  extract_function validate_app_data_owner_inputs
+  extract_function validate_app_data_owner_runtime_inputs
+  extract_function validate_app_data_owner_manifest
+  extract_function validate_app_data_source_identity_file
+  extract_function compute_app_data_source_identity
+  extract_function assert_app_data_source_identity
+  extract_function read_one_line
+)"
+[[ "$owner_path_source" == *'assert_app_data_path_chain() {'* &&
+   "$owner_path_source" == *'assert_root_owned_path_chain() {'* &&
+   "$owner_path_source" == *'resolve_app_data_source() {'* &&
+   "$owner_path_source" == *'assert_app_data_source_identity() {'* ]] ||
+  fail 'application data owner path/identity helper source was not found'
+
+if [[ "$OSTYPE" == linux* && "${EUID:-1}" == 0 ]] &&
+   command -v chown >/dev/null 2>&1 && command -v realpath >/dev/null 2>&1; then
+  (
+    set -Eeuo pipefail
+    eval "$owner_path_source"
+    fail() { printf 'owner path fixture failure: %s\n' "$*" >&2; exit 77; }
+    assert_root_owned_regular() { :; }
+    app_data_owner_approval_token='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+    app_data_owner_compat_uid='1000'
+    app_data_owner_compat_gid='1000'
+    fixture_root="$(mktemp -d /root/subnexus-cutover-owner.XXXXXX)"
+    trap 'rm -rf -- "$fixture_root"' EXIT
+    chmod 700 -- "$fixture_root"
+    parent="$fixture_root/runtime"
+    leaf="$parent/subnexus-data"
+    mkdir -- "$parent" "$leaf"
+    chmod 755 -- "$parent" "$leaf"
+    chown 0:0 -- "$fixture_root" "$parent" "$leaf"
+
+    expect_path_failure() {
+      if (assert_app_data_path_chain "$@" >/dev/null 2>&1); then
+        return 1
+      fi
+      return 0
+    }
+
+    # Root-owned data remains the default contract.
+    assert_root_owned_path_chain "$leaf" owner-root 755
+
+    # The reviewed non-root compatibility owner is allowed only at the leaf.
+    chown 1000:1000 -- "$leaf"
+    assert_app_data_path_chain "$leaf" owner-explicit 1000 1000 755 0
+    chmod 775 -- "$leaf"
+    expect_path_failure "$leaf" owner-group-write 1000 1000 775 || fail 'group-writable data leaf was accepted'
+    chmod 555 -- "$leaf"
+    expect_path_failure "$leaf" owner-no-write 1000 1000 555 || fail 'non-writable data leaf was accepted'
+    chmod 755 -- "$leaf"
+    chown 1001:1000 -- "$leaf"
+    expect_path_failure "$leaf" owner-wrong-uid 1000 1000 755 || fail 'wrong data leaf UID was accepted'
+    chown 1000:1001 -- "$leaf"
+    expect_path_failure "$leaf" owner-wrong-gid 1000 1000 755 || fail 'wrong data leaf GID was accepted'
+    chown 1000:1000 -- "$leaf"
+
+    # Every parent remains root-owned and private, and path symlinks fail.
+    chown 1000:1000 -- "$parent"
+    expect_path_failure "$leaf" owner-nonroot-parent 1000 1000 755 || fail 'non-root parent was accepted'
+    chown 0:0 -- "$parent"
+    chmod 775 -- "$parent"
+    expect_path_failure "$leaf" owner-writable-parent 1000 1000 755 || fail 'writable parent was accepted'
+    chmod 755 -- "$parent"
+    ln -s -- "$leaf" "$fixture_root/data-link"
+    expect_path_failure "$fixture_root/data-link" owner-symlink 1000 1000 755 || fail 'symlink data path was accepted'
+    rm -f -- "$fixture_root/data-link"
+
+    # Special mode bits and an unexpected post-prepare mode are rejected.
+    chmod 4755 -- "$leaf"
+    expect_path_failure "$leaf" owner-special-mode 1000 1000 4755 || fail 'special data mode was accepted'
+    chmod a-s -- "$leaf"
+    chmod 755 -- "$leaf"
+    expect_path_failure "$leaf" owner-mode-drift 1000 1000 700 || fail 'mode drift was accepted'
+
+    # Exercise the actual bind-source resolver, not only its path helper.
+    run_dir="$fixture_root/run"
+    mkdir -- "$run_dir"
+    chmod 700 -- "$run_dir"
+    candidate_artifact_root="$fixture_root/artifacts"
+    alternate_candidate_artifact_root="$fixture_root/alt-artifacts"
+    candidate_gate_root="$fixture_root/gate"
+    alternate_candidate_gate_root="$fixture_root/alt-gate"
+    printf 'bind|%s||\n' "$leaf" > "$run_dir/app-data-mount.txt"
+    app_data_owner_policy=explicit-uid-gid
+    app_data_owner_uid=1000
+    app_data_owner_gid=1000
+    app_data_owner_mode=755
+    [[ "$(resolve_app_data_source)" == "$leaf" ]] || fail 'explicit bind owner resolver returned the wrong source'
+    app_data_owner_policy=root-only
+    chown 0:0 -- "$leaf"
+    app_data_owner_uid=0
+    app_data_owner_gid=0
+    [[ "$(resolve_app_data_source)" == "$leaf" ]] || fail 'root-only resolver rejected a root-owned data leaf'
+    # A root-only resolver must reject the non-root leaf even if the path
+    # helper itself supports explicit owner values.
+    chown 1000:1000 -- "$leaf"
+    if (resolve_app_data_source >/dev/null 2>&1); then
+      fail 'root-only resolver accepted a non-root data leaf'
+    fi
+
+    # Capture an identity and prove owner/mode/inode drift is detected.
+    app_data_owner_policy=explicit-uid-gid
+    app_data_owner_uid=1000
+    app_data_owner_gid=1000
+    app_data_owner_mode=755
+    chown 1000:1000 -- "$leaf"
+    fingerprint="$(stat -Lc '%d,%i,%F,%u,%g,%a' -- "$leaf")"
+    printf 'bind|%s||%s|%s|-\n' "$leaf" "$leaf" "$fingerprint" > "$run_dir/app-data-source.identity"
+    manifest_file="$fixture_root/no-manifest"
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+    SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+    assert_app_data_source_identity
+    chmod 750 -- "$leaf"
+    if (assert_app_data_source_identity >/dev/null 2>&1); then
+      fail 'application data mode/inode identity drift was accepted'
+    fi
+    chmod 755 -- "$leaf"
+    mv -- "$leaf" "$leaf.old"
+    mkdir -- "$leaf"
+    chmod 755 -- "$leaf"
+    chown 1000:1000 -- "$leaf"
+    if (assert_app_data_source_identity >/dev/null 2>&1); then
+      fail 'application data inode replacement was accepted'
+    fi
+
+    # A pre-owner-contract manifest remains rollback-compatible through the
+    # actual manifest/resolver/identity path: its historical validator only
+    # constrained the leaf UID to zero, so a non-zero but non-writable GID is
+    # retained as a legacy exception.
+    rm -rf -- "$leaf"
+    mv -- "$leaf.old" "$leaf"
+    chmod 755 -- "$leaf"
+    chown 0:1001 -- "$leaf"
+    manifest_file="$fixture_root/legacy-manifest"
+    printf 'state=prepared\n' > "$manifest_file"
+    app_data_owner_policy=explicit-uid-gid
+    app_data_owner_uid=1000
+    app_data_owner_gid=1000
+    app_data_owner_mode=755
+    unset SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM \
+      SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID \
+      SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID
+    validate_app_data_owner_manifest
+    [[ "$app_data_owner_manifest_legacy" == 1 &&
+       "$app_data_owner_policy" == root-only &&
+       -z "$app_data_owner_gid" ]] || fail 'legacy owner manifest was not loaded through the resolver contract'
+    fingerprint="$(stat -Lc '%d,%i,%F,%u,%g,%a' -- "$leaf")"
+    printf 'bind|%s||%s|%s|-\n' "$leaf" "$leaf" "$fingerprint" > "$run_dir/app-data-source.identity"
+    [[ "$(resolve_app_data_source)" == "$leaf" ]] || fail 'legacy resolver rejected a historically valid root-UID leaf'
+    assert_app_data_source_identity
+  )
+else
+  printf 'subnexus application-data owner fixtures skipped (requires Linux root and chown)\n'
 fi
 
 # ---------------------------------------------------------------------------
@@ -795,6 +1132,10 @@ rollback_helpers="$(
   extract_function valid_container_ref
   extract_function valid_sha64
   extract_function read_one_line
+  extract_function app_data_owner_mode_is_safe
+  extract_function validate_app_data_owner_inputs
+  extract_function validate_app_data_owner_runtime_inputs
+  extract_function validate_app_data_owner_manifest
   extract_function write_run_marker
   extract_function inspect_container_id_or_empty
   extract_function assert_candidate_container_identity

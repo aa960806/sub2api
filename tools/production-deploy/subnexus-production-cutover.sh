@@ -38,6 +38,9 @@ readonly alternate_production_source_root='/root/subnexus-repo'
 readonly cutover_approval_token='I_UNDERSTAND_SHORT_PRODUCTION_WINDOW'
 readonly rollback_approval_token='I_UNDERSTAND_APPLICATION_ROLLBACK'
 readonly environment_duplicate_approval_token='I_UNDERSTAND_DOCKER_ENV_LAST_WINS'
+readonly app_data_owner_approval_token='I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER'
+readonly app_data_owner_compat_uid='1000'
+readonly app_data_owner_compat_gid='1000'
 readonly final_free_reserve_bytes=8589934592
 readonly postgresql_dump_budget_limit=12884901888
 readonly redis_rdb_budget_limit=4294967296
@@ -112,11 +115,16 @@ environment_duplicate_expected_hashes=''
 environment_duplicate_evidence_sha256=''
 environment_file_sha256=''
 environment_duplicate_legacy=0
+app_data_owner_policy='root-only'
+app_data_owner_uid='0'
+app_data_owner_gid='0'
+app_data_owner_mode=''
 environment_observed_mode=''
 environment_observed_keys=''
 environment_observed_expected_hashes=''
 environment_observed_evidence_sha256=''
 environment_observed_file_sha256=''
+app_data_owner_manifest_legacy=0
 stop_timeout_seconds=''
 candidate_health_timeout_seconds=''
 rollback_health_timeout_seconds=''
@@ -154,6 +162,20 @@ sorted by key):
   SUBNEXUS_CUTOVER_ENV_DUPLICATE_CONFIRM=I_UNDERSTAND_DOCKER_ENV_LAST_WINS
   SUBNEXUS_CUTOVER_ENV_DUPLICATE_KEYS=SERVER_TRUSTED_PROXIES
   SUBNEXUS_CUTOVER_ENV_DUPLICATE_EXPECTED_SHA256=SERVER_TRUSTED_PROXIES=<64 lowercase hex>
+
+The application data bind/volume source is root-owned by default.  If the
+existing live data directory intentionally has a non-root owner, prepare may
+opt in only with all three values (validated independently):
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
+
+Application data normally must be a root-owned directory.  The only supported
+non-root leaf owner is UID/GID 1000, and every phase touching a prepared run
+must repeat the explicit acknowledgement and exact owner values:
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000
+  SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 The approved script SHA must be supplied independently; it must not be
 computed in the same command that invokes this tool.  The candidate archive
@@ -510,6 +532,102 @@ validate_environment_duplicate_inputs() {
   fi
   [[ "${#keys[@]}" -eq "${#hashes[@]}" ]] ||
     fail 'duplicate environment keys and expected hashes must have the same count'
+}
+
+validate_app_data_owner_inputs() {
+  local confirm="${SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM:-}"
+  local uid="${SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID:-}"
+  local gid="${SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID:-}"
+  local supplied=0
+  [[ -n "$confirm" || -n "$uid" || -n "$gid" ]] && supplied=1
+  if (( supplied == 0 )); then
+    app_data_owner_policy='root-only'
+    app_data_owner_uid='0'
+    app_data_owner_gid='0'
+    return 0
+  fi
+  [[ "$confirm" == "$app_data_owner_approval_token" ]] ||
+    fail 'non-root application data owner requires explicit confirmation'
+  [[ "$uid" =~ ^[1-9][0-9]{0,9}$ && "$gid" =~ ^[1-9][0-9]{0,9}$ ]] ||
+    fail 'non-root application data owner UID/GID must be positive decimal values'
+  (( 10#$uid <= 4294967295 && 10#$gid <= 4294967295 )) ||
+    fail 'non-root application data owner UID/GID is out of range'
+  [[ "$uid" == "$app_data_owner_compat_uid" && "$gid" == "$app_data_owner_compat_gid" ]] ||
+    fail "only the reviewed non-root application data owner ${app_data_owner_compat_uid}:${app_data_owner_compat_gid} is supported"
+  app_data_owner_policy='explicit-uid-gid'
+  app_data_owner_uid="$((10#$uid))"
+  app_data_owner_gid="$((10#$gid))"
+}
+
+app_data_owner_mode_is_safe() {
+  local mode_value="${1:-}"
+  [[ "$mode_value" =~ ^[0-7]{3}$ ]] || return 1
+  # The leaf must remain a usable directory for its owner, while group/other
+  # users may not write it.  Special mode bits are intentionally rejected.
+  (( (8#$mode_value & 8#700) == 8#700 && (8#$mode_value & 8#022) == 0 ))
+}
+
+validate_app_data_owner_runtime_inputs() {
+  local supplied=0
+  [[ -n "${SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM:-}" ||
+     -n "${SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID:-}" ||
+     -n "${SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID:-}" ]] && supplied=1
+  if [[ "$app_data_owner_policy" == root-only ]]; then
+    (( supplied == 0 )) || fail 'non-root application data owner inputs do not match the prepared root-only policy'
+    return 0
+  fi
+  validate_app_data_owner_inputs
+  [[ "$app_data_owner_policy" == explicit-uid-gid &&
+     "$app_data_owner_uid" == "$app_data_owner_compat_uid" &&
+     "$app_data_owner_gid" == "$app_data_owner_compat_gid" ]] ||
+    fail 'runtime application data owner inputs do not match the prepared policy'
+}
+
+validate_app_data_owner_manifest() {
+  local policy uid gid mode key
+  app_data_owner_manifest_legacy=0
+  if ! manifest_has_key app_data_owner_policy; then
+    # Runs created before the owner contract existed are deliberately treated
+    # as legacy root-UID runs.  The old validator required UID 0 but did not
+    # constrain the historical GID; preserve that narrow rollback exception.
+    # A partially added set of fields is not a valid legacy manifest and must
+    # fail closed.
+    for key in app_data_owner_uid app_data_owner_gid app_data_owner_mode; do
+      manifest_has_key "$key" && fail "legacy manifest unexpectedly contains $key"
+    done
+    app_data_owner_manifest_legacy=1
+    app_data_owner_policy='root-only'
+    app_data_owner_uid='0'
+    # The pre-contract validator recorded only root UID.  Keep that legacy
+    # rollback path compatible while the immutable identity still records the
+    # actual historical group and detects any later change.
+    app_data_owner_gid=''
+    app_data_owner_mode=''
+    validate_app_data_owner_runtime_inputs
+    return 0
+  fi
+  policy="$(manifest_value app_data_owner_policy)"
+  uid="$(manifest_value app_data_owner_uid)"
+  gid="$(manifest_value app_data_owner_gid)"
+  mode="$(manifest_value app_data_owner_mode)"
+  [[ "$policy" == root-only || "$policy" == explicit-uid-gid ]] ||
+    fail 'manifest application data owner policy is invalid'
+  [[ "$uid" =~ ^[0-9]{1,10}$ && "$gid" =~ ^[0-9]{1,10}$ ]] ||
+    fail 'manifest application data owner UID/GID is invalid'
+  (( 10#$uid <= 4294967295 && 10#$gid <= 4294967295 )) ||
+    fail 'manifest application data owner UID/GID is out of range'
+  app_data_owner_mode_is_safe "$mode" || fail 'manifest application data owner mode is invalid'
+  if [[ "$policy" == root-only ]]; then
+    [[ "$uid" == 0 && "$gid" == 0 ]] || fail 'root-only manifest has a non-root owner'
+  else
+    [[ "$uid" == "$app_data_owner_compat_uid" && "$gid" == "$app_data_owner_compat_gid" ]] ||
+      fail 'manifest uses an unsupported non-root application data owner'
+  fi
+  app_data_owner_policy="$policy"
+  app_data_owner_uid="$((10#$uid))"
+  app_data_owner_gid="$((10#$gid))"
+  app_data_owner_mode="$mode"
+  validate_app_data_owner_runtime_inputs
 }
 
 validate_environment_file() {
@@ -2387,6 +2505,46 @@ backup_redis() {
   chmod 600 "$rdb.sha256" "$report.sha256"
 }
 
+assert_app_data_path_chain() {
+  local path="$1" label="${2:-path}" leaf_uid="${3:-0}" leaf_gid="${4:-0}" expected_mode="${5:-}" allow_legacy="${6:-0}"
+  local canonical current component actual_uid actual_gid actual_mode
+  local -a components=()
+  [[ "$path" == /* ]] || fail "$label must be an absolute path"
+  canonical="$(realpath -e -P -- "$path")" || fail "cannot resolve $label"
+  [[ "$canonical" == "$path" ]] || fail "$label contains a symbolic-link or non-canonical component"
+  [[ "$leaf_uid" =~ ^[0-9]+$ ]] || fail "$label owner contract is invalid"
+  [[ "$leaf_gid" == '*' || "$leaf_gid" =~ ^[0-9]+$ ]] || fail "$label owner contract is invalid"
+  [[ "$(stat -c '%u' -- '/')" == '0' ]] || fail "$label filesystem root must be root-owned"
+  mode_is_safe '/' || fail "$label filesystem root must not be group/other writable"
+  IFS='/' read -r -a components <<< "${path#/}"
+  current=''
+  for component in "${components[@]}"; do
+    [[ -n "$component" && "$component" != '.' && "$component" != '..' ]] || fail "$label contains an invalid path component"
+    current="${current}/${component}"
+    [[ -e "$current" && ! -L "$current" ]] || fail "$label contains a missing or symbolic path component"
+    if [[ "$current" != "$path" ]]; then
+      [[ "$(stat -c '%u' -- "$current")" == '0' ]] || fail "$label parent component must be root-owned: $current"
+      [[ -d "$current" ]] || fail "$label parent component is not a directory: $current"
+      mode_is_safe "$current" || fail "$label parent component must not be group/other writable: $current"
+    else
+      [[ -d "$current" ]] || fail "$label leaf must be a directory: $current"
+      actual_uid="$(stat -c '%u' -- "$current")" || fail "cannot inspect $label leaf owner"
+      actual_gid="$(stat -c '%g' -- "$current")" || fail "cannot inspect $label leaf group"
+      actual_mode="$(stat -c '%a' -- "$current")" || fail "cannot inspect $label leaf mode"
+      [[ "$actual_uid" == "$leaf_uid" && ( "$leaf_gid" == '*' || "$actual_gid" == "$leaf_gid" ) ]] ||
+        fail "$label leaf owner does not match the prepared owner contract"
+      if [[ "$allow_legacy" == 1 && "${app_data_owner_manifest_legacy:-0}" == 1 ]]; then
+        mode_is_safe "$current" || fail "$label leaf must not be group/other writable"
+      else
+        app_data_owner_mode_is_safe "$actual_mode" ||
+          fail "$label leaf must be owner-rwx and not group/other writable"
+      fi
+      [[ -z "$expected_mode" || "$actual_mode" == "$expected_mode" ]] ||
+        fail "$label leaf mode changed after prepare"
+    fi
+  done
+}
+
 assert_root_owned_path_chain() {
   local path="$1" label="${2:-path}" canonical current component
   local -a components=()
@@ -2408,7 +2566,7 @@ assert_root_owned_path_chain() {
 }
 
 resolve_app_data_source() {
-  local type source name mountpoint forbidden
+  local type source name mountpoint forbidden expected_uid expected_gid
   IFS='|' read -r type source name < "$run_dir/app-data-mount.txt"
   if [[ "$type" == bind ]]; then
     [[ -d "$source" && ! -L "$source" ]] || fail 'application data bind source is missing or symbolic'
@@ -2422,7 +2580,27 @@ resolve_app_data_source() {
     resolved_mountpoint="$(realpath -e -P -- "$mountpoint")" || fail 'cannot resolve application data volume mountpoint'
     [[ "$resolved_mountpoint" == "$mountpoint" ]] || fail 'application data volume mountpoint contains a symbolic-link component'
   fi
-  assert_root_owned_path_chain "$mountpoint" 'application data source'
+  case "${app_data_owner_policy:-root-only}" in
+    root-only)
+      expected_uid='0'
+      if [[ -n "${app_data_owner_gid:-}" ]]; then
+        expected_gid="$app_data_owner_gid"
+      else
+        # A manifest created before the owner contract recorded only the
+        # historical root UID.  Preserve that exact compatibility boundary;
+        # the immutable identity still locks the observed GID and mode.
+        expected_gid='*'
+      fi
+      ;;
+    explicit-uid-gid)
+      expected_uid="${app_data_owner_uid:-}"
+      expected_gid="${app_data_owner_gid:-}"
+      [[ "$expected_uid" == "$app_data_owner_compat_uid" && "$expected_gid" == "$app_data_owner_compat_gid" ]] ||
+        fail 'application data owner contract is unsupported'
+      ;;
+    *) fail 'application data owner policy is invalid' ;;
+  esac
+  assert_app_data_path_chain "$mountpoint" 'application data source' "$expected_uid" "$expected_gid" "${app_data_owner_mode:-}" 1
   [[ "$mountpoint" != '/' ]] || fail 'application data source cannot be the filesystem root'
   for forbidden in \
     "$run_dir" "$candidate_artifact_root" "$alternate_candidate_artifact_root" \
@@ -2431,7 +2609,6 @@ resolve_app_data_source() {
     path_overlaps "$mountpoint" "$forbidden" &&
       fail "application data source overlaps a cutover or candidate path: $forbidden"
   done
-  [[ "$(stat -c '%u' -- "$mountpoint")" == '0' ]] || fail 'application data source must be root-owned'
   printf '%s' "$mountpoint"
 }
 
@@ -2473,7 +2650,7 @@ capture_app_data_source_identity() {
 
 validate_app_data_source_identity_file() {
   local type source name mountpoint fingerprint metadata_hash extra
-  local device inode file_type uid gid mode_value
+  local device inode file_type uid gid mode_value expected_uid expected_gid expected_mode
   assert_root_owned_regular "$run_dir/app-data-source.identity" 'application data source identity'
   IFS='|' read -r type source name mountpoint fingerprint metadata_hash extra < "$run_dir/app-data-source.identity"
   [[ -z "${extra:-}" && -n "$type" && -n "$mountpoint" && -n "$fingerprint" ]] || fail 'application data source identity is malformed'
@@ -2481,8 +2658,24 @@ validate_app_data_source_identity_file() {
     fail 'application data source identity contains an invalid path'
   IFS=',' read -r device inode file_type uid gid mode_value extra <<< "$fingerprint"
   [[ -z "${extra:-}" && "$device" =~ ^[0-9]+$ && "$inode" =~ ^[0-9]+$ && -n "$file_type" &&
-     "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ && "$mode_value" =~ ^[0-7]{3,4}$ ]] ||
+      "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ && "$mode_value" =~ ^[0-7]{3,4}$ ]] ||
     fail 'application data source fingerprint is malformed'
+  expected_uid="${app_data_owner_uid:-0}"
+  expected_gid="${app_data_owner_gid:-0}"
+  [[ "$uid" == "$expected_uid" && ( -z "${app_data_owner_gid:-}" || "$gid" == "$expected_gid" ) ]] ||
+    fail 'application data source owner changed or disagrees with the prepared contract'
+  if [[ "${app_data_owner_manifest_legacy:-0}" == 1 ]]; then
+    (( (8#${mode_value: -3} & 8#022) == 0 )) ||
+      fail 'legacy application data source mode is group/other writable'
+  else
+    [[ "$mode_value" =~ ^[0-7]{3}$ ]] ||
+      fail 'modern application data source mode must not contain special bits'
+    app_data_owner_mode_is_safe "$mode_value" ||
+      fail 'application data source mode is not owner-rwx and private to group/other writes'
+  fi
+  expected_mode="${app_data_owner_mode:-}"
+  [[ -z "$expected_mode" || "$mode_value" == "$expected_mode" ]] ||
+    fail 'application data source mode disagrees with the prepared manifest'
   case "$type" in
     bind)
       [[ -z "$name" && "$metadata_hash" == '-' ]] || fail 'bind source identity metadata is malformed'
@@ -2497,6 +2690,11 @@ validate_app_data_source_identity_file() {
 
 assert_app_data_source_identity() {
   local expected actual
+  if [[ -f "${manifest_file:-}" ]]; then
+    validate_app_data_owner_manifest
+  else
+    validate_app_data_owner_inputs
+  fi
   validate_app_data_source_identity_file
   expected="$(read_one_line "$run_dir/app-data-source.identity")"
   actual="$(compute_app_data_source_identity)" || fail 'cannot recapture application data source identity'
@@ -2548,9 +2746,16 @@ assert_backup_hashes() {
 }
 
 write_initial_manifest() {
-  local source_tree app_data_source_value
+  local source_tree app_data_source_value observed_uid observed_gid observed_mode
   source_tree="$(read_one_line "$run_dir/source-tree")"
   app_data_source_value="$(resolve_app_data_source)"
+  observed_uid="$(stat -c '%u' -- "$app_data_source_value")" || fail 'cannot inspect application data owner UID'
+  observed_gid="$(stat -c '%g' -- "$app_data_source_value")" || fail 'cannot inspect application data owner GID'
+  observed_mode="$(stat -c '%a' -- "$app_data_source_value")" || fail 'cannot inspect application data mode'
+  [[ "$observed_uid" == "$app_data_owner_uid" && "$observed_gid" == "$app_data_owner_gid" ]] ||
+    fail 'application data owner changed before manifest creation'
+  app_data_owner_mode_is_safe "$observed_mode" || fail 'application data mode is not safe for the candidate'
+  app_data_owner_mode="$observed_mode"
   {
     printf 'tool=%s\n' "$tool_name"
     printf 'state=prepared\n'
@@ -2572,6 +2777,10 @@ write_initial_manifest() {
     printf 'environment_duplicate_expected_sha256=%s\n' "$environment_duplicate_expected_hashes"
     printf 'environment_file_sha256=%s\n' "$environment_file_sha256"
     printf 'environment_duplicate_evidence_sha256=%s\n' "$environment_duplicate_evidence_sha256"
+    printf 'app_data_owner_policy=%s\n' "$app_data_owner_policy"
+    printf 'app_data_owner_uid=%s\n' "$observed_uid"
+    printf 'app_data_owner_gid=%s\n' "$observed_gid"
+    printf 'app_data_owner_mode=%s\n' "$observed_mode"
     printf 'runtime_contract_sha256=%s\n' "$(read_one_line "$run_dir/runtime-contract.sha256")"
     printf 'log_config_sha256=%s\n' "$(hash_file "$run_dir/log-config.json")"
     printf 'database_id=%s\n' "$database_id"
@@ -2600,7 +2809,7 @@ write_initial_manifest() {
     printf 'candidate_container_id=\n'
     printf 'candidate_container_name=\n'
     printf 'candidate_container_intent=\n'
-     printf 'settings_closed_snapshot_sha256=%s\n' "$(read_one_line "$run_dir/settings-closed.tsv.sha256")"
+    printf 'settings_closed_snapshot_sha256=%s\n' "$(read_one_line "$run_dir/settings-closed.tsv.sha256")"
   } > "$manifest_file"
   chmod 600 "$manifest_file"
 }
@@ -2791,6 +3000,7 @@ prepare_run() {
   [[ "$#" -ge 9 && "$#" -le 11 ]] || { usage; exit 2; }
   source_root="$1"; target_sha="$2"; approved_script_sha="$3"; expected_image_id="$4"; candidate_archive="$5"; candidate_archive_sha="$6"; candidate_gate_evidence="$7"; live_app_ref="$8"; public_url="${9:-}"; evidence_root="${10:-$default_evidence_root}"
   [[ "$EUID" -eq 0 ]] || fail 'prepare must run as root'
+  validate_app_data_owner_inputs
   valid_sha40 "$target_sha" || fail 'target SHA must be a lowercase 40-character commit SHA'
   valid_sha64 "$expected_image_id" || fail 'candidate image ID must be 64 lowercase hexadecimal characters'
   valid_sha64 "$candidate_archive_sha" || fail 'candidate archive SHA must be 64 lowercase hexadecimal characters'
@@ -2850,6 +3060,10 @@ prepare_run() {
   load_and_validate_candidate_image
   assert_prepare_disk_budget after_image_load
   write_initial_manifest
+  # The source identity was captured before the bounded backups and image
+  # load.  Recheck it after the manifest is materialized so an owner/mode or
+  # inode change during prepare can never produce a READY run.
+  assert_app_data_source_identity
   assert_backup_hashes
   assert_live_identity 'prepare-final'
   assert_dependencies_still_match "$database_id" "$redis_id"
@@ -2897,6 +3111,7 @@ validate_run_directory() {
   validate_self_sha "$expected"
   [[ "$(manifest_value script_sha256)" == "$script_sha256" ]] || fail 'manifest script SHA does not match current script'
   validate_manifest_bounded_settings
+  validate_app_data_owner_manifest
   target_sha="$(manifest_value target_sha)"; valid_sha40 "$target_sha" || fail 'manifest target SHA is invalid'
   expected_image_id="$(manifest_value candidate_image_id)"; valid_sha64 "$expected_image_id" || fail 'manifest candidate image ID is invalid'
   # Both switch and rollback retain the immutable candidate metadata in the
@@ -3613,6 +3828,7 @@ rollback_run() {
   state="$(manifest_value state)"
   [[ "$state" == switching || "$state" == switched || "$state" == rolling_back || "$state" == rolled_back ]] || fail "rollback is not applicable in state $state"
   rollback_active=1
+  validate_app_data_owner_manifest
   # Automatic rollback can be entered from an ERR trap immediately after a
   # failed Docker RPC.  Revalidate the endpoint before issuing any further
   # stop/remove/rename/start operation; a changed daemon must fail closed.
@@ -3705,6 +3921,7 @@ switch_run() {
   init_docker
   assert_daemon_still_matches_prepare
   trap 'on_error' ERR
+  validate_app_data_owner_manifest
   app_name="$(manifest_value live_app_name)"
   app_id="$(manifest_value live_app_id)"
   database_id="$(manifest_value database_id)"
