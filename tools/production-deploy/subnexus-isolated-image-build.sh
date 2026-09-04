@@ -2,8 +2,10 @@
 set -Eeuo pipefail
 
 # Build one fixed SubNexus commit on an explicitly named, local-only Docker
-# context.  This script creates a disposable BuildKit builder and network,
-# never pulls or pushes images, never uses SSH, and never contacts a server.
+# context. This script creates a disposable BuildKit builder and network, does
+# not issue Docker pull/push commands, never uses SSH, and never contacts a
+# server. The isolated build network may fetch digest-pinned image content and
+# public package dependencies used by the Dockerfile.
 # The resulting image archive is suitable for the production-host candidate
 # gate, but this script itself does not run a candidate or touch production.
 
@@ -94,6 +96,7 @@ baseline_containers=''
 baseline_networks=''
 baseline_volumes=''
 baseline_images=''
+object_lists_captured='false'
 build_status=''
 script_source_path=''
 
@@ -172,6 +175,29 @@ is_safe_env_example_path() {
   esac
 }
 
+is_database_dump_path() {
+  local relative="${1:-}" basename
+  # Migration source files are intentionally plain SQL and may legitimately
+  # contain "snapshot" in their names.  Only migration-shaped snapshot SQL
+  # is exempt; dump, backup, export, compressed, and binary artifacts remain
+  # rejected even when placed below backend/migrations.
+  basename="${relative##*/}"
+  case "$basename" in
+    *dump.sql|*dump.sql.gz|*.dump|*.dump.gz|*backup.sql|*backup.sql.gz|*export.sql|*export.sql.gz)
+      return 0
+      ;;
+    *snapshot.sql)
+      if [[ "$relative" == "backend/migrations/$basename" &&
+        "$basename" =~ ^[0-9]{3,}[a-z]?_[a-z0-9][a-z0-9_]*_snapshot\.sql$ ]]; then
+        return 1
+      fi
+      return 0
+      ;;
+    *snapshot.sql.gz) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 valid_positive_integer() {
   [[ "${1:-}" =~ ^[0-9]+$ ]] && (( 10#${1:-0} > 0 ))
 }
@@ -229,6 +255,16 @@ safe_remove_stage() {
     return 1
   }
   [[ -d "$path" && ! -L "$path" ]] || return 0
+  [[ "$(realpath -e -- "$path" 2>/dev/null)" == "$path" ]] || return 1
+  owner_is_allowed "$path" || return 1
+  mode_is_safe "$path" || return 1
+  rm -rf -- "$path"
+}
+
+safe_remove_context() {
+  local path="$1"
+  [[ -n "$stage_dir" && "$path" == "$stage_dir/context" ]] || return 1
+  [[ -d "$path" && ! -L "$path" ]] || return 1
   [[ "$(realpath -e -- "$path" 2>/dev/null)" == "$path" ]] || return 1
   owner_is_allowed "$path" || return 1
   mode_is_safe "$path" || return 1
@@ -314,6 +350,7 @@ capture_object_lists() {
   baseline_networks="$(docker_call network ls --format '{{.Name}}' | sort -u)" || return 1
   baseline_volumes="$(docker_call volume ls -q | sort -u)" || return 1
   baseline_images="$(docker_call image ls -aq --no-trunc | sort -u)" || return 1
+  object_lists_captured='true'
 }
 
 assert_empty_build_daemon() {
@@ -481,7 +518,7 @@ PY
 }
 
 validate_context_tree() {
-  local path relative basename
+  local path relative
   [[ -d "$context_root" && ! -L "$context_root" ]] || fail 'fixed Docker context is not a directory' || return 1
   owner_is_allowed "$context_root" || fail 'fixed Docker context is not owned by the invoking user' || return 1
   mode_is_safe "$context_root" || fail 'fixed Docker context is writable by group/other' || return 1
@@ -495,37 +532,67 @@ validate_context_tree() {
       [[ "$(stat -c '%s' -- "$path")" -le "$max_context_file_bytes" ]] || fail 'fixed Docker context file is too large' || return 1
     fi
     relative="${path#"$context_root"/}"
-    basename="${relative##*/}"
     case "$relative" in
       .env|.env.*|*.pem|*.key|*.p12|*.pfx|*.jks)
         is_safe_env_example_path "$relative" ||
           fail "sensitive file found in fixed Docker context: $relative" || return 1
         ;;
     esac
-    case "$basename" in
-      *dump.sql|*dump.sql.gz|*.dump|*.dump.gz|*backup.sql|*backup.sql.gz|*snapshot.sql|*snapshot.sql.gz|*export.sql|*export.sql.gz)
-        fail "database dump found in fixed Docker context: $relative" || return 1
-        ;;
-    esac
+    if is_database_dump_path "$relative"; then
+      fail "database dump found in fixed Docker context: $relative" || return 1
+    fi
   done < <(find "$context_root" -mindepth 1 -print0)
   [[ -f "$context_root/Dockerfile" && ! -L "$context_root/Dockerfile" ]] || fail 'fixed Docker context has no Dockerfile' || return 1
   [[ -f "$context_root/.dockerignore" && ! -L "$context_root/.dockerignore" ]] || fail 'fixed Docker context has no .dockerignore' || return 1
 }
 
 validate_dockerfile_pin_contract() {
-  local dockerfile="$context_root/Dockerfile" line
+  local dockerfile="$context_root/Dockerfile" line opcode image stage
+  local field_count index from_count=0 syntax_directive_re
+  local -a fields=()
+  local -A seen=()
+  syntax_directive_re='^[[:space:]]*#[[:space:]]*syntax[[:space:]]*='
   for line in 'ARG NODE_IMAGE=' 'ARG GOLANG_IMAGE=' 'ARG ALPINE_IMAGE=' 'ARG POSTGRES_IMAGE='; do
     grep -Fq -- "$line" "$dockerfile" || fail "Dockerfile is missing required base argument: $line" || return 1
   done
-  # Every FROM expression must refer to one of the four supplied digest args;
-  # this catches a newly-added mutable base before it reaches Docker.
-  while IFS= read -r line; do
-    [[ "$line" == FROM\ * ]] || continue
-    case "$line" in
-      *'${NODE_IMAGE}'*|*'${GOLANG_IMAGE}'*|*'${ALPINE_IMAGE}'*|*'${POSTGRES_IMAGE}'*) ;;
+  # Dockerfile opcodes are case-insensitive and may be indented. Parse every
+  # FROM into fields and require the image operand to be exactly one approved
+  # build argument, rather than accepting an allowed substring.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "${line,,}" =~ $syntax_directive_re ]]; then
+      fail 'external Dockerfile syntax directives are not allowed; use the digest-pinned BuildKit frontend' || return 1
+    fi
+    read -r -a fields <<< "$line"
+    field_count="${#fields[@]}"
+    (( field_count > 0 )) || continue
+    opcode="${fields[0],,}"
+    [[ "$opcode" == 'from' ]] || continue
+    from_count=$((from_count + 1))
+    index=1
+    if (( index < field_count )) && [[ "${fields[$index]}" == --* ]]; then
+      [[ "${fields[$index]}" == '--platform=${BUILDPLATFORM}' ]] ||
+        fail "Dockerfile FROM has an unapproved flag: $line" || return 1
+      index=$((index + 1))
+    fi
+    (( index < field_count )) || fail "Dockerfile FROM has no image operand: $line" || return 1
+    image="${fields[$index]}"
+    case "$image" in
+      '${NODE_IMAGE}'|'${GOLANG_IMAGE}'|'${ALPINE_IMAGE}'|'${POSTGRES_IMAGE}') ;;
       *) fail "Dockerfile has an unapproved or mutable FROM: $line" || return 1 ;;
     esac
+    seen["$image"]=$(( ${seen["$image"]:-0} + 1 ))
+    index=$((index + 1))
+    if (( index < field_count )); then
+      (( index + 2 == field_count )) || fail "Dockerfile FROM has unsupported trailing fields: $line" || return 1
+      [[ "${fields[$index],,}" == 'as' ]] || fail "Dockerfile FROM has an invalid stage alias: $line" || return 1
+      stage="${fields[$((index + 1))]}"
+      [[ "$stage" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || fail "Dockerfile FROM stage name is unsafe: $line" || return 1
+    fi
   done <"$dockerfile"
+  [[ "$from_count" -eq 4 ]] || fail 'Dockerfile must contain exactly four FROM instructions' || return 1
+  for image in '${NODE_IMAGE}' '${GOLANG_IMAGE}' '${ALPINE_IMAGE}' '${POSTGRES_IMAGE}'; do
+    [[ "${seen["$image"]:-0}" -eq 1 ]] || fail "Dockerfile must use $image exactly once" || return 1
+  done
 }
 
 create_builder_network() {
@@ -1006,7 +1073,7 @@ cleanup_release_tags() {
 }
 
 assert_no_unexpected_objects() {
-  local current containers networks volumes custom
+  local current containers networks volumes custom expected_images
   containers="$(docker_call ps -aq --no-trunc | sort -u)" || return 1
   [[ -z "$containers" ]] || return 1
   networks="$(docker_call network ls --format '{{.Name}}' | sort -u)" || return 1
@@ -1014,7 +1081,23 @@ assert_no_unexpected_objects() {
   [[ -z "$custom" ]] || return 1
   volumes="$(docker_call volume ls -q | sort -u)" || return 1
   [[ -z "$volumes" ]] || return 1
-  [[ "$networks" == "$baseline_networks" ]]
+  [[ "$networks" == "$baseline_networks" ]] || return 1
+  current="$(docker_call image ls -aq --no-trunc | sort -u)" || return 1
+  expected_images="$(printf '%s\nsha256:%s\n' "$baseline_images" "$image_id" | sed '/^[[:space:]]*$/d' | sort -u)" || return 1
+  [[ "$current" == "$expected_images" ]]
+}
+
+assert_baseline_objects_unchanged() {
+  local current
+  [[ "$object_lists_captured" == 'true' ]] || return 1
+  current="$(docker_call ps -aq --no-trunc | sort -u)" || return 1
+  [[ "$current" == "$baseline_containers" ]] || return 1
+  current="$(docker_call network ls --format '{{.Name}}' | sort -u)" || return 1
+  [[ "$current" == "$baseline_networks" ]] || return 1
+  current="$(docker_call volume ls -q | sort -u)" || return 1
+  [[ "$current" == "$baseline_volumes" ]] || return 1
+  current="$(docker_call image ls -aq --no-trunc | sort -u)" || return 1
+  [[ "$current" == "$baseline_images" ]]
 }
 
 on_signal() {
@@ -1044,6 +1127,13 @@ on_exit() {
     fi
     if [[ -n "$docker_daemon_id_start" && -n "$docker_context" ]]; then
       assert_daemon_unchanged exit_cleanup || final_status=1
+    fi
+    if [[ "$object_lists_captured" == 'true' &&
+      ( "$initial_status" -ne 0 || "$final_status" -ne 0 || "$interrupted" == 'true' ) ]]; then
+      assert_baseline_objects_unchanged || {
+        printf 'ERROR: local Docker object baseline was not restored after failed build cleanup\n' >&2
+        final_status=1
+      }
     fi
     if [[ "$initial_status" -ne 0 || "$final_status" -ne 0 ]]; then
       safe_remove_stage "$stage_dir" || final_status=1
@@ -1124,8 +1214,9 @@ main() {
   esac
   [[ -d "${artifact_root%/*}" ]] || fail 'artifact root parent directory must already exist' || return 1
   ensure_secure_directory "$artifact_root"
-  exec 9>>"$artifact_root/.build.lock"
-  chmod 600 -- "$artifact_root/.build.lock"
+  # Lock the already-validated directory inode. This avoids a separate lock
+  # path whose open could otherwise follow a swapped symbolic link.
+  exec 9<"$artifact_root" || fail 'cannot open artifact directory for locking' || return 1
   flock -n 9 || fail 'another isolated image build is already running' || return 1
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   run_uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null)" || fail 'cannot obtain kernel UUID' || return 1
@@ -1192,6 +1283,7 @@ main() {
   run_build
   assert_script_unchanged || fail 'image-build script changed while the image was building' || return 1
   assert_daemon_unchanged after_build
+  safe_remove_context "$context_root" || fail 'cannot remove the fixed context after the build' || return 1
   prepare_tags_and_archive
   assert_script_unchanged || fail 'image-build script changed before archive publication' || return 1
   cleanup_builder_and_network || fail 'isolated BuildKit cleanup failed' || return 1

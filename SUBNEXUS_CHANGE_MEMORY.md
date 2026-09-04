@@ -1089,3 +1089,13 @@
 - 测试脚本新增权限归一化断言，并用合成 tar 实际执行内嵌解包器，确认目录 `0777→0755`、普通文件 `0664→0644`、可执行文件 `0775→0755`；`bash -n`、`subnexus-isolated-image-build.test.sh` 和 `git diff --check` 均通过。修复脚本 SHA256=`a01527dbb91de2b7dbd0c4ce7a3b17ee7a6b6ceff4eaf44c4026edcfbdce2ec5`。
 - 下一步：把该提交同步到 `/work/sub2api` 的 detached clone，确认独立 daemon 仍无残留对象后重跑真实镜像构建；成功前不得运行候选 gate，更不得连接生产数据库或执行线上切换。
 - 回滚点：`79ce84dfd976002134500f27bbf8d0df75a19ca4`（仅回退本地构建脚本修复，不涉及生产资产）。
+
+## 2026-09-04（Asia/Shanghai）— 隔离候选构建二次门禁加固
+
+- 使用提交 `0823fba399e892128ff4474f5f31394593976a29` 重跑真实隔离构建，context 权限检查已通过，但在源码扫描阶段因 `backend/migrations/117_add_payment_order_provider_snapshot.sql` 被泛化的 `*snapshot.sql` 规则误判为数据库快照而停止；当次未创建 builder、候选镜像、卷或自定义网络。
+- 新增 `is_database_dump_path`：只放行 `backend/migrations/` 下符合迁移命名的普通 `snapshot.sql`，生产 dump/backup/export、压缩快照及其他路径的 snapshot 继续硬失败；对应正反夹具已覆盖。
+- 删除根 Dockerfile 的可变 `# syntax=docker/dockerfile:1.7` 外部 frontend 指令，并收紧 Dockerfile 合同解析：大小写/缩进后的每个 `FROM` 都必须精确使用四个批准镜像参数且各一次，只允许批准的 platform 参数，同时拒绝所有 syntax directive 变体，避免新建 BuildKit builder 隐式拉取可变 frontend。
+- 本地构建锁改为对已经校验的 artifact 目录 inode 使用 `flock`，不再创建或跟随 `.build.lock` 路径；成功路径会核对“基线镜像 + 候选镜像”，失败/中断清理后会核对完整 Docker 对象基线，能够发现固定镜像被意外删除或额外对象残留；构建成功后在归档前安全删除 staging 中的固定源码 context，最终证据不再保留未单独校验的源码副本。
+- 一次独立 daemon 镜像元数据试验误删了该 daemon 内的 Node digest 镜像；Docker events 已确认删除只发生在 `SubNexusBuild20260904` 的专用 daemon，随后按同一固定 digest 重新加载。未触碰 Docker Desktop 或服务器；真实构建重跑前必须再次核对五个基础镜像及 0 容器/0 卷/仅默认网络。
+- Git Bash 与 WSL/Linux 均通过四个发布脚本 `bash -n`、isolated-image-build、Docker candidate-check、readonly-preflight、Redis restore-check 测试；动态夹具覆盖 context 实际删除以及失败路径的基础镜像缺失/额外镜像检测；Windows 无可用 Python 时 tar 权限动态夹具明确跳过，WSL 中实际执行并通过。`git diff --check` 通过。
+- 当前仍未得到成功的候选镜像/归档，Docker Release Gate 继续为未通过；下一步是提交本次修复、把 WSL detached clone 固定到新 SHA，仅在专用 daemon 重跑真实构建。不得连接生产数据库、启动线上候选、执行生产迁移、停止旧应用或切流。

@@ -8,6 +8,7 @@ set -Eeuo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 subject="$script_dir/subnexus-isolated-image-build.sh"
+root_dockerfile="$script_dir/../../Dockerfile"
 
 fail() {
   printf 'TEST ERROR: %s\n' "$*" >&2
@@ -79,7 +80,25 @@ assert_contains 'symlink or Git submodule is not allowed'
 assert_contains 'sensitive tracked file is not allowed'
 assert_contains 'is_safe_env_example_path() {'
 assert_contains '.env.example|*/.env.example|.env.sample|*/.env.sample'
+assert_contains 'is_database_dump_path() {'
+assert_contains '"$relative" == "backend/migrations/$basename"'
+assert_contains '^[0-9]{3,}[a-z]?_'
 assert_contains 'validate_dockerfile_pin_contract() {'
+assert_contains 'local -A seen=()'
+assert_contains 'opcode="${fields[0],,}"'
+assert_contains 'Dockerfile must contain exactly four FROM instructions'
+assert_contains 'external Dockerfile syntax directives are not allowed'
+assert_contains 'exec 9<"$artifact_root"'
+assert_not_contains '.build.lock'
+assert_contains 'safe_remove_context "$context_root"'
+assert_contains 'expected_images='
+assert_contains 'docker_call image ls -aq --no-trunc'
+assert_contains 'assert_baseline_objects_unchanged() {'
+assert_contains 'local Docker object baseline was not restored after failed build cleanup'
+[[ -f "$root_dockerfile" ]] || fail 'root Dockerfile is missing'
+if grep -Eiq '^[[:space:]]*#[[:space:]]*syntax[[:space:]]*=' "$root_dockerfile"; then
+  fail 'root Dockerfile must use the digest-pinned BuildKit bundled frontend'
+fi
 assert_contains 'ARG NODE_IMAGE='
 assert_contains 'ARG GOLANG_IMAGE='
 assert_contains 'ARG ALPINE_IMAGE='
@@ -161,8 +180,12 @@ repository_validator_source="$(sed -n '/^valid_repository_digest_ref() {$/,/^}$/
 context_source="$(sed -n '/^valid_context_name() {$/,/^}$/p' "$subject")"
 tag_source="$(sed -n '/^valid_tag() {$/,/^}$/p' "$subject")"
 env_example_source="$(sed -n '/^is_safe_env_example_path() {$/,/^}$/p' "$subject")"
+dump_path_source="$(sed -n '/^is_database_dump_path() {$/,/^}$/p' "$subject")"
+dockerfile_contract_source="$(sed -n '/^validate_dockerfile_pin_contract() {$/,/^}$/p' "$subject")"
+remove_context_source="$(sed -n '/^safe_remove_context() {$/,/^}$/p' "$subject")"
+baseline_objects_source="$(sed -n '/^assert_baseline_objects_unchanged() {$/,/^}$/p' "$subject")"
 absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
-[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$absence_source" ]] || fail 'validator functions not found'
+[[ -n "$validator_source" && -n "$repository_validator_source" && -n "$context_source" && -n "$tag_source" && -n "$env_example_source" && -n "$dump_path_source" && -n "$dockerfile_contract_source" && -n "$remove_context_source" && -n "$baseline_objects_source" && -n "$absence_source" ]] || fail 'validator functions not found'
 (
   eval "$validator_source"
   eval "$repository_validator_source"
@@ -199,6 +222,94 @@ absence_source="$(sed -n '/^assert_exact_absent() {$/,/^}$/p' "$subject")"
   is_safe_env_example_path 'nested/path/.env.sample'
   if is_safe_env_example_path '.env.production'; then fail 'non-example env file accepted'; fi
   if is_safe_env_example_path 'deploy/.env.local'; then fail 'nested non-example env file accepted'; fi
+  eval "$dump_path_source"
+  if is_database_dump_path 'backend/migrations/117_add_payment_order_provider_snapshot.sql'; then fail 'migration snapshot was treated as a dump'; fi
+  if is_database_dump_path 'backend/migrations/006b_guard_users_snapshot.sql'; then fail 'letter-suffixed migration snapshot was treated as a dump'; fi
+  is_database_dump_path 'database/production-backup.sql'
+  is_database_dump_path 'database/export.sql.gz'
+  is_database_dump_path 'database/full.dump'
+  is_database_dump_path 'backend/migrations/999_production-backup.sql'
+  is_database_dump_path 'backend/migrations/999_archive_snapshot.sql.gz'
+  is_database_dump_path 'backend/migrations/123/subdir_snapshot.sql'
+  is_database_dump_path 'backend/migrations/123evil_archive_snapshot.sql'
+  if is_database_dump_path 'backend/migrations/archive.sql'; then fail 'ordinary migration SQL was treated as a dump'; fi
+)
+
+# Context cleanup is restricted to the one fixed context below staging.
+(
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-context-cleanup-test.XXXXXX")"
+  fixture_root="$(realpath -e -- "$fixture_root")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  stage_dir="$fixture_root/stage"
+  context_root="$stage_dir/context"
+  outside="$fixture_root/outside"
+  mkdir -p -- "$context_root" "$outside"
+  owner_is_allowed() { return 0; }
+  mode_is_safe() { return 0; }
+  eval "$remove_context_source"
+  safe_remove_context "$context_root" || fail 'fixed context cleanup was rejected'
+  [[ ! -e "$context_root" ]] || fail 'fixed context cleanup left the directory behind'
+  if safe_remove_context "$outside"; then fail 'context cleanup accepted a path outside staging'; fi
+  [[ -d "$outside" ]] || fail 'context cleanup removed a path outside staging'
+)
+
+# Failed builds must restore every Docker object list, including base images.
+(
+  eval "$baseline_objects_source"
+  object_lists_captured='true'
+  baseline_containers=''
+  baseline_networks=$'bridge\nhost\nnone'
+  baseline_volumes=''
+  baseline_images=$'sha256:base-a\nsha256:base-b'
+  current_images="$baseline_images"
+  docker_call() {
+    case "$*" in
+      'ps -aq --no-trunc') return 0 ;;
+      'network ls --format {{.Name}}') printf '%s\n' "$baseline_networks" ;;
+      'volume ls -q') return 0 ;;
+      'image ls -aq --no-trunc') printf '%s\n' "$current_images" ;;
+      *) return 1 ;;
+    esac
+  }
+  assert_baseline_objects_unchanged || fail 'unchanged Docker object baseline was rejected'
+  current_images='sha256:base-a'
+  if assert_baseline_objects_unchanged; then fail 'missing base image was not detected after cleanup'; fi
+  current_images=$'sha256:base-a\nsha256:base-b\nsha256:unexpected'
+  if assert_baseline_objects_unchanged; then fail 'unexpected image was not detected after cleanup'; fi
+)
+
+# Exercise the Dockerfile parser with case/indent variants and known bypasses.
+(
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-dockerfile-contract-test.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  context_root="$fixture_root"
+  eval "$dockerfile_contract_source"
+  fail() { return 1; }
+  write_valid_dockerfile() {
+    cat >"$context_root/Dockerfile" <<'DOCKERFILE'
+ARG NODE_IMAGE=
+ARG GOLANG_IMAGE=
+ARG ALPINE_IMAGE=
+ARG POSTGRES_IMAGE=
+  from --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
+FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
+FROM ${POSTGRES_IMAGE} AS pg-client
+FROM ${ALPINE_IMAGE}
+DOCKERFILE
+  }
+  write_valid_dockerfile
+  validate_dockerfile_pin_contract || { printf 'TEST ERROR: valid Dockerfile contract was rejected\n' >&2; exit 1; }
+  sed -i 's|  from --platform=${BUILDPLATFORM} ${NODE_IMAGE}|  from ubuntu|' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: lowercase mutable FROM was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i 's|${NODE_IMAGE} AS|${NODE_IMAGE}-evil AS|' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: allowed FROM substring was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i '1i # SyNtAx = docker/dockerfile:1.7' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: external syntax directive was accepted\n' >&2; exit 1; fi
+  write_valid_dockerfile
+  sed -i 's|${POSTGRES_IMAGE} AS pg-client|${NODE_IMAGE} AS pg-client|' "$context_root/Dockerfile"
+  if validate_dockerfile_pin_contract >/dev/null 2>&1; then printf 'TEST ERROR: duplicate base argument was accepted\n' >&2; exit 1; fi
 )
 
 # Image absence fixture: transient inspect failures and unrelated errors must
