@@ -319,6 +319,9 @@ assert_before_text "$switch_source" 'docker_rpc rename "$app_id" "$preserved_nam
 assert_before_text "$switch_source" 'create_candidate_container' 'docker_rpc start "$candidate_id"'
 assert_before_text "$switch_source" 'docker_rpc start "$candidate_id"' 'validate_candidate_runtime'
 assert_not_contains '"sha256:$candidate_id"'
+assert_contains 'args=(--name "$candidate_name"'
+assert_not_contains 'args=(create --name'
+assert_contains 'docker_rpc container create "${args[@]}"'
 assert_not_contains 'write_closed_settings_snapshot' <(printf '%s\n' "$switch_source")
 assert_contains 'cutover_active=1' <(printf '%s\n' "$switch_source")
 assert_contains 'SUBNEXUS_CUTOVER_QUIET_CONFIRM' <(printf '%s\n' "$switch_source")

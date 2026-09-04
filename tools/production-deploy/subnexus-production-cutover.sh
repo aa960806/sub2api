@@ -3640,7 +3640,10 @@ create_candidate_container() {
   # write fails, rollback can discover only this exact labelled candidate.
   manifest_set candidate_container_name "$candidate_name"
   manifest_set candidate_container_intent "$candidate_intent"
-  args=(create --name "$candidate_name" --label "com.subnexus.cutover.tool=$tool_name" --label 'com.subnexus.cutover.role=candidate' --label "com.subnexus.cutover.run-id=$(manifest_value run_id)" --label "com.subnexus.cutover.target-sha=$(manifest_value target_sha)" --label "com.subnexus.cutover.intent=$candidate_intent" --pull never --restart "$(candidate_restart_arg)")
+  # `docker_rpc` supplies the `container create` subcommand.  Keep the image
+  # as the first positional argument after all options; a second `create`
+  # token would be interpreted by Docker as the image name `create:latest`.
+  args=(--name "$candidate_name" --label "com.subnexus.cutover.tool=$tool_name" --label 'com.subnexus.cutover.role=candidate' --label "com.subnexus.cutover.run-id=$(manifest_value run_id)" --label "com.subnexus.cutover.target-sha=$(manifest_value target_sha)" --label "com.subnexus.cutover.intent=$candidate_intent" --pull never --restart "$(candidate_restart_arg)")
   append_security_opt_args args
   append_log_config_args args
   args+=(--env-file "$run_dir/container.env")
