@@ -322,6 +322,77 @@ assert_not_contains '"sha256:$candidate_id"'
 assert_contains 'args=(--name "$candidate_name"'
 assert_not_contains 'args=(create --name'
 assert_contains 'docker_rpc container create "${args[@]}"'
+
+# Exercise candidate-container argument construction with a local Docker mock.
+# This catches a duplicated subcommand that static text checks alone can miss.
+create_candidate_source="$(awk '
+  /^create_candidate_container\(\) \{$/ { capture = 1 }
+  capture && /^assert_candidate_container_identity\(\) \{$/ { exit }
+  capture { print }
+' "$subject")"
+[[ "$create_candidate_source" == *'create_candidate_container() {'* &&
+   "$create_candidate_source" == *'docker_rpc container create "${args[@]}"'* ]] ||
+  fail 'candidate-container helper source was not found'
+(
+  set -Eeuo pipefail
+  eval "$create_candidate_source"
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-create-args.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  run_dir="$fixture_root/run"
+  mkdir -- "$run_dir"
+  for metadata_file in container.env user.txt resource-policy.txt healthcheck.json \
+    network-aliases.txt mounts.txt entrypoint.txt cmd.txt workdir.txt ulimits.txt; do
+    : >"$run_dir/$metadata_file"
+  done
+  app_name='subnexus-cutover'
+  tool_name='subnexus-production-cutover-v1'
+  expected_image_id="$(printf 'b%.0s' {1..64})"
+  expected_candidate_id="$(printf 'd%.0s' {1..64})"
+  app_networks=('sub2api-net')
+  captured_ports=()
+  captured_entrypoint=()
+  candidate_id=''
+  candidate_restart_arg() { printf 'unless-stopped\n'; }
+  valid_container_ref() { [[ "$1" == "$app_name" ]]; }
+  valid_sha64() { [[ "$1" =~ ^[0-9a-f]{64}$ ]]; }
+  hash_text() { printf 'a%.0s' {1..64}; }
+  manifest_value() {
+    case "$1" in
+      run_id) printf 'fixture-run\n' ;;
+      target_sha) printf 'c%.0s' {1..40} ;;
+      *) printf '\n' ;;
+    esac
+  }
+  manifest_set() { :; }
+  append_security_opt_args() { :; }
+  append_log_config_args() { :; }
+  append_resource_args() { :; }
+  append_ulimit_args() { :; }
+  append_healthcheck_args() { :; }
+  append_network_alias_args() { :; }
+  read_one_line() { head -n 1 -- "$1"; }
+  fail() { printf 'candidate-create fixture failure: %s\n' "$*" >&2; exit 77; }
+  docker_rpc() {
+    [[ "$1" == container && "$2" == create ]] || fail "unexpected Docker command: $*"
+    shift 2
+    local image_token='' arg
+    for arg in "$@"; do
+      [[ "$arg" != create ]] || fail 'bare create token was passed as an image/command argument'
+      if [[ "$arg" == sha256:* ]]; then
+        [[ -z "$image_token" ]] || fail 'multiple image tokens were passed'
+        image_token="$arg"
+      fi
+    done
+    [[ "$image_token" == "sha256:$expected_image_id" ]] ||
+      fail "candidate image token mismatch: $image_token"
+    printf '%s\n' "$expected_candidate_id"
+  }
+  create_candidate_container
+  [[ "$candidate_id" == "$expected_candidate_id" ]] ||
+    fail 'candidate ID was not captured from Docker mock'
+  [[ "$(cat "$run_dir/candidate-container-id")" == "$candidate_id" ]] ||
+    fail 'candidate ID evidence did not match Docker mock'
+)
 assert_not_contains 'write_closed_settings_snapshot' <(printf '%s\n' "$switch_source")
 assert_contains 'cutover_active=1' <(printf '%s\n' "$switch_source")
 assert_contains 'SUBNEXUS_CUTOVER_QUIET_CONFIRM' <(printf '%s\n' "$switch_source")
