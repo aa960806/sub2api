@@ -1300,3 +1300,12 @@
 - 维护者回传的终端截图再次执行了两个已终态的旧 `switch` 命令：run=`20260904175519-3701605` 使用旧脚本并重复传入 `create`，Docker 因此寻找不存在的 `create:latest`；run=`20260905002953-3824168` 使用旧脚本并因 Docker 29 的 `OomKillDisable=null/false` 合同序列化差异误报。两次均输出 `ROLLBACK_COMPLETED` 并保持 `state=rolled_back`，禁止再次执行；该截图不代表最新 run 失败。
 - 本轮仅在本地修正文档中关闭态快照与活动日志归档策略的 SHA256 录入笔误，并完成全局 64 位摘要长度检查、切换脚本语法/故障夹具检查；未执行线上 `switch`/`rollback`、Nginx 切流、数据库或 Redis 写入、功能开关变更。
 - 当前唯一可交接 run 仍为 `/srv/subnexus-migration/cutover/20260905020043-3862867`，脚本为 `/srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh`（SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`），状态 `READY=prepared`/`cutover_allowed=false`；最终 `switch` 和同 run 应急 `rollback` 只能由维护者在确认维护窗口条件后手动执行。
+
+## 2026-09-05（Asia/Shanghai）— Docker 29 候选网络身份误报修复（待重新 prepare）
+
+- 维护者执行旧脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh` 对 run `20260905020043-3862867` 进行 `switch` 时，候选容器已创建并连接既有网络，但在启动前被报错 `candidate network identities do not match the prepared live container`；脚本随后自动回滚并删除候选，恢复旧应用和关闭态设置。该 run 已进入 `state=rolled_back`，不得重试；这不是数据库恢复或数据丢失事件，但切换窗口可能有短暂不可用。
+- 根因是 Docker 29 在候选尚未启动的阶段，`docker inspect` 的 `NetworkSettings.Networks[*].NetworkID` 与 `docker network inspect --format '{{.Id}}'` 可能采用不同表示/暂态值。旧代码直接逐字比较两者，造成同一网络对象的误报。
+- 本地修复新增 `assert_candidate_network_identities`：先严格比较候选实际网络名称集合与准备记录名称集合，再逐名称重新读取当前网络对象 ID，并与准备阶段 ID 精确比较；网络被同名重建、缺失、增加或 ID 漂移时仍 fail-closed。新增 shell fixture 覆盖名称-only 候选、对象 ID 漂移和额外网络拒绝。
+- 修复只涉及 `tools/production-deploy/subnexus-production-cutover.sh` 及其测试；`main`、`F:\Sub2Api\SubNexus`、线上 Docker/PostgreSQL/Redis/Nginx 和用户流量未被修改。Windows Git Bash 的切换 fixture、脚本语法检查和候选检查均通过；Linux-only 动态 fixture 需在隔离 WSL 中补跑。
+- 旧 run `20260905020043-3862867`、`20260904175519-3701605`、`20260905002953-3824168` 均不可复用。网络修复提交并推送后，必须以新脚本文件名重新安装并重新执行完整无停机 `prepare`，生成全新 `READY=prepared` run；在此之前 `cutover_allowed=false`，不得提供或执行 `switch`。
+- 本条及本文件此前关于 `20260905020043-3862867` “唯一可交接/READY=prepared”的旧叙述均已被本条覆盖：该 run 已是 `rolled_back`，不存在当前可交接 run。为避免误用，任何操作员只应以本条、台账当前状态和修复后新 `prepare` 生成的 manifest 为准；历史脚本、历史 run、历史候选和历史备份不得作为切换输入。

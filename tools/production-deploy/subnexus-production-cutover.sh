@@ -3792,8 +3792,40 @@ validate_candidate_runtime() {
   verify_rollout_gates_closed
 }
 
+assert_candidate_network_identities() {
+  local expected_names actual_names network network_id extra actual_id
+  local -A expected_name_seen=()
+  expected_names="$(awk -F'|' 'NF != 2 || $1 == "" || $2 == "" { exit 1 } { print $1 }' "$run_dir/network-identities.txt" | LC_ALL=C sort)" ||
+    fail 'prepared network identity metadata is malformed'
+  [[ -n "$expected_names" ]] || fail 'prepared network identity metadata is empty'
+  while IFS= read -r network; do
+    [[ "$network" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$ ]] || fail 'prepared network identity name is invalid'
+    case "$network" in
+      host|none) fail "prepared network identity uses an unsupported special network: $network" ;;
+    esac
+    [[ "${expected_name_seen[$network]:-0}" -eq 0 ]] || fail 'prepared network identity contains a duplicate name'
+    expected_name_seen["$network"]=1
+  done <<< "$expected_names"
+  actual_names="$(docker_rpc inspect --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$candidate_id" | sed '/^[[:space:]]*$/d' | LC_ALL=C sort)" ||
+    fail 'cannot inspect candidate network names'
+  [[ -n "$actual_names" ]] || fail 'candidate has no Docker networks'
+  while IFS= read -r network; do
+    [[ "$network" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$ ]] || fail 'candidate network name is invalid'
+    case "$network" in
+      host|none) fail "candidate uses an unsupported special network: $network" ;;
+    esac
+  done <<< "$actual_names"
+  [[ "$actual_names" == "$expected_names" ]] || fail 'candidate network names do not match the prepared live container'
+  while IFS='|' read -r network network_id extra; do
+    [[ -n "$network" && -n "$network_id" && -z "${extra:-}" ]] || fail 'prepared network identity metadata is malformed'
+    actual_id="$(docker_rpc network inspect --format '{{.Id}}' "$network")" || fail "cannot inspect candidate network: $network"
+    valid_container_ref "$actual_id" || fail "candidate network ID is invalid: $network"
+    [[ "$actual_id" == "$network_id" ]] || fail "candidate network identity changed: $network"
+  done < "$run_dir/network-identities.txt"
+}
+
 assert_candidate_runtime_contract() {
-  local expected_user actual_user expected_resources actual_resources expected_restart actual_restart expected_networks actual_networks expected actual
+  local expected_user actual_user expected_resources actual_resources expected_restart actual_restart expected actual
   expected_user="$(read_one_line "$run_dir/user.txt")"
   actual_user="$(docker_rpc inspect --format '{{.Config.User}}' "$candidate_id")" || fail 'cannot inspect candidate Config.User'
   [[ "$actual_user" == "$expected_user" ]] || fail 'candidate Config.User does not match the live container'
@@ -3803,9 +3835,7 @@ assert_candidate_runtime_contract() {
   expected_restart="$(read_one_line "$run_dir/restart-policy.txt")|$(read_one_line "$run_dir/restart-retries.txt")"
   actual_restart="$(docker_rpc inspect --format '{{.HostConfig.RestartPolicy.Name}}|{{.HostConfig.RestartPolicy.MaximumRetryCount}}' "$candidate_id")" || fail 'cannot inspect candidate restart policy'
   [[ "$actual_restart" == "$expected_restart" ]] || fail 'candidate restart policy does not match the live container'
-  expected_networks="$(LC_ALL=C sort "$run_dir/network-identities.txt")"
-  actual_networks="$(docker_rpc inspect --format '{{range $name, $network := .NetworkSettings.Networks}}{{printf "%s|%s\n" $name $network.NetworkID}}{{end}}' "$candidate_id" | sed '/^[[:space:]]*$/d' | LC_ALL=C sort)" || fail 'cannot inspect candidate network identities'
-  [[ "$actual_networks" == "$expected_networks" ]] || fail 'candidate network identities do not match the prepared live container'
+  assert_candidate_network_identities
   expected="$(read_one_line "$run_dir/runtime-contract.sha256")"
   assert_environment_matches_prepare "$candidate_id" candidate
   actual="$(capture_runtime_contract_hash "$candidate_id")" || fail 'cannot inspect candidate runtime contract'

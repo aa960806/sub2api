@@ -15,12 +15,12 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支发布状态 | 本地与 `origin/feature/subnexus-migration` 必须以 `git rev-parse` 实时核对；运行时合同修复提交为 `0d083f6b7cf53c440968f9a63e8bc4002017b53f`，应用功能候选仍为 `02774d028...`；脚本文件 SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`，测试 SHA256=`16fe581ecdf400ce6eb4f609b9a8cde1ee243666b9ab02f2199f3fc23e114880` |
+| 迁移分支发布状态 | 本地网络身份修复待提交/推送；提交后必须以新脚本 SHA 和新 `prepare` run 为准，不能复用任何历史 run；应用功能候选仍为 `02774d028...` |
 | 应用功能候选 SHA | `02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 Docker runtime gate 均由此提交构建；上游同步父提交为 `23d6e8ec0`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
-| 生产数据库状态 | 第二次候选在自动回滚前运行约 35 秒，`9001`-`9013` 已于 `2026-09-05 01:17:03 UTC` 应用且 checksum 与候选 SQL 全部一致；未恢复数据库。旧应用已在迁移后同库上恢复 healthy/restart=0。两个历史 switch run 均为 `rolled_back`；最新有效 prepare run 为 `20260905020043-3862867`，数据库未在本次 prepare 中写入 |
+| 生产数据库状态 | 第二次候选在自动回滚前运行约 35 秒，`9001`-`9013` 已于 `2026-09-05 01:17:03 UTC` 应用且 checksum 与候选 SQL 全部一致；未恢复数据库。旧应用已在迁移后同库上恢复 healthy/restart=0。所有历史 switch/prepare run 均为 `rolled_back` 或失败终态；当前无有效 prepared run，数据库未因本轮网络修复写入 |
 
 ## Batch 0 门禁
 
@@ -41,7 +41,7 @@
 | 编号 | 门禁 | 状态 | 证据/备注 |
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
-| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建、结构和最新 prepare 证据校验） | 历史备份 `/srv/subnexus-migration/backups/20260903T073714Z`；最新无停机 prepare `/srv/subnexus-migration/cutover/20260905020043-3862867` 的 PostgreSQL custom dump/list、Redis RDB/check、应用 tar、排除策略、设置快照和全部 sidecar SHA256 均通过 |
+| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 历史证据通过；当前待新 prepare | 历史备份 `/srv/subnexus-migration/backups/20260903T073714Z` 及已回滚 run `/srv/subnexus-migration/cutover/20260905020043-3862867` 的 PostgreSQL custom dump/list、Redis RDB/check、应用 tar、排除策略、设置快照和 sidecar SHA256 均通过；该 run 的备份仅作审计，不能作为新的切换输入 |
 | B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；当前服务器复核的 gate 证据 `20260904T110814Z-be48efa2-3133-4c27-bc9f-a7cbf1d221c9`，evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
 
 ## 线上发布尝试与当前状态（2026-09-05）
@@ -56,7 +56,7 @@
 | 新 prepare 重试 | 历史备份有效，run 已终态 | run `/srv/subnexus-migration/cutover/20260905002953-3824168` 曾有 `READY=prepared`，但第二次人工 switch 因 `OomKillDisable=null/false` 哈希误报自动回滚，现为 `state=rolled_back`；备份保留审计，不得再次作为 switch 输入 |
 | 第二次人工 switch | 已自动回滚，禁止复用 | 候选成功创建、启动并健康，随后运行时合同哈希误报；自动回滚恢复旧应用和切换前设置，未恢复 PostgreSQL/Redis。旧应用 healthy/restart=0，PostgreSQL/Redis 原 ID running/restart=0，失败候选与临时旧名称无残留 |
 | 运行时合同修复 | 本地通过，待安装 | 提交 `0d083f6b7` 将旧容器 `OomKillDisable=null` 与 Docker 29 候选 `false` 归一为同一安全语义，保留 `true` 拒绝；显式保留 `0.0.0.0` 端口 HostIP；候选合同在 entrypoint 启动前先校验并在健康后复核。Windows/WSL 发布夹具通过 |
-| 当前交接 | 有效 prepared run，待人工 switch | 历史两个 run 仍禁止复用；最新脚本已安装并核验，新的无停机 `prepare`、新鲜备份/身份/关闭态证据及 stopped probe 合同均通过。有效 run `/srv/subnexus-migration/cutover/20260905020043-3862867` 仍为 `state=prepared`；只有维护者在维护窗口确认无结算任务后，才执行 runbook 中的人工 `switch` |
+| 当前交接 | 网络修复后待重新 prepare | run `/srv/subnexus-migration/cutover/20260905020043-3862867` 已因候选网络身份误报自动回滚，所有历史 run 禁止复用。必须提交/推送新脚本、唯一新文件名安装并重新执行无停机 `prepare`；新 `READY=prepared` 之前 `cutover_allowed=false`，不得执行 `switch` |
 
 ## 实施批次
 
@@ -193,4 +193,12 @@
 | 2026-09-05 Asia/Shanghai | 最终交接文档提交 `c9d03df0b` | 通过（停在人工 switch 前） | 仅更新四份迁移记忆/运行手册并推送 `origin/feature/subnexus-migration`；应用代码、部署脚本、候选镜像、`main`、旧项目和线上业务均未改变。脚本 SHA256=`ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064`，`cutover_allowed=false` |
 | 2026-09-05 Asia/Shanghai | 文档命令环境收口与在线只读复核（提交 `983b8a3cb`） | 通过（停在人工 switch 前） | 手册 switch/rollback 命令显式清除 `DOCKER_*` 覆盖变量；在线只读复核确认 READY=`prepared`、脚本 root/700 与 SHA256 一致、旧应用 healthy/restart=0、PostgreSQL/Redis running/restart=0、无候选容器、无写操作；脚本 SHA256=`ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064` |
 | 2026-09-05 Asia/Shanghai | 第二次 switch 自动回滚、生产迁移核验与运行时合同修复（提交 `0d083f6b7`） | 修复本地通过；线上待安装并重新 prepare | run `20260905002953-3824168` 的候选运行约 35 秒后因 `OomKillDisable=null/false` 等价值哈希误报被拒绝并自动回滚；旧应用 healthy/restart=0，PG/Redis 身份未变且 restart=0，候选无残留。只读 SQL 证明 `9001`-`9013` 于 `01:17:03 UTC` 应用且 checksum 全匹配，旧应用已在迁移后同库稳定运行。修复归一化该字段、保留显式 HostIP 并把合同校验提前到 entrypoint 前；脚本 SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`，测试 SHA256=`16fe581ecdf400ce6eb4f609b9a8cde1ee243666b9ab02f2199f3fc23e114880`。诊断 stopped probe 从未启动，取证后仅删除该探针；未停止/重启核心容器、未执行手工 SQL 写入、数据库恢复、Nginx 切流或功能开启 |
-| 2026-09-05 Asia/Shanghai | 修复脚本安装、全新无停机 prepare 与生产 stopped probe 验收 | 通过；停在维护者人工 switch 前 | 当前脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh` root:root/0700，SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`，`bash -n` 通过，旧脚本均保留。有效 run `/srv/subnexus-migration/cutover/20260905020043-3862867` 为 `state=prepared`、`READY=prepared`，无 `SWITCHED`/`ROLLED_BACK`；候选提交=`02774d028d076e934a59f04fd1ee98598ac693a1`、source tree=`023e96b6c629f7d33e8ac2d43b7bd93f960a36f5`、镜像=`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`，候选归档 SHA=`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`，gate evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`。备份：PostgreSQL dump/list `5069001531/118440` bytes（SHA=`9372851b9a6514d3467922244f94b7e9232c90e1cc703baa85e366f327bc65f9` / `ec1e353c901e73e2589e41aff57c7c2dca4d4306f8827e721fc84bcd84045cc3`），Redis RDB/check `7346835/644` bytes（SHA=`14d03f8d5edaf410fdc76c4cce2ebe38b5e77dae6fc396773c399a976033f008` / `626c1d76b15227fa5b197e9de89bbb97c091ca288a4fb6e6fbf5625d3bd0e98c`），应用归档 `80667716` bytes（SHA=`8933cfd6b78f96fcc8f18e84bad3845b54f6950a54a5f1e3f80f3fbc21556f2e`）；归档策略 SHA=`ee1908db818e2434a9e5a47ec84a02ac10eafd11bc79767e1313f3f6e659826d`。settings-before SHA=`039f45a96f202523e0376ea4f2122aaa485b22ad623011abd0724693b9e78bc3`，关闭态快照 SHA=`8de4ae1711229355c234a1fde1cf308e8ad0f869d0d16443659e33014813f2b4`，runtime contract SHA=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`；应用数据 owner=`1000:1000`/mode `0755`，identity SHA=`58c9f5d4df9a0b174f9c7ff08ca0c084a2d50f4dd96f455cd4722ca161e9cef0`。stopped probe ID=`eb4269d6a147fbec589a528b0f79a470c188656c7fe70e4bc26fdcbdb13c1a0e`，状态 `created/false/0`，合同 SHA 与 run 精确相等，随后按完整 ID 普通删除并确认无残留。最终线上 app=`be459424b327...` running/healthy/restart=0、端口 `127.0.0.1:18083->8080`；PG=`8178576aed6f...`、Redis=`5c7adf42247c...` running/restart=0；无候选容器，`/srv` 可用约 `19383078912` bytes。prepare/probe 未停止、重命名或重启生产容器，未执行 SQL/Nginx/开关写入；`cutover_allowed=false`，下一步仅为维护者手动执行 runbook 中的 `switch`，异常按同一 run `rollback`。 |
+| 2026-09-05 Asia/Shanghai | 修复脚本安装、全新无停机 prepare 与生产 stopped probe 验收（历史记录） | 曾通过；已因网络身份误报自动回滚，不可复用 | 当时脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh` root:root/0700，SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`；run `/srv/subnexus-migration/cutover/20260905020043-3862867` 后续在旧脚本 switch 中因 Docker 29 网络身份误报进入 `state=rolled_back`。候选、备份和 probe 证据只作审计，禁止再次 `switch`/`rollback`；必须用修复后脚本重新 prepare |
+## 后续状态记录（2026-09-05）
+
+| 项目 | 状态 | 证据/处理 |
+| --- | --- | --- |
+| Docker 29 候选网络身份校验误报 | 已定位并在本地修复 | 旧 run `20260905020043-3862867` 在候选启动前因直接比较 `EndpointSettings.NetworkID` 与网络对象 ID 而自动回滚；新增按网络名称集合及 `docker network inspect .Id` 的严格校验，并加入名称-only、ID 漂移、额外网络 fixture |
+| 历史 prepared run | 全部不可复用 | `20260904175519-3701605`、`20260905002953-3824168`、`20260905020043-3862867` 均为失败/`rolled_back` 终态；备份和证据只作审计保留 |
+| 当前线上状态 | 旧版本继续运行 | 未执行本轮网络修复的服务器写操作；未停止/重启/重命名线上容器，未执行数据库恢复、Nginx 切流或功能开关变更 |
+| 下一步 | 待提交、推送并重新 prepare | 网络修复提交后计算新脚本 SHA、以唯一文件名安装服务器副本，再做一次不停止线上应用的全量 `prepare`；新 `READY=prepared` 前 `cutover_allowed=false` |

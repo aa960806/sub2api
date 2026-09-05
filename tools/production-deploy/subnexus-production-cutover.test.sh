@@ -59,7 +59,8 @@ for function_name in init_docker acquire_lock prepare_argument_count_is_valid pr
   restore_rollout_gates restore_preserved_container rollback_run switch_run \
   rollback_entry write_run_marker assert_run_marker initialize_prepare_backup_budgets \
   assert_prepare_disk_budget assert_backup_within_budget validate_log_config_file append_log_config_args \
-  write_application_data_archive_policy validate_application_data_archive_policy ensure_image_load_log; do
+  write_application_data_archive_policy validate_application_data_archive_policy ensure_image_load_log \
+  assert_candidate_network_identities; do
   assert_contains "$function_name() {"
 done
 
@@ -210,11 +211,16 @@ validate_run_source="$(extract_function validate_run_directory)"
 manifest_writer_source="$(extract_function write_initial_manifest)"
 switch_source="$(extract_function switch_run)"
 rollback_source="$(extract_function rollback_run)"
+candidate_contract_source="$(extract_function assert_candidate_runtime_contract)"
 [[ "$prepare_source" == *'prepare_run() {'* ]] || fail 'prepare_run source was not found'
 [[ "$prepare_argument_count_source" == *'prepare_argument_count_is_valid() {'* ]] ||
   fail 'prepare argument-count helper source was not found'
 [[ "$switch_source" == *'switch_run() {'* ]] || fail 'switch_run source was not found'
 [[ "$rollback_source" == *'rollback_run() {'* ]] || fail 'rollback_run source was not found'
+[[ "$candidate_contract_source" == *'assert_candidate_runtime_contract() {'* ]] ||
+  fail 'candidate runtime contract source was not found'
+assert_contains 'assert_candidate_network_identities' <(printf '%s\n' "$candidate_contract_source")
+assert_not_contains '$network.NetworkID' <(printf '%s\n' "$candidate_contract_source")
 
 eval "$prepare_argument_count_source"
 for accepted_argument_count in 8 9 10; do
@@ -325,6 +331,71 @@ assert_not_contains '"sha256:$candidate_id"'
 assert_contains 'args=(--name "$candidate_name"'
 assert_not_contains 'args=(create --name'
 assert_contains 'docker_rpc container create "${args[@]}"'
+
+# Candidate containers created before start can expose an empty or unstable
+# EndpointSettings.NetworkID on Docker 29.  The helper must use the attached
+# network names plus authoritative network objects, while still rejecting
+# object replacement and unexpected attachments.
+candidate_network_source="$(extract_function assert_candidate_network_identities)"
+[[ "$candidate_network_source" == *'assert_candidate_network_identities() {'* ]] ||
+  fail 'candidate network identity helper source was not found'
+(
+  set -Eeuo pipefail
+  eval "$candidate_network_source"
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-network-identity.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  run_dir="$fixture_root/run"
+  mkdir -- "$run_dir"
+  network0_id="$(printf 'a%.0s' {1..64})"
+  network1_id="$(printf 'b%.0s' {1..64})"
+  drift_id="$(printf 'c%.0s' {1..64})"
+  candidate_id="$(printf 'd%.0s' {1..64})"
+  printf 'net0|%s\nnet1|%s\n' "$network0_id" "$network1_id" > "$run_dir/network-identities.txt"
+  valid_container_ref() { [[ "${1:-}" =~ ^[0-9a-f]{64}$ ]]; }
+  fail() { printf 'network identity fixture failure: %s\n' "$*" >&2; exit 77; }
+  names_mode=stable
+  ids_mode=stable
+  docker_rpc() {
+    if [[ "${1:-}" == inspect ]]; then
+      [[ "${2:-}" == --format ]] || fail "unexpected inspect call: $*"
+      [[ "$names_mode" == stable ]] && printf 'net0\nnet1\n' || printf 'net0\nnet-extra\n'
+    elif [[ "${1:-}" == network && "${2:-}" == inspect ]]; then
+      [[ "${3:-}" == --format && "${4:-}" == '{{.Id}}' ]] || fail "unexpected network format: $*"
+      case "${5:-}" in
+        net0) printf '%s\n' "$network0_id" ;;
+        net1) [[ "$ids_mode" == stable ]] && printf '%s\n' "$network1_id" || printf '%s\n' "$drift_id" ;;
+        *) fail "unexpected network name: ${5:-}" ;;
+      esac
+    else
+      fail "unexpected Docker call: $*"
+    fi
+  }
+  # The candidate mock intentionally exposes names only; no endpoint NetworkID
+  # is returned, matching the Docker 29 created-container behavior.
+  assert_candidate_network_identities
+  ids_mode=drift
+  if (assert_candidate_network_identities >/dev/null 2>&1); then
+    fail 'network object ID drift was accepted'
+  fi
+  ids_mode=stable
+  names_mode=drift
+  if (assert_candidate_network_identities >/dev/null 2>&1); then
+    fail 'candidate network name drift was accepted'
+  fi
+  names_mode=stable
+  printf 'bad/name|%s\n' "$network0_id" > "$run_dir/network-identities.txt"
+  if (assert_candidate_network_identities >/dev/null 2>&1); then
+    fail 'malformed prepared network name was accepted'
+  fi
+  printf 'host|%s\n' "$network0_id" > "$run_dir/network-identities.txt"
+  if (assert_candidate_network_identities >/dev/null 2>&1); then
+    fail 'special prepared network was accepted'
+  fi
+  printf 'net0|%s\nnet0|%s\n' "$network0_id" "$network0_id" > "$run_dir/network-identities.txt"
+  if (assert_candidate_network_identities >/dev/null 2>&1); then
+    fail 'duplicate prepared network name was accepted'
+  fi
+)
 
 # Exercise candidate-container argument construction with a local Docker mock.
 # This catches a duplicated subcommand that static text checks alone can miss.
