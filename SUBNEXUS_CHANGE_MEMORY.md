@@ -1334,3 +1334,24 @@
 - 使用有界 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=1800` 完成全新无停机 prepare，run=`/srv/subnexus-migration/cutover/20260905051505-3937987`，`READY=prepared`、manifest `state=prepared`，无 `SWITCHED`/`ROLLED_BACK`。PostgreSQL dump/catalog=`5083923841/118440` bytes，Redis RDB/check=`7160556/644` bytes，应用归档=`80910415` bytes；逐项 sidecar 哈希、设置快照、关闭态、网络身份、runtime contract 和 owner 合同核验通过。
 - 当前固定候选值：target=`02774d028d076e934a59f04fd1ee98598ac693a1`，image=`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`，archive SHA=`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`，gate evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，runtime contract SHA=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`，closed settings SHA=`8de4ae1711229355c234a1fde1cf308e8ad0f869d0d16443659e33014813f2b4`。
 - 最终只读复核确认旧应用 ID=`be459424b327...`、PG=`8178576aed6f...`、Redis=`5c7adf42247c...` 均为原身份，running/healthy（应用）/restart=0；本次 run 标签无候选容器，磁盘可用约 `40937291776` bytes。switch 尚未执行，`cutover_allowed` 仍须由维护者在维护窗口确认；本记录停在生成人工 switch/rollback 命令前。
+
+## 2026-09-05（Asia/Shanghai）— `Config.Cmd` 修复推送、服务器安装与重新 prepare
+
+- 修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已推送；生产切换脚本 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，测试 SHA256=`7e981ff118b795b40b38d22eb0a09667d7ac25977d9f17c5a30590dccece9763`。Git Bash/WSL full test 和 Linux 动态执行通过。
+- 第四次历史 switch 因 Docker 模板尾部换行在 `Config.Cmd` 捕获 helper 中变成额外空参数，导致候选 runtime contract 与 prepared live 容器不一致并自动回滚；旧应用继续 healthy，PG/Redis 身份未变。该 run、旧脚本和旧命令均不可复用。
+- 按用户最新授权完成前置服务器操作：脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh` 已安装为 `root:root`/`0700`；唯一旧 `runtime-probe.nroC3xIz` 已确认无容器后精确删除。代理可执行安装、备份、`prepare`、never-started probe 和范围明确垃圾清理；仅最终 `switch`/`rollback` 必须由维护者手动执行。
+- 新无停机 `prepare` 已正常完成：run `/srv/subnexus-migration/cutover/20260905055413-3958448`，日志 `prepare-19824a87-20260905T055412Z.log`，原 PID `3958448` 已退出，Docker timeout `1800`；`READY=prepared`，manifest `state=prepared`，无终态 marker。所有备份、sidecar、设置快照、环境、owner、依赖和网络合同均通过完整验证。
+
+| 新 run 文件 | 字节数 | SHA256 |
+| --- | --- | --- |
+| `postgresql.dump` | `5086279866` | `97d11bbd933a2076b1aac25dcd6a5b636e77be10080f68e73fcb3be282c80ce5` |
+| `postgresql.list` | `118440` | `d144e195cb9cbd1369aca05b1abd5801374801518f9465af104bd63c359b6e4d` |
+| `redis.rdb` | `7143802` | `78afd911bd2f32b1a7add7b5d0752accf701c4950f5738597db803ffa68749e6` |
+| `redis-check-rdb.txt` | `644` | `ba2f9650e7cc214dd3a240deb3c9341d7546cf4aebc4bd77d9b8ab7fdc3ffb8c` |
+| `application-data.tar.gz` | `80910450` | `a7d9b6a92aabe5690c74baa2da1dfdec8861067cab1ef1c1721379cc1d321e95` |
+
+- 新 run 的 runtime 合同 SHA=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`；settings before SHA=`039f45a96f202523e0376ea4f2122aaa485b22ad623011abd0724693b9e78bc3`，closed SHA=`8de4ae1711229355c234a1fde1cf308e8ad0f869d0d16443659e33014813f2b4`。候选 commit/image/archive/gate 均保持原固定值。
+- 使用独立审查后的 `/srv/subnexus-migration/diagnostics/stopped-probe-7505c705-20260905.sh`（SHA=`7505c7050e0939d0edb1ddd8695e936b24d170024213c3027dbbab9070d18aa7`）复用当前脚本完整 `create_candidate_container` 和 `assert_candidate_runtime_contract`；只在独立临时 metadata/manifest 中替换唯一 probe 名，自身 SHA 校验仍绑定已批准原脚本。probe ID=`ac6fc54a18cddb98fd9abce54ff2be6e23fd3ac02b804580d1220eaa770beadd`，验证 `created|false|0|0001-01-01T00:00:00Z`，合同 hash 与 prepared live 一致；未启动或 exec 候选，按精确 ID 无 force 删除后再次确认不存在，临时目录已删除。
+- 脱敏证据 `/srv/subnexus-migration/diagnostics/stopped-probe-20260905055413-3958448.evidence` SHA=`87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`，harness 退出 0。记录 `PREPARED_RUN_VALIDATION=passed`、`PROBE_FULL_CREATE_AND_CONTRACT=passed`、`PROBE_REMOVED=true`、`PREPARED_MANIFEST_UNCHANGED=true`、`LIVE_AND_DEPENDENCIES_UNCHANGED=true`、`FINAL_SWITCH_EXECUTED=false`。
+- 最后服务器复核时间为 `2026-09-05 14:11:57 Asia/Shanghai`：新 run 仍 prepared，candidate 三个身份字段为空，无 probe/candidate/临时诊断目录残留；旧应用 ID=`be459424b327...` 为 running/healthy/restart=0，`/health` 为 ok，PG=`8178576aed6f...`、Redis=`5c7adf42247c...` 原身份 running/restart=0。可用空间 `35573174272` bytes；未停止/重命名/重启旧应用，未恢复数据库、修改 Nginx 或开启功能，旧应用既有设置保留。
+- 本轮前置工作全部完成。最终人工单行 `switch` 和同 run `rollback` 已记录在切换手册第 10 节，显式固定 Docker timeout `120`、脚本 SHA、新 run 和 owner 合同；语法、SHA 和 run 路径检查通过。所有历史失败 run 的可执行命令已撤回，旧项目与 fork `main` 未修改。

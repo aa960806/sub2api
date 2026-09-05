@@ -1,8 +1,8 @@
 # SubNexus 同库切换手册
 
-本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。线上只读 preflight、历史备份结构校验、PostgreSQL/Redis 隔离恢复、候选 Docker runtime gate 均已通过；最近一次生产 `prepare` run 已因 Docker 29 网络身份误报自动回滚，目前没有可用的 prepared run。生产替换容器、切流或功能开启仍禁止自动执行；修复后的新 `prepare` 完成后，只有维护者在维护窗口手动执行最终 `switch`。
+本手册只适用于本地 Batch 1-5 全部完成、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且候选门禁通过之后。线上只读 preflight、历史备份结构校验、PostgreSQL/Redis 隔离恢复和 Docker runtime gate 均已通过；新脚本的 run `20260905055413-3958448` 已 `READY=prepared`，完整真实 stopped probe 校验通过并已删除。前置工作完成；最终 `switch` 和 `rollback` 由维护者在维护窗口手动执行。
 
-维护者的执行边界适用于所有服务器更新操作：代理只读 SSH，并在安装脚本、`prepare`、创建探针、切换、回滚或清理之前提供一整行服务器终端命令，由维护者本人执行并回传结果。不能把“最终 switch 手动”理解为允许代理自动执行前面的服务器写操作。
+最新授权允许代理完成安装脚本、全新备份、`prepare`、never-started probe 验收及范围明确的无用垃圾清理；仅最终 `switch` 和 `rollback` 必须停下交给维护者手动执行。任何历史失败或回滚 run 不得重试或复用。
 
 ## 1. 发布前硬门禁
 
@@ -156,17 +156,18 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 ## 8. 历史发布状态（已失效，不得复用）
 
-三次历史曾生成或尝试生成 `READY` 的 run 都已进入失败/自动回滚终态，全部不可复用：
+四次历史曾生成或尝试生成 `READY` 的 run 都已进入失败/自动回滚终态，全部不可复用：
 
 - `/srv/subnexus-migration/cutover/20260904175519-3701605`：重复 `create` 参数缺陷，`state=rolled_back`。
 - `/srv/subnexus-migration/cutover/20260905002953-3824168`：Docker 29 将等价的 `HostConfig.OomKillDisable` 从旧容器的 `null` 序列化为候选的 `false`，旧脚本误判运行时合同不同，`state=rolled_back`。
 - `/srv/subnexus-migration/cutover/20260905020043-3862867`：Docker 29 候选网络身份表示差异触发旧脚本误报，`state=rolled_back`。
+- 最新第四次 run：候选 `Config.Cmd` 捕获时模板尾部换行产生额外空参数，runtime contract 不一致，`state=rolled_back`。具体路径和旧命令只作审计，不得重试。
 
 第二次候选已成功启动并健康运行约 35 秒，随后脚本自动恢复旧容器和切换前设置。旧应用当前 healthy/restart=0；PostgreSQL 与 Redis 容器身份不变、restart=0；失败候选和临时旧容器名称均无残留。自动回滚没有恢复数据库，目标迁移 `9001`-`9013` 已于 `2026-09-05 01:17:03 UTC` 应用，生产记录的 13 个 checksum 与候选 SQL 全部一致；旧应用已在迁移后同库上恢复健康，证明应用级回滚兼容。
 
 修复提交 `0d083f6b7cf53c440968f9a63e8bc4002017b53f` 将 `OomKillDisable=null/false` 规范为同一安全合同，`true` 仍被拒绝；同时保留显式 `0.0.0.0` 端口 HostIP，并在候选 entrypoint 启动前先校验合同、健康后再次复核。脚本 SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`，测试 SHA256=`16fe581ecdf400ce6eb4f609b9a8cde1ee243666b9ab02f2199f3fc23e114880`。Windows Git Bash 与 WSL/Linux 发布夹具均通过。
 
-当前严禁执行下方历史 run 的 `switch` 或 `rollback`。`20260905020043-3862867` 已因候选网络身份校验误报自动回滚；其备份和证据仅作审计保留，不能作为新版本发布依据。必须先安装修复后的新脚本并重新执行 `prepare`，获得全新 `READY=prepared` 后才能生成新的人工命令。切换前不得修改 Nginx 或开启任何迁移功能。
+当前严禁执行下方历史 run 的 `switch` 或 `rollback`。所有历史备份和证据仅作审计保留，不能作为新版本发布依据。新脚本必须先完成全新 `prepare` 并获得 `READY=prepared`，之后才能生成新的人工命令。切换前不得修改 Nginx 或开启任何迁移功能。
 
 ### 8.1 历史发布固定值（仅审计，全部禁用）
 
@@ -201,35 +202,35 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 因此 Docker endpoint 的空值/暂态格式差异不会误报，但网络被重建、缺失、增加或 ID 漂移仍会拒绝切换。旧 run 不得套用新脚本，因为 manifest 会绑定脚本 SHA 和准备时的网络证据。
 
-当前流程退回“本地修复已测试、等待重新 prepare”：
+当前流程已完成“新脚本安装、prepare 和 stopped probe 验证”，停在人工 `switch` 前：
 
 - 不得执行任何历史 `switch`/`rollback` 命令；
-- 修复 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0` 已推送，脚本 SHA 为 `bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`；下一步由维护者使用唯一新文件名安装服务器副本；
-- 重新执行一次不停止线上应用的 `prepare`，重新生成备份、设置快照、网络身份和 stopped probe；
-- 只有新 run 同时具备 `READY=prepared`、完整 SHA/备份/依赖合同且人工复核通过后，才生成新的最终切换和回滚单行命令。
+- 修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已推送，脚本 SHA 为 `19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，测试 SHA 为 `7e981ff118b795b40b38d22eb0a09667d7ac25977d9f17c5a30590dccece9763`；Git Bash/WSL full test 和 Linux 动态执行均通过；
+- 服务器脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh` 已安装为 `root:root`/`0700`；唯一旧 `runtime-probe.nroC3xIz` 已确认无容器后精确删除；
+- 新的无停机 `prepare` run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`；PostgreSQL/Redis/应用归档 sidecar、manifest、runtime/settings 和 owner 合同均通过；
+- stopped probe `ac6fc54a18cddb98fd9abce54ff2be6e23fd3ac02b804580d1220eaa770beadd` 已验证 created/false/0 后精确删除，evidence SHA=`87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`，无候选或 probe 残留；
+- 最终 `switch` 和异常时 `rollback` 单行命令见第 10 节，仅维护者在维护窗口确认后执行。
 
-在新的 `READY` 出现前，`cutover_allowed=false`，所有二开功能保持关闭，线上旧版本继续运行。
+当前 `cutover_allowed=false` 仍表示等待维护者人工确认；候选的关闭态设置快照已验证，线上旧版本继续使用其原有设置。本轮未开启功能或修改 Nginx。
 
-## 10. 当前人工交接（2026-09-05 12:52 Asia/Shanghai）
+## 10. 最终人工交接（2026-09-05 14:11:57 Asia/Shanghai）
 
-修复和文档提交已推送。当前脚本的 WSL/Linux 语法及完整 production cutover 静态/故障夹具通过。服务器现已安装新脚本；只读 SSH 确认旧应用 ID=`be459424b327...`、healthy/restart=0，PG=`8178576aed6f...`、Redis=`5c7adf42247c...` 身份未变；本地健康接口返回 `{"status":"ok"}`。三个历史 run 均明确为 `state=rolled_back`。
+修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已推送；脚本 SHA=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，测试 SHA=`7e981ff118b795b40b38d22eb0a09667d7ac25977d9f17c5a30590dccece9763`。服务器已安装 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh`（`root:root`/`0700`）；唯一旧 `runtime-probe.nroC3xIz` 已确认无容器后精确删除。
 
-磁盘清理只删除了逐个确认无标签、无容器引用的 dangling 构建中间层，没有使用 prune/force，也没有删除线上或候选资产；11 个共享层保留。当前 `/srv` 可用约 `40937291776` bytes，完整 prepare 最低预算约 `23712679936` bytes。
+当前唯一有效 run 为 `/srv/subnexus-migration/cutover/20260905055413-3958448`，`READY=prepared`、manifest `state=prepared`，candidate 身份三个字段为空，无 `SWITCHED`/`ROLLED_BACK`。备份和全部运行配置已通过原脚本的完整切换前校验；准备进程正常退出。PostgreSQL dump 为 `5086279866` bytes，Redis RDB 为 `7143802` bytes，应用归档为 `80910450` bytes，完整 SHA 记录见项目变更记忆。
 
-第一条人工命令只下载固定提交中的脚本、核对 SHA/语法，并以 root:root/0700 安装到新文件名；不执行部署脚本。目标已存在时安全停止，不覆盖旧文件。以下一整行在服务器终端执行：
+真实 probe 复用了完整候选创建和 runtime contract 校验函数，核实 `created|false|0|0001-01-01T00:00:00Z` 后按精确 ID 删除；临时元数据目录也已删除，原始 manifest 未修改。候选与线上准备记录的 runtime SHA 均为 `7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`。脱敏证据 `/srv/subnexus-migration/diagnostics/stopped-probe-20260905055413-3958448.evidence` 的 SHA 为 `87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`。
+
+最终复核：旧应用 `be459424b327...` 为 running/healthy/restart=0，健康接口返回 `{"status":"ok"}`；PostgreSQL `8178576aed6f...`、Redis `5c7adf42247c...` 原身份 running/restart=0。磁盘清理只删除了逐个确认无标签、无容器引用的 dangling 构建中间层和无容器残留的临时诊断副本；11 个共享层保留，未使用 prune/force，备份和生产资产保留。新备份完成后可用空间 `35573174272` bytes，仍高于 8 GiB 保留。
+
+确认没有结算或迁移任务后，在服务器终端执行下面一整行切换命令。代理未执行此步骤，旧 run 和旧命令不得复用：
 
 ```bash
-sudo -n /bin/bash --noprofile --norc -c 'set -Eeuo pipefail; umask 077; export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; d=/srv/subnexus-migration/tools; dst="$d/subnexus-production-cutover-bffd1987-20260905.sh"; test "$(realpath -e "$d")" = "$d"; for p in / /srv /srv/subnexus-migration "$d"; do test ! -L "$p"; test "$(stat -c %u "$p")" = 0; m="$(stat -c %a "$p")"; (( (8#$m & 0022) == 0 )); done; test ! -e "$dst"; test ! -L "$dst"; tmp="$(mktemp "$d/.cutover-bffd1987.XXXXXX")"; trap "rm -f -- \"$tmp\"" EXIT; curl --proto "=https" --tlsv1.2 --fail --silent --show-error --location --max-time 60 https://raw.githubusercontent.com/aa960806/sub2api/ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0/tools/production-deploy/subnexus-production-cutover.sh -o "$tmp"; printf "%s  %s\n" bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01 "$tmp" | sha256sum -c -; /bin/bash -n "$tmp"; chmod 700 "$tmp"; ln -- "$tmp" "$dst"; stat -c "%U:%G %a %n" "$dst"; printf "SCRIPT_INSTALLED_NOT_EXECUTED\n"'
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh switch /srv/subnexus-migration/cutover/20260905055413-3958448
 ```
 
-当前新 run=`/srv/subnexus-migration/cutover/20260905051505-3937987` 已 `READY=prepared`，所有备份/设置/依赖/网络/runtime/owner 合同已复核；第一次重试因 120 秒 dump 超时的 run=`20260905050927-3934297` 仅作失败审计。下面的 switch/rollback 仍必须由维护者在维护窗口手动执行，且 switch 前须确认没有结算或迁移任务。
+同一批次的应急应用回滚命令如下；不自动恢复数据库。若脚本已输出 `ROLLBACK_COMPLETED`，停止重试切换并保留结果排查：
 
 ```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-bffd1987-20260905.sh switch /srv/subnexus-migration/cutover/20260905051505-3937987
-```
-
-异常时使用同一 run 的应用回滚命令：
-
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-bffd1987-20260905.sh rollback /srv/subnexus-migration/cutover/20260905051505-3937987
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh rollback /srv/subnexus-migration/cutover/20260905055413-3958448
 ```

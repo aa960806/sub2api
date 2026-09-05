@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v2.0（2026-09-04，Docker runtime gate 与 owner 合同收口已通过）
-> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4、本地夹具、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已通过。三次旧 `switch` 均已自动回滚并保留历史证据；网络身份修复已推送但服务器尚未安装，当前没有可复用的 `READY=prepared` run。安装、解决磁盘缺口和全新 `prepare` 均由维护者手动执行；代理只做只读服务器检查
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4、本地夹具、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已通过。修复脚本 `19824a87` 已完成无停机 `prepare` 并生成 `READY=prepared`，stopped probe 验收通过，当前停在维护者人工 switch 前。最新授权允许代理完成安装、备份、`prepare`、never-started probe 和范围明确的垃圾清理；仅最终 `switch`/`rollback` 由维护者手动执行
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -17,7 +17,7 @@
 4. 已执行迁移文件不可修改、删除、改名或复用编号。所有新结构使用新且唯一的文件名，并由迁移 runner 的 SHA256 校验保护。
 5. 代码回滚默认不恢复数据库。只有确认数据库层损坏且得到明确批准时，才使用切换前的数据库备份恢复；新表和可选字段必须设计成旧版本可忽略。
 6. 本地开发和功能验收不得直接连接生产库：先使用空库、目标上游迁移和旧项目迁移构造的本地隔离 PostgreSQL/Redis 夹具完成 Batch 1-5；全部本地功能完成后，才在发布阶段使用线上备份恢复出的隔离副本做最终同库验证。
-7. 本地 Batch 1-5 全部完成并经维护者验收前，不再推送新的中间提交，不要求服务器拉取，也不执行线上预检、备份、SQL、部署、切换或开关修改。
+7. 本地 Batch 1-5 和当前脚本修复验证完成后，代理可执行授权范围内的服务器安装、备份、`prepare`、never-started probe 和垃圾清理；不得执行最终 `switch`/`rollback` 或开启功能、修改 Nginx。
 8. `F:\Sub2Api\SubNexus` 永久作为只读迁移输入；所有文档、代码、提交和测试资产只写入 `F:\MySub2\sub2api`。
 
 ## 2. 已确认的基线事实
@@ -331,6 +331,6 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
 3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；旧线上 `prepare` 证据仅作历史记录，不能替代新 run。
-4. 维护者人工复核发布清单后，必须由维护者在服务器终端手动安装经过独立 SHA 校验的唯一新脚本文件并执行无停机 `prepare`；当前没有有效 prepared run，三次历史 run 均不可复用。只有全新 run 生成并核验 `READY=prepared`、备份/身份/关闭态设置及生产 stopped probe 后，才可由维护者人工决定 `switch`。磁盘不足时必须扩容/挂载独立持久化空间或经批准转移无引用临时资产，不得降低 8 GiB 余量或复用旧时间点备份。
+4. 历史失败 run 均不可复用。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已生成并核验 `READY=prepared`，备份/身份/关闭态设置和 stopped probe 证据已通过；当前停在维护者人工 switch 前。磁盘可用约 `35573174272` bytes，继续保留 8 GiB 余量且不复用旧时间点备份。
 
-线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，Redis 8.8.0 RDB 已在服务器无网络/无端口隔离候选中实际加载验证，真实克隆的 migration/adoption、候选关闭态启动、旧版 0.1.135 同库回归和 Docker runtime gate 均已通过。三个历史线上 `prepare` run `/srv/subnexus-migration/cutover/20260904175519-3701605`、`/srv/subnexus-migration/cutover/20260905002953-3824168`、`/srv/subnexus-migration/cutover/20260905020043-3862867` 均已自动回滚或进入失败终态，不能复用；网络身份修复提交已推送，待安装脚本 SHA=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`。必须由维护者在服务器终端手动以唯一新文件名安装脚本并重新执行无停机 `prepare`；当前没有有效 prepared run。当前批准脚本固定在线归档策略：仅排除 `./logs/*.log`，保留压缩历史日志和其他数据，并把策略及 SHA 写入 manifest；非日志归档错误仍失败关闭。应用数据目录当前为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复已审核 owner 合同。代理不得执行服务器写操作。维护者须先解决磁盘缺口并手动完成新 prepare；新 `READY=prepared` 未经核对前，不得切换、打开开关或修改 Nginx。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`，stopped probe 验收通过。最新备份包括 PostgreSQL dump `5086279866` bytes、Redis RDB `7143802` bytes、应用归档 `80910450` bytes；各项 SHA、runtime/settings 合同和 probe 证据统一记录在 `SUBNEXUS_CHANGE_MEMORY.md`。当前停在维护者人工 switch 前，最终单行 `switch`/`rollback` 命令见切换手册第 10 节，必须由维护者手动执行。

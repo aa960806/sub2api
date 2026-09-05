@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-05（三次历史 switch 均已自动回滚；网络身份修复已推送，当前停在维护者手动安装新脚本前，没有可复用的 prepared run）
+> 最后更新：2026-09-05（新脚本 `19824a87` 的 run 已 `READY=prepared`，stopped probe 验收通过，当前停在维护者人工 switch 前）
 
 ## 项目身份
 
@@ -20,14 +20,14 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已完成；网络身份修复已推送，服务器尚未安装，当前没有可复用的 prepared run |
+| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已完成；新脚本 `19824a87` 已完成无停机 prepare 并生成 `READY=prepared`，stopped probe 验收通过，当前停在人工 switch 前 |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 第二次候选启动约 35 秒并于 `2026-09-05 01:17:03 UTC` 应用 `9001`-`9013`；13 条 checksum 与候选 SQL 全部一致。自动回滚未恢复数据库，旧应用已在迁移后同库上恢复健康；未手工执行迁移或恢复 PostgreSQL/Redis |
-| 生产部署/切换 | `20260904175519-3701605`、`20260905002953-3824168`、`20260905020043-3862867` 均已 `rolled_back`/终态失败且不可复用；当前没有 prepared run。网络身份修复已推送，必须先由维护者在服务器终端手动安装脚本并重新执行全量无停机 `prepare`，获得全新 `READY=prepared` 后才允许维护者人工 switch |
+| 生产部署/切换 | 四次历史 switch 已回滚，禁止复用；`Config.Cmd` 空参数修复已测试、推送并安装。新 run `20260905055413-3958448` 为 `READY=prepared`，真实 stopped probe 已通过并删除；最终 `switch`/`rollback` 命令见切换手册第 10 节，由维护者人工执行 |
 | 生产开关 | 自动回滚已恢复旧应用切换前设置；候选下次启动前仍由 closed snapshot 强制关闭迁移功能。不要把旧应用当前既有的 Channel Monitor/客服设置状态误写为候选默认开启 |
-| 工作区 | 最新网络身份修复提交 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0` 已推送，当前脚本的完整 WSL/Linux 切换夹具通过；应用候选仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1`；待安装生产脚本 SHA=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`，测试 SHA=`927b441bf1d95c175d793fe9c9bdcf37a63067c694d7fe92300f02ca2f494c41`；业务依赖、前端 lockfile 和 VERSION 未改 |
-| 当前磁盘阻塞 | 2026-09-05 12:52 Asia/Shanghai 只读检查：`/srv` 可用 `19225067520` bytes，现有脚本完整 prepare 最低预算约 `23712679936` bytes，至少缺约 4.5 GB。安装脚本后仍须先解决空间缺口，禁止降低 8 GiB 保留或复用旧备份 |
+| 工作区 | 修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已推送；脚本 SHA=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，测试 SHA=`7e981ff118b795b40b38d22eb0a09667d7ac25977d9f17c5a30590dccece9763`；应用候选仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1` |
+| 当前磁盘 | 2026-09-05 14:11:57 Asia/Shanghai 只读可用 `35573174272` bytes（约 35.57 GB），继续保持 8 GiB 保留，不复用旧备份 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
@@ -100,7 +100,7 @@ registration_ip_cooldown_enabled
 - 每个迁移批次使用独立提交；提交前检查 `git diff --check`、敏感信息、依赖清单、`frontend/pnpm-lock.yaml`、VERSION 和生成产物。
 - 旧项目 `F:\Sub2Api\SubNexus` 永久只读；所有写入只允许发生在 fork。维护者完成本地验收前只创建本地提交，不再推送，不执行服务器命令。
 - 未经明确批准不执行生产迁移、部署、切换、开关开启、依赖安装或删除操作。
-- 用户明确要求服务器更新操作由本人手动执行：本地代理只做只读 SSH；安装脚本、`prepare`、探针创建、`switch`、`rollback` 和清理均须先提供服务器终端单行命令，收到维护者执行结果后再继续。交接点在第一次服务器写操作之前。
+- 最新授权允许代理完成安装脚本、全新备份/`prepare`、never-started probe 验收及范围明确的无用垃圾清理；仅最终 `switch` 和 `rollback` 必须停下交给维护者手动执行。任何历史失败 run 不得重试或复用。
 - 不记录密码、Token、API Key、Cookie、JWT/TOTP secret、私钥或完整 `.env`；日志和证据必须脱敏。
 - 前端验证优先使用冻结 lockfile；目标 Docker 使用 pnpm 9，禁止因本地 pnpm 版本差异重写 lockfile。
 
@@ -108,4 +108,4 @@ registration_ip_cooldown_enabled
 
 1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
 2. 备份已下载并通过 20 个文件 SHA256；PostgreSQL 18.4 原始恢复库、真实克隆 migration/adoption、候选全部关闭态、旧版回归和 Redis 8.8.0 RDB 隔离加载均通过。Redis 证据位于台账记录的 root-only 路径。
-3. Docker 候选门禁仍有效；三个历史 run `/srv/subnexus-migration/cutover/20260904175519-3701605`、`/srv/subnexus-migration/cutover/20260905002953-3824168`、`/srv/subnexus-migration/cutover/20260905020043-3862867` 均已自动回滚并禁止复用。网络身份修复已提交并推送，脚本 SHA=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`；下一步由维护者在服务器终端手动以唯一新文件名安装脚本，解决磁盘缺口后执行全量无停机 `prepare`，生成全新 `READY=prepared` 后再人工决定 `switch`。代理不执行服务器写操作；当前不得开启功能或修改 Nginx。
+3. Docker 候选门禁仍有效；历史失败 run 均已自动回滚并禁止复用。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`，备份与 manifest 哈希已记录；stopped probe 验收通过且无残留。当前停在维护者人工 switch 前；此前旧 SHA、旧命令和旧 run 不得重试。

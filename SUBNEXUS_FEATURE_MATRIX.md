@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移矩阵
 
-> 最后更新：2026-09-05。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验、Docker runtime gate、最新线上无停机 `prepare` 及生产 stopped probe 均已通过。有效 run 为 `/srv/subnexus-migration/cutover/20260905020043-3862867`，`switch` 仍待维护者手动执行；在切换和验收前不得开启功能。
+> 最后更新：2026-09-05。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`，stopped probe 验收通过，当前停在维护者手动 `switch` 前。候选曾在第二次历史 switch 中启动并健康约 35 秒，随后自动回滚；候选关闭态快照已验证，旧应用保持既有设置。
 > 本表是逐模块迁移的唯一状态入口。路径是调查线索，不代表目标代码可以直接复制；“待证据”不等于可上线。
 
 ## 保留功能
@@ -39,7 +39,7 @@
 ## 当前状态与统一开关
 
 - 所有迁移功能默认关闭；`9011_subnexus_rollout_gates.sql` 只以 `ON CONFLICT DO NOTHING` 补齐缺失 gate，不覆盖管理员已有值。
-- 当前候选代码门禁、隔离 PostgreSQL、Redis 8 RDB 恢复、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆、Docker runtime gate、最新线上 `prepare` 和 stopped probe 已通过；`switch` 与切换后维护者验收仍待执行；候选尚未在生产中启动，所有功能仍关闭。
+- 当前候选代码门禁、隔离 PostgreSQL、Redis 8 RDB 恢复、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆和 Docker runtime gate 已通过；新 run 已 `READY=prepared`，stopped probe 验收通过；`switch` 与切换后维护者验收仍待执行。候选关闭态快照已验证，本轮未改变旧应用既有设置。
 - 表格中各项“待最终证据/维护者验收”在当前阶段具体指待人工切换后的逐项业务验收；发布前代码、隔离环境、备份、运行时合同和关闭态证据已经完成，不代表任何功能已开启。
 - `RechargeWheelView.vue` 是累计充值奖励转盘，属于 F06；明确排除的是每日消耗转盘。
 
