@@ -1309,3 +1309,10 @@
 - 修复只涉及 `tools/production-deploy/subnexus-production-cutover.sh` 及其测试；`main`、`F:\Sub2Api\SubNexus`、线上 Docker/PostgreSQL/Redis/Nginx 和用户流量未被修改。Windows Git Bash 的切换 fixture、脚本语法检查和候选检查均通过；Linux-only 动态 fixture 需在隔离 WSL 中补跑。
 - 旧 run `20260905020043-3862867`、`20260904175519-3701605`、`20260905002953-3824168` 均不可复用。网络修复提交并推送后，必须以新脚本文件名重新安装并重新执行完整无停机 `prepare`，生成全新 `READY=prepared` run；在此之前 `cutover_allowed=false`，不得提供或执行 `switch`。
 - 本条及本文件此前关于 `20260905020043-3862867` “唯一可交接/READY=prepared”的旧叙述均已被本条覆盖：该 run 已是 `rolled_back`，不存在当前可交接 run。为避免误用，任何操作员只应以本条、台账当前状态和修复后新 `prepare` 生成的 manifest 为准；历史脚本、历史 run、历史候选和历史备份不得作为切换输入。
+
+## 2026-09-05（Asia/Shanghai）— 网络身份修复提交与外部推送阻塞
+
+- 本地 `feature/subnexus-migration` 已提交 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0`，包含候选网络名称/对象 ID fail-closed 校验、对应故障夹具以及历史 run 文档收口；工作树干净，`main` 和 `F:\Sub2Api\SubNexus` 未修改。
+- 验证：Git Bash 下生产切换、候选 gate、隔离构建和只读预检测试均退出 0；动态 Linux/Python 夹具因当前 Windows AppInstaller `python3` 不可用按设计跳过。此前专用 WSL 记录已确认相同动态夹具在 Linux 通过；本轮未访问线上服务器。
+- 新生产切换脚本文件 SHA256=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`，测试脚本 SHA256=`927b441bf1d95c175d793fe9c9bdcf37a63067c694d7fe92300f02ca2f494c41`。
+- `git push origin feature/subnexus-migration` 在本机网络策略下无法连接 GitHub，带权限重试因审批服务暂不可用被拒绝；因此远端仍落后 1 个提交，服务器尚未安装/拉取新脚本，也没有执行新的 `prepare`。恢复外网后只需推送该分支，再按本手册重新安装并执行无停机 `prepare`。
