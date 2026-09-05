@@ -14,7 +14,7 @@
 | 旧仓库 | `F:\Sub2Api\SubNexus` |
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
-| 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
+| 最新上游基线 SHA | `ab99d56e9626e6cd731592dae8553c9758a0efa2`（版本 `0.2.1`；tag `578785ee7fb35030b094b69624efe25670a36f5f`） |
 | 迁移分支发布状态 | `Config.Cmd` 修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已测试、推送并安装；脚本 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`。新 run 已成功 switch，应用候选仍为 `02774d028...` |
 | 应用功能候选 SHA | `02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 Docker runtime gate 均由此提交构建；上游同步父提交为 `23d6e8ec0`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
@@ -135,6 +135,15 @@
 | Redis RDB 隔离恢复验证 | 通过 | 生产 Redis 镜像 ID 的无网络/无端口独立 Redis 8 候选 | `PING=PONG`、`RDB_TOTAL=39026`、`DBSIZE=18520`；RDB 加载 18520、过期 20506；候选容器已自动清理，生产 Redis 身份未变化；证据 `/srv/subnexus-migration/redis-restore/20260903T131430Z-3144728-6273df02-cf80-4b5e-9901-1b5f08c7b008/evidence.txt`，证据 SHA256=`f7f524028f2bacadff58efa669e5a4f91fc7c4b3dd38e09a4f17b1324b0e319a` |
 | 真实克隆 migration/adoption | 2026-09-03 | `subnexus_candidate` | 通过；268→371，13/13 SubNexus、27/27 alias、28/28 目标表、45/45 目标索引，二次幂等及 checksum 契约通过，invalid index=0 |
 | 真实克隆候选/旧版回归 | 2026-09-03 | `127.0.0.1:18184` / `18185` | 通过；候选全部迁移功能公开开关 false，旧版 0.1.135 可读取迁移后同库；所有进程和临时防火墙已清理 |
+
+## 2026-09-05 上游 v0.2.1 合并记录
+
+| 操作 | 状态 | 证据 |
+| --- | --- | --- |
+| 上游版本同步 | 通过 | `git fetch --prune upstream --tags` 定位 `v0.2.1=578785ee7fb35030b094b69624efe25670a36f5f`；`upstream/main=ab99d56e9626e6cd731592dae8553c9758a0efa2` 将 `backend/cmd/server/VERSION` 更新为 `0.2.1` |
+| 本地合并 | 通过 | 合并提交 `459a0c30abf38633ae487f145eabebba6eee3e4f`（标签代码）和 `8a0c8af8534b4038e357ab8368eb027e0a489cee`（版本同步）；无冲突；SubNexus `9001`-`9013` 迁移和业务路径保留，上游 `232`-`234` 迁移纳入 |
+| 本地验证 | 通过 | `git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 通过；Vitest 首次并行 `1986/1987`，支付恢复测试单独重跑 `14/14` 通过 |
+| 发布影响 | 未执行 | 未重新构建候选镜像、未执行服务器 prepare/switch/rollback、未修改数据库/Redis/Nginx；首页 UI 未提交改动保留 |
 
 ## 回滚点登记
 

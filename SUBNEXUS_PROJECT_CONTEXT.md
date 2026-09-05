@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-05（新脚本 `19824a87` 的 run 已 `READY=prepared`，stopped probe 验收通过，当前停在维护者人工 switch 前）
+> 最后更新：2026-09-05（已合并上游 `v0.2.1`；本地首页 Rain + Glass UI 改动仍未提交）
 
 ## 项目身份
 
@@ -11,8 +11,8 @@
 - 旧二开输入：`F:\Sub2Api\SubNexus`
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
-- 最新上游基线：`upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`（版本 `0.2.0`）
-- 当前迁移分支：`feature/subnexus-migration`；当前分支 tip 必须以 `git rev-parse HEAD` 实时核对（最新网络身份修复提交为 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0`）；应用功能候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 gate 均由此提交构建）；`main` 未修改
+- 最新上游基线：`upstream/main=ab99d56e9626e6cd731592dae8553c9758a0efa2`（版本 `0.2.1`，发布标签 `v0.2.1=578785ee7fb35030b094b69624efe25670a36f5f`）
+- 当前迁移分支：`feature/subnexus-migration`；当前分支 tip 必须以 `git rev-parse HEAD` 实时核对（上游标签合并提交：`459a0c30abf38633ae487f145eabebba6eee3e4f`；版本同步合并提交：`8a0c8af8534b4038e357ab8368eb027e0a489cee`）；历史应用候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`（本次 `0.2.1` 尚未重新构建）；`main` 未修改
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -109,3 +109,10 @@ registration_ip_cooldown_enabled
 1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
 2. 备份已下载并通过 20 个文件 SHA256；PostgreSQL 18.4 原始恢复库、真实克隆 migration/adoption、候选全部关闭态、旧版回归和 Redis 8.8.0 RDB 隔离加载均通过。Redis 证据位于台账记录的 root-only 路径。
 3. Docker 候选门禁仍有效；历史失败 run 均已自动回滚并禁止复用。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`，备份与 manifest 哈希已记录；stopped probe 验收通过且无残留。当前停在维护者人工 switch 前；此前旧 SHA、旧命令和旧 run 不得重试。
+
+## 2026-09-05 上游 v0.2.1 合并状态
+
+- 已在 `feature/subnexus-migration` 合并上游发布标签 `v0.2.1`（代码提交 `578785ee7fb35030b094b69624efe25670a36f5f`）及其后唯一的版本同步提交 `ab99d56e9626e6cd731592dae8553c9758a0efa2`；当前合并 tip 为 `8a0c8af8534b4038e357ab8368eb027e0a489cee`。
+- 合并保留现有 SubNexus 业务代码、`9001`-`9013` 迁移和项目记忆文件，并纳入上游 0.2.1 的网关、模型、定价、用量记录和前端管理能力；未修改 fork `main`、旧项目或服务器。
+- 本地验证：`git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 通过；全量 Vitest 首次并行运行 `1986/1987` 通过，`PaymentResultView.spec.ts` 单独重跑 `14/14` 通过，记录为并行时序波动。
+- 当前未提交内容仍仅为首页 Rain + Glass UI 的 `frontend/src/views/HomeView.vue` 和 `frontend/public/images/rain-city-1.jpg`；不得在后续同步中覆盖。0.2.1 合并后的候选镜像、Docker gate 和线上切换尚未重新执行。
