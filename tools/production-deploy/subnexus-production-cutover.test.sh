@@ -63,6 +63,7 @@ for function_name in init_docker acquire_lock prepare_argument_count_is_valid pr
   assert_candidate_network_identities; do
   assert_contains "$function_name() {"
 done
+assert_contains 'capture_container_arguments() {'
 
 for marker in \
   'for override in DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION' \
@@ -397,6 +398,57 @@ candidate_network_source="$(extract_function assert_candidate_network_identities
   fi
 )
 
+# Exercise JSON command/entrypoint capture. Docker's Go templates append a
+# record newline; the helper must trim only that transport whitespace while
+# preserving argument whitespace and explicit empty arguments.
+container_arguments_source="$(extract_function capture_container_arguments)"
+[[ "$container_arguments_source" == *'capture_container_arguments() {'* ]] ||
+  fail 'container argument capture helper source was not found'
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&1; then
+(
+  set -Eeuo pipefail
+  eval "$container_arguments_source"
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/subnexus-container-args.XXXXXX")"
+  trap 'rm -rf -- "$fixture_root"' EXIT
+  output_file="$fixture_root/args.txt"
+  json_file="$fixture_root/inspect.json"
+  app_id='fixture-container'
+  docker_rpc() {
+    [[ "$1" == inspect ]] || return 98
+    cat -- "$json_file"
+  }
+  expect_failure() {
+    if ( "$@" >/dev/null 2>&1 ); then return 1; fi
+    return 0
+  }
+  printf '\t ["-c", "two words", ""]  \r\n' > "$json_file"
+  capture_container_arguments Cmd "$output_file"
+  mapfile -t captured < "$output_file"
+  [[ "${#captured[@]}" -eq 3 && "${captured[0]}" == '-c' &&
+     "${captured[1]}" == 'two words' && "${captured[2]}" == '' ]] ||
+    fail 'JSON command arguments were not preserved exactly'
+  printf ' ["/app/sub2api"] \r\n' > "$json_file"
+  : > "$output_file"
+  capture_container_arguments Entrypoint "$output_file"
+  mapfile -t captured < "$output_file"
+  [[ "${#captured[@]}" -eq 1 && "${captured[0]}" == '/app/sub2api' ]] ||
+    fail 'single entrypoint argument gained a spurious empty argument'
+  for null_json in null '[]'; do
+    printf '%s\n' "$null_json" > "$json_file"
+    : > "$output_file"
+    capture_container_arguments Entrypoint "$output_file"
+    [[ ! -s "$output_file" ]] || fail "empty argument list produced output: $null_json"
+  done
+  for invalid_json in '{}' '["ok", 1]' '["line\nfeed"]' '["carriage\rreturn"]' '["nul\u0000byte"]'; do
+    printf '%s\n' "$invalid_json" > "$json_file"
+    expect_failure capture_container_arguments Cmd "$output_file" ||
+      fail "invalid command argument JSON was accepted: $invalid_json"
+  done
+)
+else
+  printf 'subnexus container argument fixtures skipped (requires usable python3)\n'
+fi
+
 # Exercise candidate-container argument construction with a local Docker mock.
 # This catches a duplicated subcommand that static text checks alone can miss.
 create_candidate_source="$(awk '
@@ -418,6 +470,7 @@ create_candidate_source="$(awk '
     network-aliases.txt mounts.txt entrypoint.txt cmd.txt workdir.txt ulimits.txt; do
     : >"$run_dir/$metadata_file"
   done
+  printf '%s\n' '-c' 'two words' '' > "$run_dir/cmd.txt"
   app_name='subnexus-cutover'
   tool_name='subnexus-production-cutover-v1'
   expected_image_id="$(printf 'b%.0s' {1..64})"
@@ -453,16 +506,24 @@ create_candidate_source="$(awk '
   docker_rpc() {
     [[ "$1" == container && "$2" == create ]] || fail "unexpected Docker command: $*"
     shift 2
-    local image_token='' arg
-    for arg in "$@"; do
+    local image_token='' image_index=-1 arg index
+    local -a docker_args=("$@")
+    for index in "${!docker_args[@]}"; do
+      arg="${docker_args[$index]}"
       [[ "$arg" != create ]] || fail 'bare create token was passed as an image/command argument'
       if [[ "$arg" == sha256:* ]]; then
         [[ -z "$image_token" ]] || fail 'multiple image tokens were passed'
         image_token="$arg"
+        image_index="$index"
       fi
     done
     [[ "$image_token" == "sha256:$expected_image_id" ]] ||
       fail "candidate image token mismatch: $image_token"
+    (( image_index >= 0 )) || fail 'candidate image was not found'
+    local -a command_args=("${docker_args[@]:image_index+1}")
+    [[ "${#command_args[@]}" -eq 3 && "${command_args[0]}" == '-c' &&
+       "${command_args[1]}" == 'two words' && "${command_args[2]}" == '' ]] ||
+      fail 'candidate command argv did not preserve exact captured arguments'
     local args_text
     args_text="$(printf '%s\n' "$@")"
     [[ "$args_text" == *$'0.0.0.0:18083:8080/tcp\n'* ]] ||

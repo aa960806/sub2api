@@ -1765,6 +1765,23 @@ validate_mount_recreation_contract() {
   (( count > 0 )) || fail 'mount recreation metadata is empty'
 }
 
+capture_container_arguments() {
+  local field="$1" output_file="$2"
+  case "$field" in Cmd|Entrypoint) ;; *) fail 'unsupported container argument field' ;; esac
+  # Parse the array before emitting records: Docker appends a CLI newline to
+  # template output, which must not become an extra empty command argument.
+  docker_rpc inspect --format "{{json .Config.$field}}" "$app_id" |
+    python3 -c '
+import json,sys
+value=json.load(sys.stdin)
+if value is None:
+    value=[]
+if not isinstance(value,list) or any(not isinstance(arg,str) or any(c in arg for c in ("\r","\n","\x00")) for arg in value):
+    raise SystemExit("container arguments must be strings without CR, LF or NUL")
+sys.stdout.write("".join(arg + "\n" for arg in value))
+' > "$output_file" || fail "cannot capture container arguments: $field"
+}
+
 capture_runtime_metadata() {
   local env_file="$run_dir/container.env" entrypoint_line cmd_line security_line network_id metadata_file
   docker_rpc inspect --format '{{.Id}}' "$live_app_ref" > /dev/null || fail "live application container not found: $live_app_ref"
@@ -1798,8 +1815,8 @@ print(json.dumps(obj, sort_keys=True, separators=(",", ":")))
   docker_rpc inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$app_id" > "$run_dir/restart-policy.txt"
   docker_rpc inspect --format '{{.HostConfig.RestartPolicy.MaximumRetryCount}}' "$app_id" > "$run_dir/restart-retries.txt"
   docker_rpc inspect --format '{{.Config.WorkingDir}}' "$app_id" > "$run_dir/workdir.txt"
-  docker_rpc inspect --format '{{range .Config.Entrypoint}}{{println .}}{{end}}' "$app_id" > "$run_dir/entrypoint.txt"
-  docker_rpc inspect --format '{{range .Config.Cmd}}{{println .}}{{end}}' "$app_id" > "$run_dir/cmd.txt"
+  capture_container_arguments Entrypoint "$run_dir/entrypoint.txt"
+  capture_container_arguments Cmd "$run_dir/cmd.txt"
   docker_rpc inspect --format '{{.Config.User}}' "$app_id" > "$run_dir/user.txt"
   docker_rpc inspect --format '{{.HostConfig.Memory}}|{{.HostConfig.MemorySwap}}|{{.HostConfig.MemoryReservation}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.CpuShares}}|{{.HostConfig.CpuQuota}}|{{.HostConfig.CpuPeriod}}|{{.HostConfig.CpusetCpus}}|{{if .HostConfig.PidsLimit}}{{.HostConfig.PidsLimit}}{{else}}0{{end}}' "$app_id" > "$run_dir/resource-policy.txt"
   docker_rpc inspect --format '{{json .Config.Healthcheck}}' "$app_id" > "$run_dir/healthcheck.json"
