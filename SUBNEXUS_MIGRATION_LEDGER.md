@@ -15,7 +15,7 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支发布状态 | 网络身份修复已提交为 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0`；当前本地分支领先远端 1 个提交，待推送后才能安装新脚本并重新 `prepare`；脚本 SHA256=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`；不能复用任何历史 run；应用功能候选仍为 `02774d028...` |
+| 迁移分支发布状态 | 网络身份修复 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0` 已推送，当前脚本的完整 WSL/Linux 切换测试通过；待维护者手动安装、解决磁盘缺口并全新 `prepare`；脚本 SHA256=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`；不能复用任何历史 run；应用功能候选仍为 `02774d028...` |
 | 应用功能候选 SHA | `02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 Docker runtime gate 均由此提交构建；上游同步父提交为 `23d6e8ec0`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
@@ -56,7 +56,8 @@
 | 新 prepare 重试 | 历史备份有效，run 已终态 | run `/srv/subnexus-migration/cutover/20260905002953-3824168` 曾有 `READY=prepared`，但第二次人工 switch 因 `OomKillDisable=null/false` 哈希误报自动回滚，现为 `state=rolled_back`；备份保留审计，不得再次作为 switch 输入 |
 | 第二次人工 switch | 已自动回滚，禁止复用 | 候选成功创建、启动并健康，随后运行时合同哈希误报；自动回滚恢复旧应用和切换前设置，未恢复 PostgreSQL/Redis。旧应用 healthy/restart=0，PostgreSQL/Redis 原 ID running/restart=0，失败候选与临时旧名称无残留 |
 | 运行时合同修复 | 本地通过，待安装 | 提交 `0d083f6b7` 将旧容器 `OomKillDisable=null` 与 Docker 29 候选 `false` 归一为同一安全语义，保留 `true` 拒绝；显式保留 `0.0.0.0` 端口 HostIP；候选合同在 entrypoint 启动前先校验并在健康后复核。Windows/WSL 发布夹具通过 |
-| 当前交接 | 网络修复后待重新 prepare | run `/srv/subnexus-migration/cutover/20260905020043-3862867` 已因候选网络身份误报自动回滚，所有历史 run 禁止复用。必须提交/推送新脚本、唯一新文件名安装并重新执行无停机 `prepare`；新 `READY=prepared` 之前 `cutover_allowed=false`，不得执行 `switch` |
+| 当前交接 | 网络修复已推送，待维护者手动安装并重新 prepare | run `/srv/subnexus-migration/cutover/20260905020043-3862867` 已因候选网络身份误报自动回滚，所有历史 run 禁止复用。必须由维护者在服务器终端以唯一新文件名安装新脚本并重新执行无停机 `prepare`；新 `READY=prepared` 之前 `cutover_allowed=false`，不得执行 `switch` |
+| 当前容量 | 全新 prepare 前须解决 | 2026-09-05 12:52 Asia/Shanghai 只读复核可用 `19225067520` bytes，现有脚本最低预算约 `23712679936` bytes，至少缺约 4.5 GB。维护者手动安装脚本后须先解决空间缺口；不降低 8 GiB 保留、不复用备份、不按 Docker reclaimable 数值直接删除资产 |
 
 ## 实施批次
 
@@ -201,4 +202,4 @@
 | Docker 29 候选网络身份校验误报 | 已定位并在本地修复 | 旧 run `20260905020043-3862867` 在候选启动前因直接比较 `EndpointSettings.NetworkID` 与网络对象 ID 而自动回滚；新增按网络名称集合及 `docker network inspect .Id` 的严格校验，并加入名称-only、ID 漂移、额外网络 fixture |
 | 历史 prepared run | 全部不可复用 | `20260904175519-3701605`、`20260905002953-3824168`、`20260905020043-3862867` 均为失败/`rolled_back` 终态；备份和证据只作审计保留 |
 | 当前线上状态 | 旧版本继续运行 | 未执行本轮网络修复的服务器写操作；未停止/重启/重命名线上容器，未执行数据库恢复、Nginx 切流或功能开关变更 |
-| 下一步 | 待提交、推送并重新 prepare | 网络修复提交后计算新脚本 SHA、以唯一文件名安装服务器副本，再做一次不停止线上应用的全量 `prepare`；新 `READY=prepared` 前 `cutover_allowed=false` |
+| 下一步 | 已推送，待维护者手动安装并重新 prepare | 网络修复提交 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0` 已推送；必须由维护者在服务器终端以唯一文件名安装脚本（SHA256=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`），再做一次不停止线上应用的全量 `prepare`；新 `READY=prepared` 前 `cutover_allowed=false`，本地代理不得执行服务器写操作 |

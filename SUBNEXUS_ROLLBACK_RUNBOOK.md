@@ -35,19 +35,13 @@ curl -fsS --max-time 8 https://<公网健康域名>/health
 
 如果 Nginx 已切到候选端口，先恢复切换前配置副本再 reload。快速回滚不恢复数据库，因新增隔离表/可选字段应被旧版本忽略；切回后必须验证登录、API Key、余额、订阅、订单、支付回调、用量和健康检查。
 
-两个历史 prepared run `/srv/subnexus-migration/cutover/20260904175519-3701605` 与 `/srv/subnexus-migration/cutover/20260905002953-3824168` 都已自动回滚，均包含 `ROLLED_BACK` 且 manifest 为 `state=rolled_back`，不可再次执行 `switch` 或 `rollback`。当前唯一有效 prepared run 是 `/srv/subnexus-migration/cutover/20260905020043-3862867`；只能使用本节的最新脚本和命令，不得复制 Git 历史中的旧命令。
+历史 run `/srv/subnexus-migration/cutover/20260904175519-3701605`、`/srv/subnexus-migration/cutover/20260905002953-3824168` 和 `/srv/subnexus-migration/cutover/20260905020043-3862867` 均已自动回滚或进入失败终态，包含 `ROLLED_BACK`/`state=rolled_back` 证据，不可再次执行 `switch` 或 `rollback`。当前没有有效 prepared run；必须先安装网络身份修复后的新脚本并重新执行完整无停机 `prepare`。
 
-第二次自动回滚只恢复了应用容器和切换前设置，没有恢复 PostgreSQL/Redis 备份。候选运行期间已经正确应用 `9001`-`9013`，13 条 checksum 与候选 SQL 一致；旧应用随后在迁移后同库上恢复 healthy/restart=0。最新脚本已安装并完成新的无停机 `prepare`、全部证据核验和 stopped probe 合同复核；回滚仍只恢复应用和关闭态设置，默认不恢复数据库。
+第二次自动回滚只恢复了应用容器和切换前设置，没有恢复 PostgreSQL/Redis 备份。候选运行期间已经正确应用 `9001`-`9013`，13 条 checksum 与候选 SQL 一致；旧应用随后在迁移后同库上恢复 healthy/restart=0。网络身份修复提交为 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0`，待安装脚本 SHA256=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`；在新 prepare 完成前，回滚仅保留历史审计，不提供可执行命令。
 
-### 当前 run 的单行回滚命令
+### 历史回滚命令已撤回
 
-仅当上述有效 run 的 `switch` 已实际开始并需要恢复应用时，由维护者在服务器终端执行：
-
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh rollback /srv/subnexus-migration/cutover/20260905020043-3862867
-```
-
-该命令不恢复 PostgreSQL/Redis，不删除旧容器、旧镜像或备份；执行后仍须按实时 Nginx 配置和本手册完成切流恢复与业务核对。
+旧脚本、旧 SHA 和历史 run 仅作审计事实保留，已删除其可执行回滚命令，防止误用。新 run 生成后，必须依据其 manifest 和新脚本 SHA 重新生成经过维护者复核的单行命令；回滚默认不恢复 PostgreSQL/Redis。
 
 ## 3. 应用无法启动
 

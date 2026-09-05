@@ -1316,3 +1316,12 @@
 - 验证：Git Bash 下生产切换、候选 gate、隔离构建和只读预检测试均退出 0；动态 Linux/Python 夹具因当前 Windows AppInstaller `python3` 不可用按设计跳过。此前专用 WSL 记录已确认相同动态夹具在 Linux 通过；本轮未访问线上服务器。
 - 新生产切换脚本文件 SHA256=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`，测试脚本 SHA256=`927b441bf1d95c175d793fe9c9bdcf37a63067c694d7fe92300f02ca2f494c41`。
 - `git push origin feature/subnexus-migration` 在本机网络策略下无法连接 GitHub，带权限重试因审批服务暂不可用被拒绝；因此远端仍落后 1 个提交，服务器尚未安装/拉取新脚本，也没有执行新的 `prepare`。恢复外网后只需推送该分支，再按本手册重新安装并执行无停机 `prepare`。
+
+## 2026-09-05（Asia/Shanghai）— 跨对话接续、推送恢复与人工操作边界复核
+
+- 读取原任务 `01a05c86-a9f4-7061-bb00-3f7f65498c84` 的可用对话分页及本地台账后接续。用户原话明确要求“随后的更新操作由我来手动在服务器终端执行”，并于本轮再次核对交接边界；因此代理只允许只读 SSH，安装脚本、prepare、创建探针、switch、rollback 和清理均由维护者本人执行服务器终端单行命令。不得仅在最终 switch 前才停止。
+- GitHub 网络已恢复；已执行 `git push origin feature/subnexus-migration`，远端从 `16e1bd87d` 更新至 `f21f28030`，包含网络修复 `ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0`。在专用 WSL `SubNexusBuild20260904` 对当前脚本执行 `bash -n` 和完整 `subnexus-production-cutover.test.sh`，退出 0，实际 Linux 动态夹具通过；预期故障注入输出不代表测试失败。脚本及测试 SHA 仍为上一条记录的 `bffd1987...` / `927b441b...`。
+- 2026-09-05 12:52 Asia/Shanghai 只读 SSH 复核：旧应用 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，镜像=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`，running/healthy/restart=0，本地 `/health` 返回 `{"status":"ok"}`；PG=`8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf`、Redis=`5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 均 running/restart=0，启动时间仍为 2026-08-06。三个历史 run 的 `ROLLED_BACK` 和 manifest `state=rolled_back` 全部确认，当前没有新 READY。
+- 候选归档 SHA=`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`、服务器 gate SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61` 只读复核一致；gate 为 passed/cleanup_failed=false/cutover_authorized=false。release source 仍为 root-owned、detached、clean，HEAD=`02774d028d076e934a59f04fd1ee98598ac693a1`、tree=`023e96b6c629f7d33e8ac2d43b7bd93f960a36f5`；候选 image ID 存在。服务器通过 HTTPS 读取固定提交脚本到 SHA256 管道（未落盘），结果匹配 `bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`。
+- 新发现的 prepare 阻塞：根分区可用 `19225067520` bytes，现有脚本在该布局的最低预算为 `23712679936` bytes，至少缺约 4.5 GB；预算还需在真正 prepare 时按实时数据重算。`docker system df` 报告约 8.172 GB reclaimable 镜像并不代表这些对象可删除；没有删除/转移任何线上资产，没有使用 prune，也没有降低保留空间。维护者须先安装已核验的新脚本，再解决容量缺口，才可全新 prepare。
+- 本轮纠正项目上下文、规划、台账和回滚手册中把旧 run 当作有效的残留叙述，撤回旧的可执行 switch/rollback 命令；切换手册第 10 节记录当前状态和第一条人工安装命令。所有服务器操作均为读取；未安装、备份、修改数据库/Redis、创建探针、停止/重启容器、切换、修改 Nginx 或开启功能。旧项目和 main 未修改。本文档变更回滚点为 `f21f28030`；回退文档不影响线上资产。
