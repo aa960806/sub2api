@@ -336,3 +336,9 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 4. 历史失败 run 均不可复用。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已由维护者完成 switch，窗口 42 秒；新容器健康，旧容器保留供 rollback。数据库未恢复，磁盘余量和备份保留策略继续有效。
 
 线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`，stopped probe 验收通过。最新备份包括 PostgreSQL dump `5086279866` bytes、Redis RDB `7143802` bytes、应用归档 `80910450` bytes；各项 SHA、runtime/settings 合同和 probe 证据统一记录在 `SUBNEXUS_CHANGE_MEMORY.md`。当前停在维护者人工 switch 前，最终单行 `switch`/`rollback` 命令见切换手册第 10 节，必须由维护者手动执行。
+
+## 2026-09-05 v0.2.1 发布前更新（当前权威状态）
+
+以 `bb36764f692ca79ccc9c635fd71dcbb70b9c0449` 为候选完成服务器 gate 和全新无停机 prepare。当前 run=`/srv/subnexus-migration/cutover/20260905114022-4163123`，状态为 `prepared`；候选镜像 ID=`21098ec4f4c922efa92208b640a970eb8602778c0515e8921967f9d75dc5adfd`，归档 SHA=`d1a6e297720d7af32a1ba98a7e4d3c9dc66a72a4fe7aace1ea96d346d7b1b648`。PostgreSQL、Redis、应用备份和 stopped probe 均已完成并核验，生产应用、依赖容器、Nginx 和功能开关未被切换。服务器垃圾清理仅删除逐个确认的无 tag/无引用 dangling 中间层及上传临时文件，证据见 `/srv/subnexus-migration/cleanup-20260905-v021-dangling-images.txt`；禁止使用 prune。
+
+最终动作仍由维护者在维护窗口执行本手册第 11 节的单行 `switch`；异常时只对同一 run 执行单行应用 `rollback`，不创建新的回滚目标。

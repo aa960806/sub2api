@@ -219,3 +219,14 @@
 | 最新验收 | 状态 | 证据 |
 | --- | --- | --- |
 | 最新 prepare 证据（2026-09-05 Asia/Shanghai） | 通过，待人工 switch | PostgreSQL dump=`5086279866` bytes SHA=`97d11bbd933a2076b1aac25dcd6a5b636e77be10080f68e73fcb3be282c80ce5`；Redis RDB=`7143802` bytes SHA=`78afd911bd2f32b1a7add7b5d0752accf701c4950f5738597db803ffa68749e6`；应用归档=`80910450` bytes SHA=`a7d9b6a92aabe5690c74baa2da1dfdec8861067cab1ef1c1721379cc1d321e95`；runtime=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`，settings before=`039f45a96f202523e0376ea4f2122aaa485b22ad623011abd0724693b9e78bc3`，closed=`8de4ae1711229355c234a1fde1cf308e8ad0f869d0d16443659e33014813f2b4`；最终空间 `35573174272` bytes。旧应用/PG/Redis 身份未变，未执行 switch |
+
+## 2026-09-05 v0.2.1 最新交接记录
+
+| 项目 | 结果 |
+| --- | --- |
+| 候选 | commit=`bb36764f692ca79ccc9c635fd71dcbb70b9c0449`，image=`sha256:21098ec4f4c922efa92208b640a970eb8602778c0515e8921967f9d75dc5adfd`，archive SHA=`d1a6e297720d7af32a1ba98a7e4d3c9dc66a72a4fe7aace1ea96d346d7b1b648` |
+| Docker gate | passed；run=`20260905T113230Z-1add8fbc-85d4-4d21-af6c-23fbc34af218`；evidence SHA=`ac2cd667c1a317b3d0eab0e11a9b3cbada4b4ecec49850eba08f81263ebb2bf5`；migration count `294`，重启后 `294` |
+| Prepare | `/srv/subnexus-migration/cutover/20260905114022-4163123`，`state=prepared`；新鲜 PostgreSQL/Redis/应用归档分别为 `5110515505`/`9337696`/`82391881` bytes |
+| Probe | ID=`dfc59dc117f32562231eaba12892f90816dc84998fb0c302b22277f6c1f11112`；created/false/0；contract SHA=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`；已删除且 manifest 未变 |
+| 清理 | 逐个删除 27 个无 tag/无容器引用 dangling 中间层和 5 个上传临时文件；最终 dangling 为空；日志 SHA=`4db47e4249f5164fe8fb89642a93fe8bc058484d6b968373dffa2fc753b8677a`；未使用 prune |
+| 人工边界 | 尚未执行 switch/rollback；rollback 仍指向服务器旧 SubNexus 容器，不创建新的回滚目标 |

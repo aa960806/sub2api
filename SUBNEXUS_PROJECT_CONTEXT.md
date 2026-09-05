@@ -116,3 +116,9 @@ registration_ip_cooldown_enabled
 - 合并保留现有 SubNexus 业务代码、`9001`-`9013` 迁移和项目记忆文件，并纳入上游 0.2.1 的网关、模型、定价、用量记录和前端管理能力；未修改 fork `main`、旧项目或服务器。
 - 本地验证：`git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 通过；单独完整运行 Vitest `286/286` 文件、`1987/1987` 测试通过。
 - 当前未提交内容仍仅为首页 Rain + Glass UI 的 `frontend/src/views/HomeView.vue` 和 `frontend/public/images/rain-city-1.jpg`；不得在后续同步中覆盖。0.2.1 合并后的候选镜像、Docker gate 和线上切换尚未重新执行。
+
+## 最新发布前状态（2026-09-05）
+
+上游 `v0.2.1` 已由当前分支提交 `bb36764f692ca79ccc9c635fd71dcbb70b9c0449` 构建并完成服务器候选 gate。候选镜像为 `sha256:21098ec4f4c922efa92208b640a970eb8602778c0515e8921967f9d75dc5adfd`，归档 SHA=`d1a6e297720d7af32a1ba98a7e4d3c9dc66a72a4fe7aace1ea96d346d7b1b648`，gate evidence=`/srv/subnexus-migration/docker-candidate/20260905T113230Z-1add8fbc-85d4-4d21-af6c-23fbc34af218/evidence.txt`，SHA=`ac2cd667c1a317b3d0eab0e11a9b3cbada4b4ecec49850eba08f81263ebb2bf5`。
+
+当前唯一可交接 run 是 `/srv/subnexus-migration/cutover/20260905114022-4163123`，`state=prepared`。prepare、备份、runtime/settings/owner 合同和 stopped probe 均通过；probe ID=`dfc59dc117f32562231eaba12892f90816dc84998fb0c302b22277f6c1f11112` 已精确删除。最终人工 switch 前不得执行任何切换或功能开启；回滚必须使用同一 run，并继续恢复服务器原旧 SubNexus 容器，不创建新的回滚目标。
