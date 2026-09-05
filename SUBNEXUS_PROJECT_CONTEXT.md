@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 最后更新：2026-09-05（旧 switch 已自动回滚；修复脚本已安装；新 prepare 已成功生成 READY，当前停在人工 switch 前）
+> 最后更新：2026-09-05（第二次人工 switch 已因 Docker 运行时元数据等价值误报自动回滚；本地修复已提交，当前没有可复用的 prepared run）
 
 ## 项目身份
 
@@ -12,7 +12,7 @@
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新上游基线：`upstream/main=5097b31457e6dc9f49e5f5c9c72b925ce79543b3`（版本 `0.2.0`）
-- 当前迁移分支：`feature/subnexus-migration`；当前分支 tip 必须以 `git rev-parse HEAD` 实时核对（最新动态 argv 测试提交为 `8483409d7745584b9148c5ccd2749e703e2b0822`）；应用功能候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 gate 均由此提交构建）；`main` 未修改
+- 当前迁移分支：`feature/subnexus-migration`；当前分支 tip 必须以 `git rev-parse HEAD` 实时核对（运行时合同修复提交为 `0d083f6b7cf53c440968f9a63e8bc4002017b53f`）；应用功能候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 gate 均由此提交构建）；`main` 未修改
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -20,13 +20,13 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归、Docker runtime gate 和新的无停机 prepare 已完成；旧 switch 已自动回滚，当前停在人工 switch 前 |
+| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已完成；第二次人工 switch 已自动回滚，运行时合同修复已本地提交，需安装新脚本并重新 prepare |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
-| 生产数据库访问 | 已执行只读盘点和 `pg_dump` 备份；未执行生产 SQL DDL/DML、迁移或候选连接，Redis 仅执行 `BGSAVE` 生成恢复点并在隔离容器验证恢复 |
-| 生产部署/切换 | 修复脚本已安装；旧 run 已 `rolled_back`，新有效 run `20260905002953-3824168` 已 `READY=prepared`；`switch` 未执行 |
-| 生产开关 | 未修改 |
-| 工作区 | `feature/subnexus-migration` 已推送 fork；当前 tip 以 `git rev-parse HEAD` 实时核对，应用候选仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1`；生产脚本 SHA=`8076d267ebebce97603acd6cc92ea99d3d0d7a25c3a26a9cb3b37ce57dedf0af`；业务依赖、前端 lockfile 和 VERSION 未改 |
+| 生产数据库访问 | 第二次候选启动约 35 秒并于 `2026-09-05 01:17:03 UTC` 应用 `9001`-`9013`；13 条 checksum 与候选 SQL 全部一致。自动回滚未恢复数据库，旧应用已在迁移后同库上恢复健康；未手工执行迁移或恢复 PostgreSQL/Redis |
+| 生产部署/切换 | run `20260904175519-3701605` 与 `20260905002953-3824168` 均已 `rolled_back` 且不可复用；当前没有有效 prepared run，禁止再次 switch |
+| 生产开关 | 自动回滚已恢复旧应用切换前设置；候选下次启动前仍由 closed snapshot 强制关闭迁移功能。不要把旧应用当前既有的 Channel Monitor/客服设置状态误写为候选默认开启 |
+| 工作区 | 运行时合同修复提交 `0d083f6b7cf53c440968f9a63e8bc4002017b53f`；应用候选仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1`；生产脚本 SHA=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`，测试 SHA=`16fe581ecdf400ce6eb4f609b9a8cde1ee243666b9ab02f2199f3fc23e114880`；业务依赖、前端 lockfile 和 VERSION 未改 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
 
 线上服务器的最后历史快照记录在旧项目记忆中，必须用实时服务器检查覆盖，不能直接当作当前事实。特别是旧文档中的 `/www/wwwroot/SubNexus`、`/www/source/SubNexus`、端口 `18080`、root SSH 和 `main` 分支不是当前 OVH 部署的默认值。
@@ -106,4 +106,4 @@ registration_ip_cooldown_enabled
 
 1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
 2. 备份已下载并通过 20 个文件 SHA256；PostgreSQL 18.4 原始恢复库、真实克隆 migration/adoption、候选全部关闭态、旧版回归和 Redis 8.8.0 RDB 隔离加载均通过。Redis 证据位于台账记录的 root-only 路径。
-3. Docker 候选门禁和维护者验收已通过；修复脚本已安装，旧 `READY` run `/srv/subnexus-migration/cutover/20260904175519-3701605` 已因 switch 缺陷自动回滚，不可复用；新有效 run `/srv/subnexus-migration/cutover/20260905002953-3824168` 已生成并核验 `READY=prepared`。线上实时应用数据目录为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复 owner 合同；当前只等待维护者手动 `switch`，生产迁移、切流或功能开启仍不得自动执行。
+3. Docker 候选门禁仍有效，但两个曾含 `READY` 的 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 与 `/srv/subnexus-migration/cutover/20260905002953-3824168` 都已自动回滚并禁止复用。先推送并以唯一新文件名安装提交 `0d083f6b7` 的脚本，再执行一次全新的无停机 `prepare`，核验新鲜备份、迁移后数据库状态和 stopped probe 合同等价；只有新的 `READY=prepared` 完成核验后才重新生成维护者单行 `switch`/`rollback` 命令。
