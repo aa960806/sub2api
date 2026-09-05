@@ -142,7 +142,7 @@
 | --- | --- | --- |
 | 上游版本同步 | 通过 | `git fetch --prune upstream --tags` 定位 `v0.2.1=578785ee7fb35030b094b69624efe25670a36f5f`；`upstream/main=ab99d56e9626e6cd731592dae8553c9758a0efa2` 将 `backend/cmd/server/VERSION` 更新为 `0.2.1` |
 | 本地合并 | 通过 | 合并提交 `459a0c30abf38633ae487f145eabebba6eee3e4f`（标签代码）和 `8a0c8af8534b4038e357ab8368eb027e0a489cee`（版本同步）；无冲突；SubNexus `9001`-`9013` 迁移和业务路径保留，上游 `232`-`234` 迁移纳入 |
-| 本地验证 | 通过 | `git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 通过；Vitest 首次并行 `1986/1987`，支付恢复测试单独重跑 `14/14` 通过 |
+| 本地验证 | 通过 | `git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 通过；单独完整 Vitest `286/286` 文件、`1987/1987` 测试通过 |
 | 发布影响 | 未执行 | 未重新构建候选镜像、未执行服务器 prepare/switch/rollback、未修改数据库/Redis/Nginx；首页 UI 未提交改动保留 |
 
 ## 回滚点登记

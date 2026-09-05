@@ -114,5 +114,5 @@ registration_ip_cooldown_enabled
 
 - 已在 `feature/subnexus-migration` 合并上游发布标签 `v0.2.1`（代码提交 `578785ee7fb35030b094b69624efe25670a36f5f`）及其后唯一的版本同步提交 `ab99d56e9626e6cd731592dae8553c9758a0efa2`；当前合并 tip 为 `8a0c8af8534b4038e357ab8368eb027e0a489cee`。
 - 合并保留现有 SubNexus 业务代码、`9001`-`9013` 迁移和项目记忆文件，并纳入上游 0.2.1 的网关、模型、定价、用量记录和前端管理能力；未修改 fork `main`、旧项目或服务器。
-- 本地验证：`git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 通过；全量 Vitest 首次并行运行 `1986/1987` 通过，`PaymentResultView.spec.ts` 单独重跑 `14/14` 通过，记录为并行时序波动。
+- 本地验证：`git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 通过；单独完整运行 Vitest `286/286` 文件、`1987/1987` 测试通过。
 - 当前未提交内容仍仅为首页 Rain + Glass UI 的 `frontend/src/views/HomeView.vue` 和 `frontend/public/images/rain-city-1.jpg`；不得在后续同步中覆盖。0.2.1 合并后的候选镜像、Docker gate 和线上切换尚未重新执行。

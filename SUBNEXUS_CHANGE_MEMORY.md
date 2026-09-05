@@ -1367,5 +1367,5 @@
 
 - 执行 `git fetch --prune upstream --tags`，确认发布标签 `v0.2.1` 的代码提交为 `578785ee7fb35030b094b69624efe25670a36f5f`；随后上游 `main` 的唯一新增提交 `ab99d56e9626e6cd731592dae8553c9758a0efa2` 将 `backend/cmd/server/VERSION` 从 `0.2.0` 同步为 `0.2.1`。
 - 在 `feature/subnexus-migration` 完成两次无冲突合并：`459a0c30abf38633ae487f145eabebba6eee3e4f` 合并 `v0.2.1` 标签，`8a0c8af8534b4038e357ab8368eb027e0a489cee` 合并版本同步提交。上游新增功能和迁移 `232`、`233`、`234` 纳入；与 SubNexus 专属功能重叠的删除路径保留当前分支，现有 `9001`-`9013` 迁移、活动、邀请、充值转盘等代码和记忆文件未被删除。
-- 验证结果：`git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 全部通过。全量 Vitest 首次与其他任务并行时 `1986/1987` 通过，唯一失败为 `PaymentResultView.spec.ts` 的 `refreshUser` 调用次数时序断言；单独重跑该文件 `14/14` 通过，未修改测试或业务代码。
+- 验证结果：`git diff --check`、`pnpm typecheck`、`pnpm build`、`go test ./...` 全部通过；随后单独完整运行 Vitest `286/286` 文件、`1987/1987` 测试通过，未修改测试或业务代码。
 - 当前工作树保留此前首页 Rain + Glass UI 未提交改动：`frontend/src/views/HomeView.vue`、`frontend/public/images/rain-city-1.jpg`。本轮没有重新构建候选镜像、没有执行服务器命令、数据库/Redis/Nginx 操作或生产切换；后续发布前必须以 `8a0c8af8534b4038e357ab8368eb027e0a489cee` 重新完成构建和 gate。
