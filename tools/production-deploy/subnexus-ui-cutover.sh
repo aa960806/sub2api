@@ -60,7 +60,7 @@ ui_load_controller() {
 ui_install_overrides() {
   validate_self_sha() {
     local expected="$1" path actual
-    if [[ "$ui_anchor_validation" == 1 ]]; then path="$ui_controller_path"; else path="$ui_entry_path"; fi
+    if [[ "$expected" == "$ui_controller_sha" ]]; then path="$ui_controller_path"; else path="$ui_entry_path"; fi
     valid_sha64 "$expected" || fail 'approved script SHA is invalid'
     assert_root_owned_regular "$path" 'approved controller'
     actual="$(hash_file "$path")"
@@ -221,6 +221,8 @@ ui_prepare() {
 
 ui_load_run() {
   local path="$1" scope="$2" expected
+  # The prepared run is authored by this wrapper; anchor validation below
+  # switches validation to the original controller's manifest contract.
   SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256="${SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256:-}"
   validate_run_directory "$path" "$scope"
   [[ "$(manifest_value ui_flow)" == application-refresh-v1 && "$(manifest_value ui_controller_sha256)" == "$ui_controller_sha" ]] || fail 'run does not belong to the UI controller'
