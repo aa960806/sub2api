@@ -15,12 +15,12 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支发布状态 | 本地与 `origin/feature/subnexus-migration` 必须以 `git rev-parse` 实时核对；应用功能候选仍为 `02774d028...`，最新生产切换脚本代码固定点为 `af82a6877`，脚本文件 SHA256=`ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064`；后续仅文档提交不得改变脚本 SHA |
+| 迁移分支发布状态 | 本地与 `origin/feature/subnexus-migration` 必须以 `git rev-parse` 实时核对；当前 tip 为 `8483409d7745584b9148c5ccd2749e703e2b0822`，应用功能候选仍为 `02774d028...`；最新生产切换脚本代码包含 `c85b5d4419cf36a60d0429d23e003bb060e9b26e`，脚本文件 SHA256=`8076d267ebebce97603acd6cc92ea99d3d0d7a25c3a26a9cb3b37ce57dedf0af`，测试 SHA256=`13d14232456a7a8e7d8d03171713ae586e1ab1caae4445e4835a1c268ac5a21a` |
 | 应用功能候选 SHA | `02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 Docker runtime gate 均由此提交构建；上游同步父提交为 `23d6e8ec0`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
-| 生产数据库状态 | 只读预检、隔离恢复和在线 prepare 已完成；最新 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 已生成并核验 `READY=prepared`、PostgreSQL/Redis/应用数据备份及快照；生产库仍未执行迁移/DDL/DML，等待维护者人工 switch |
+| 生产数据库状态 | 只读预检、隔离恢复和新鲜在线备份通过；旧 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 已因人工 switch 参数缺陷自动回滚，不可复用。新有效 prepare run `/srv/subnexus-migration/cutover/20260905002953-3824168` 已生成 `READY=prepared`；生产库仍未执行迁移/DDL/DML，等待维护者人工 switch |
 
 ## Batch 0 门禁
 
@@ -41,8 +41,20 @@
 | 编号 | 门禁 | 状态 | 证据/备注 |
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
-| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建、结构和最新 prepare 证据校验） | 历史备份 `/srv/subnexus-migration/backups/20260903T073714Z`；最新无停机 prepare `/srv/subnexus-migration/cutover/20260904175519-3701605` 的 PostgreSQL custom dump/list、Redis RDB/check、应用 tar、排除策略、设置快照和全量 SHA256 均通过 |
+| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 通过（创建、结构和最新 prepare 证据校验） | 历史备份 `/srv/subnexus-migration/backups/20260903T073714Z`；最新无停机 prepare `/srv/subnexus-migration/cutover/20260905002953-3824168` 的 PostgreSQL custom dump/list、Redis RDB/check、应用 tar、排除策略、设置快照和全部 sidecar SHA256 均通过 |
 | B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；当前服务器复核的 gate 证据 `20260904T110814Z-be48efa2-3133-4c27-bc9f-a7cbf1d221c9`，evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
+
+## 线上发布尝试与当前状态（2026-09-05）
+
+| 项目 | 状态 | 证据/处理 |
+| --- | --- | --- |
+| 旧脚本人工 switch | 已自动回滚，禁止复用 | run `/srv/subnexus-migration/cutover/20260904175519-3701605`；重复 `create` 参数导致 Docker 查找 `create:latest`。旧容器和 rollout gates 已恢复，未建候选/未恢复数据库，但 stop+rename 造成短暂窗口；run 含 `ROLLED_BACK`，不可再次 switch |
+| switch 参数修复 | 通过 | 提交 `c85b5d4419cf36a60d0429d23e003bb060e9b26e`；动态 argv 夹具提交 `8483409d7745584b9148c5ccd2749e703e2b0822`；脚本 SHA256=`8076d267ebebce97603acd6cc92ea99d3d0d7a25c3a26a9cb3b37ce57dedf0af`，测试 SHA256=`13d14232456a7a8e7d8d03171713ae586e1ab1caae4445e4835a1c268ac5a21a`；Windows/WSL Linux 测试通过 |
+| 新脚本安装 | 通过 | `/srv/subnexus-migration/tools/subnexus-production-cutover-8076d267-20260905.sh`，root:root/0700，`bash -n` 与 SHA 通过；旧脚本均保留 |
+| 新 prepare 首次尝试 | 安全失败并保留历史证据 | run `/srv/subnexus-migration/cutover/20260905000853-3813358` 在 PostgreSQL 备份前因可用 `19552845824` B 小于门禁要求 `23712679936` B 停止；无容器/数据库/开关变更；该 run 不得作为切换输入 |
+| 磁盘处理 | 通过安全门禁 | 只读确认后定向删除两个无标签、无容器引用的构建中间镜像，记录于 `/srv/subnexus-migration/cleanup-20260905-dangling-images.txt`；未使用 `prune`，未删除候选/旧镜像/容器/数据库/Redis |
+| 新 prepare 重试 | 通过（待维护者人工 switch） | run `/srv/subnexus-migration/cutover/20260905002953-3824168` 已有 `READY=prepared`、manifest `state=prepared`；PG dump `5084032665` B、Redis RDB `6648027` B、应用归档 `80191647` B，sidecar/owner/inode/依赖/设置关闭态和 gate evidence 均通过 |
+| 当前交接 | 停在人工 switch 前 | 旧应用 `subnexus-cutover` healthy/restart=0，无当前 run 候选容器；`cutover_authorized=false`、`manual_review_required=true`。只有维护者执行新 run 的单行 `switch`，异常时执行同 run `rollback`；不得降低 8 GiB 保留或复用旧备份 |
 
 ## 实施批次
 

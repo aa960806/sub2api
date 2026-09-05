@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。当前线上只读 preflight、备份结构校验、PostgreSQL/Redis 隔离恢复、候选 Docker runtime gate 和最新无停机 `prepare` 均已通过；维护窗口 `switch` 仍未执行，因此仍禁止生产迁移、替换容器、切流或功能开启。
+本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。线上只读 preflight、历史备份结构校验、PostgreSQL/Redis 隔离恢复、候选 Docker runtime gate 和修复后的无停机 `prepare` 均已通过；此前 `switch` 因脚本参数缺陷自动回滚，旧 run 不可复用。当前停在新的 `READY=prepared` 与人工 `switch` 之间，生产迁移、替换容器、切流或功能开启仍禁止自动执行。
 
 ## 1. 发布前硬门禁
 
@@ -152,22 +152,22 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 旧容器、旧镜像、旧源码和配置、切换前数据库/Redis 备份、Nginx 备份及服务器证据至少保留至维护者确认可以清理。禁止在验收完成前执行 `docker system prune -a`、`docker volume prune` 或删除回滚脚本。
 
-## 8. 当前已准备发布固定点
+## 8. 当前发布状态（停在人工 switch 前）
 
-最新可供维护者人工核对的 prepared run 为：
+旧 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 曾有 `READY=prepared`，但因人工 `switch` 的重复 `create` 参数触发自动回滚，当前 manifest 为 `state=rolled_back` 且存在 `ROLLED_BACK`，严禁复用。新脚本已安装为 `/srv/subnexus-migration/tools/subnexus-production-cutover-8076d267-20260905.sh`，SHA256=`8076d267ebebce97603acd6cc92ea99d3d0d7a25c3a26a9cb3b37ce57dedf0af`。新的有效 run 为 `/srv/subnexus-migration/cutover/20260905002953-3824168`，候选提交=`02774d028d076e934a59f04fd1ee98598ac693a1`，镜像 ID=`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`，`READY=prepared`、manifest `state=prepared`。
 
-- run：`/srv/subnexus-migration/cutover/20260904175519-3701605`
-- 候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`
-- 候选镜像 ID：`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`
-- 部署脚本：`/srv/subnexus-migration/tools/subnexus-production-cutover-af82a6877-ba0f4c1e.sh`
-- 部署脚本 SHA256：`ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064`
+该 run 的 PostgreSQL/Redis/应用数据备份、设置关闭快照、应用数据 owner/inode、旧容器与依赖身份、候选归档及 runtime gate evidence 均已通过 SHA 和 root-only 合同复核；当前没有候选容器，线上旧应用仍 healthy/restart=0。根分区可用约 18 GB，旧失败 run 资产仍保留，禁止使用 `docker prune` 或删除回滚资产。`cutover_authorized=false` 仍有效，只有维护者执行下面的人工命令才会进入短暂停止窗口。
 
-该 run 已有 `READY=prepared`，但 `cutover_allowed` 仍为 false。只有维护者确认无结算/迁移任务、备份和当前入口状态后，才可在维护窗口执行 `switch`；任何异常优先使用同一脚本的 `rollback`，不自动恢复数据库。
-
-维护者确认上述条件后，人工切换命令（仅此命令会停止/重命名旧应用并启动候选）为：
+维护者在确认无结算/迁移任务、入口配置和备份证据后，执行以下单行 `switch` 命令（这是唯一会停止并重命名旧应用、创建/启动候选的步骤）：
 
 ```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=ba0f4c1eeddcad82978028ae94f2e97b9a94cd54604c45a3bb847392dfb71064 SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-af82a6877-ba0f4c1e.sh switch /srv/subnexus-migration/cutover/20260904175519-3701605
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=8076d267ebebce97603acd6cc92ea99d3d0d7a25c3a26a9cb3b37ce57dedf0af SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-8076d267-20260905.sh switch /srv/subnexus-migration/cutover/20260905002953-3824168
 ```
 
-执行前必须由维护者实际确认没有结算、迁移或奖励任务，并核对 Nginx/入口配置；`SUBNEXUS_CUTOVER_QUIET_CONFIRM` 不是自动检查的替代品。切换失败或候选异常时，先保留证据和候选容器，再按回滚手册执行回滚命令。
+如 `switch` 已开始但候选启动/健康检查失败，保留现场后执行以下单行应用回滚命令；它不恢复数据库或 Redis 备份：
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=8076d267ebebce97603acd6cc92ea99d3d0d7a25c3a26a9cb3b37ce57dedf0af SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-8076d267-20260905.sh rollback /srv/subnexus-migration/cutover/20260905002953-3824168
+```
+
+执行后必须核对脚本输出的 `SWITCH_COMPLETED` 或 `ROLLBACK_COMPLETED`、旧容器/候选容器健康、Nginx 入口和核心用户只读流程；在验收完成前不要开启任何迁移功能。
