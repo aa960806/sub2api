@@ -207,12 +207,16 @@ function defaultConfig(): InviteActivitiesConfig {
 }
 
 function cloneConfig(config: InviteActivitiesConfig): InviteActivitiesConfig {
+  // Older/closed rollout policies may contain only switch fields, leaving
+  // array fields null. Keep the admin editor usable by filling those fields
+  // from the same defaults used for a fresh configuration.
+  const defaults = defaultConfig()
   return {
     ...config,
-    invite_lottery_prizes: config.invite_lottery_prizes.map((item) => ({ ...item })),
-    recharge_wheel_amounts: config.recharge_wheel_amounts.map((item) => ({ ...item })),
-    recharge_wheel_multipliers: config.recharge_wheel_multipliers.map((item) => ({ ...item })),
-    invite_milestone_tiers: config.invite_milestone_tiers.map((item) => ({ ...item })),
+    invite_lottery_prizes: (config.invite_lottery_prizes ?? defaults.invite_lottery_prizes).map((item) => ({ ...item })),
+    recharge_wheel_amounts: (config.recharge_wheel_amounts ?? defaults.recharge_wheel_amounts).map((item) => ({ ...item })),
+    recharge_wheel_multipliers: (config.recharge_wheel_multipliers ?? defaults.recharge_wheel_multipliers).map((item) => ({ ...item })),
+    invite_milestone_tiers: (config.invite_milestone_tiers ?? defaults.invite_milestone_tiers).map((item) => ({ ...item })),
   }
 }
 

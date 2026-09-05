@@ -180,6 +180,24 @@ func TestInviteActivitiesSwitchAndPolicyAreStrictAndIndependent(t *testing.T) {
 	require.False(t, cfg.Enabled, "malformed JSON must fail closed")
 }
 
+func TestInviteActivitiesConfigFillsOmittedPoolsWhenActivitiesAreClosed(t *testing.T) {
+	settings := inviteActivitiesEnabledSettings(`{"enabled":false,"invite_lottery_enabled":false,"recharge_wheel_enabled":false,"invite_milestone_enabled":false}`)
+	settings.values[SettingKeySubNexusInviteActivitiesEnabled] = "false"
+	cfg := NewInviteActivitiesService(nil, settings).Config(context.Background())
+	defaults := DefaultInviteActivitiesConfig()
+	require.Equal(t, defaults.InviteLotteryPrizes, cfg.InviteLotteryPrizes)
+	require.Equal(t, defaults.RechargeWheelAmounts, cfg.RechargeWheelAmounts)
+	require.Equal(t, defaults.RechargeWheelMultipliers, cfg.RechargeWheelMultipliers)
+	require.Equal(t, defaults.InviteMilestoneTiers, cfg.InviteMilestoneTiers)
+	require.False(t, cfg.Enabled)
+
+	settings.values[SettingKeySubNexusInviteActivitiesEnabled] = "true"
+	settings.values[SettingKeySubNexusInviteActivitiesConfig] = `{"invite_lottery_enabled":true}`
+	cfg = NewInviteActivitiesService(nil, settings).Config(context.Background())
+	require.False(t, cfg.Enabled, "an enabled activity without its pool must fail closed")
+	require.False(t, cfg.InviteLotteryEnabled)
+}
+
 func TestInviteLotteryClaimUsesQualifiedInviteCountAndIsIdempotent(t *testing.T) {
 	config := `{"invite_lottery_enabled":true,"invite_lottery_recharge_limit_enabled":true,"invite_lottery_recharge_threshold":10,"invite_lottery_prizes":[{"name":"fixed","amount":0.5,"probability":1}]}`
 	settings := inviteActivitiesEnabledSettings(config)

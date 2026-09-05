@@ -609,6 +609,23 @@ func (s *InviteActivitiesService) invalidateBalanceCaches(ctx context.Context, u
 }
 
 func normalizeInviteActivitiesConfig(cfg InviteActivitiesConfig) InviteActivitiesConfig {
+	// Rollout migrations may persist only switch fields while every activity is
+	// closed. Keep the admin response JSON-friendly in that state, but do not
+	// synthesize a prize pool for an explicitly enabled activity: validation
+	// must continue to fail closed for incomplete active policies.
+	defaults := DefaultInviteActivitiesConfig()
+	if !cfg.InviteLotteryEnabled && cfg.InviteLotteryPrizes == nil {
+		cfg.InviteLotteryPrizes = defaults.InviteLotteryPrizes
+	}
+	if !cfg.RechargeWheelEnabled && cfg.RechargeWheelAmounts == nil {
+		cfg.RechargeWheelAmounts = defaults.RechargeWheelAmounts
+	}
+	if !cfg.RechargeWheelEnabled && cfg.RechargeWheelMultipliers == nil {
+		cfg.RechargeWheelMultipliers = defaults.RechargeWheelMultipliers
+	}
+	if !cfg.InviteMilestoneEnabled && cfg.InviteMilestoneTiers == nil {
+		cfg.InviteMilestoneTiers = defaults.InviteMilestoneTiers
+	}
 	cfg.InviteLotteryRechargeThreshold = roundInviteMoney(cfg.InviteLotteryRechargeThreshold)
 	cfg.RechargeWheelThreshold = roundInviteMoney(cfg.RechargeWheelThreshold)
 	cfg.InviteMilestoneRechargeThreshold = roundInviteMoney(cfg.InviteMilestoneRechargeThreshold)
