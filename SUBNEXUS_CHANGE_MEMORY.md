@@ -1294,3 +1294,9 @@
 - 最终只读复核：线上应用完整 ID 前缀 `be459424b327`，`running/healthy/restart=0`，端口仍为 `127.0.0.1:18083->8080/tcp`；PostgreSQL=`8178576aed6f`、Redis=`5c7adf42247c` 均为原容器、`running/restart=0`；无候选容器；`/srv` 可用约 `19383078912` bytes。历史 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 和 `/srv/subnexus-migration/cutover/20260905002953-3824168` 继续标记 `rolled_back`，禁止复用。
 - 当前交接状态：`cutover_allowed=false`。所有迁移功能继续默认关闭。只有维护者在维护窗口确认无结算/迁移任务、核对入口配置和备份后，才可执行 `SUBNEXUS_CUTOVER_RUNBOOK.md` 中针对该 run 的单行 `switch`；异常时使用同一 run 的单行应用 `rollback`，默认不恢复 PostgreSQL/Redis。此次未把未捕获最终 stderr 的 quiet-gate 预演当作通过依据，实际 `switch` 会在停容器前重新执行完整门禁。
 - （历史状态，已被本记录后续的 `20260905020043-3862867` 新鲜 prepare 取代）当时没有有效 prepared run，禁止执行历史命令；该阶段要求安装修复脚本、重新 prepare 并完成 stopped probe。旧脚本、历史 run、备份、旧容器和旧镜像继续保留，禁止 prune、Nginx 修改和功能开启。
+
+## 2026-09-05（Asia/Shanghai）— 历史命令误重试诊断与交接文档校正
+
+- 维护者回传的终端截图再次执行了两个已终态的旧 `switch` 命令：run=`20260904175519-3701605` 使用旧脚本并重复传入 `create`，Docker 因此寻找不存在的 `create:latest`；run=`20260905002953-3824168` 使用旧脚本并因 Docker 29 的 `OomKillDisable=null/false` 合同序列化差异误报。两次均输出 `ROLLBACK_COMPLETED` 并保持 `state=rolled_back`，禁止再次执行；该截图不代表最新 run 失败。
+- 本轮仅在本地修正文档中关闭态快照与活动日志归档策略的 SHA256 录入笔误，并完成全局 64 位摘要长度检查、切换脚本语法/故障夹具检查；未执行线上 `switch`/`rollback`、Nginx 切流、数据库或 Redis 写入、功能开关变更。
+- 当前唯一可交接 run 仍为 `/srv/subnexus-migration/cutover/20260905020043-3862867`，脚本为 `/srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh`（SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`），状态 `READY=prepared`/`cutover_allowed=false`；最终 `switch` 和同 run 应急 `rollback` 只能由维护者在确认维护窗口条件后手动执行。
