@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。线上只读 preflight、历史备份结构校验、PostgreSQL/Redis 隔离恢复和候选 Docker runtime gate 已通过；两次 `switch` 都已安全自动回滚，对应 run 均不可复用。当前没有有效 `READY=prepared`，必须先安装最新修复脚本并重新无停机 `prepare`；生产替换容器、切流或功能开启仍禁止自动执行。
+本手册只适用于本地 Batch 1-5 全部完成、维护者验收、迁移分支已推送、候选 release 已固定为完整 40 位 SHA，且维护者另行明确批准发布之后。线上只读 preflight、历史备份结构校验、PostgreSQL/Redis 隔离恢复、候选 Docker runtime gate、最新无停机 `prepare` 和生产 stopped probe 均已通过。有效 run 为 `/srv/subnexus-migration/cutover/20260905020043-3862867`，生产替换容器、切流或功能开启仍禁止自动执行，只有维护者在维护窗口手动执行最终 `switch`。
 
 ## 1. 发布前硬门禁
 
@@ -152,9 +152,9 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 旧容器、旧镜像、旧源码和配置、切换前数据库/Redis 备份、Nginx 备份及服务器证据至少保留至维护者确认可以清理。禁止在验收完成前执行 `docker system prune -a`、`docker volume prune` 或删除回滚脚本。
 
-## 8. 当前发布状态（没有有效 prepared run）
+## 8. 当前发布状态（有效 prepared run，待人工切换）
 
-两个曾生成 `READY` 的 run 都已自动回滚并进入不可复用终态：
+两个历史曾生成 `READY` 的 run 都已自动回滚并进入不可复用终态：
 
 - `/srv/subnexus-migration/cutover/20260904175519-3701605`：重复 `create` 参数缺陷，`state=rolled_back`。
 - `/srv/subnexus-migration/cutover/20260905002953-3824168`：Docker 29 将等价的 `HostConfig.OomKillDisable` 从旧容器的 `null` 序列化为候选的 `false`，旧脚本误判运行时合同不同，`state=rolled_back`。
@@ -163,6 +163,27 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 修复提交 `0d083f6b7cf53c440968f9a63e8bc4002017b53f` 将 `OomKillDisable=null/false` 规范为同一安全合同，`true` 仍被拒绝；同时保留显式 `0.0.0.0` 端口 HostIP，并在候选 entrypoint 启动前先校验合同、健康后再次复核。脚本 SHA256=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`，测试 SHA256=`16fe581ecdf400ce6eb4f609b9a8cde1ee243666b9ab02f2199f3fc23e114880`。Windows Git Bash 与 WSL/Linux 发布夹具均通过。
 
-当前严禁执行任何历史 `switch` 或历史 run 的 `rollback`。下一步必须按顺序完成：推送修复提交；以唯一新文件名安装并核验新脚本；对迁移后的当前数据库重新执行无停机 `prepare` 生成新鲜备份；核验新 run 的 owner/inode/依赖/设置关闭快照与 SHA；使用永不启动的 stopped probe 在生产 Docker 上证明运行时合同等价并删除该探针。只有这些步骤全部通过后，才能在本节重新写入新的维护者单行 `switch` 和对应 `rollback` 命令。
+当前严禁执行两个历史 run 的 `switch` 或 `rollback`。最新脚本已安装并核验，新鲜备份、owner/inode/依赖/关闭态设置、全部 SHA 和生产 Docker stopped probe 均已通过；probe 已按精确 ID 删除，无候选残留。有效 run 仍为 `20260905020043-3862867`，状态为 `prepared`。只有维护者在维护窗口完成业务静默确认后，才可执行下方单行 `switch`；异常时使用同一 run 的单行 `rollback`。切换前不得修改 Nginx 或开启任何迁移功能。
+
+### 8.1 当前发布固定值
+
+- 脚本：`/srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh`
+- 脚本 SHA256：`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`
+- 有效 run：`/srv/subnexus-migration/cutover/20260905020043-3862867`
+- 候选提交：`02774d028d076e934a59f04fd1ee98598ac693a1`
+- 候选镜像：`sha256:b49b764cfc2ca58d9f054c01ef9e17211b89b8280be30534ff83b4b90490a979`
+- 候选归档 SHA256：`45306dfe47e6093d0be67d2446f7d83f7e82ef3407ef2b0f1ed8816489877786`
+- runtime gate evidence SHA256：`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`
+- stopped probe 合同 SHA256：`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`；probe 从未启动并已删除。
+
+### 8.2 维护者最终切换命令（唯一允许影响线上流量的步骤）
+
+以下命令必须由维护者在确认没有结算/迁移任务后，在服务器终端整行执行。命令会清除继承的 Docker 上下文变量，并由脚本再次校验 daemon、备份、依赖、设置和运行时合同：
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh switch /srv/subnexus-migration/cutover/20260905020043-3862867
+```
+
+切换命令执行前不会创建候选；执行后需按本手册观察健康、登录、余额、订阅、订单、用量、端口和 Nginx。所有迁移功能仍保持关闭。
 
 旧脚本、旧 run、旧容器、旧镜像及全部备份继续保留。禁止 `docker prune`、数据库恢复、手工重复迁移、Nginx 修改或功能开启。

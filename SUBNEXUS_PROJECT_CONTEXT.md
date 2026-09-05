@@ -20,11 +20,11 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已完成；第二次人工 switch 已自动回滚，运行时合同修复已本地提交，需安装新脚本并重新 prepare |
+| 迁移阶段 | Batch 0、Batch 1-5 本地验证、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已完成；运行时合同修复已安装，最新无停机 prepare 与生产 Docker stopped probe 已通过，当前仅待维护者人工 switch 和业务验收 |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 第二次候选启动约 35 秒并于 `2026-09-05 01:17:03 UTC` 应用 `9001`-`9013`；13 条 checksum 与候选 SQL 全部一致。自动回滚未恢复数据库，旧应用已在迁移后同库上恢复健康；未手工执行迁移或恢复 PostgreSQL/Redis |
-| 生产部署/切换 | run `20260904175519-3701605` 与 `20260905002953-3824168` 均已 `rolled_back` 且不可复用；当前没有有效 prepared run，禁止再次 switch |
+| 生产部署/切换 | 历史 run `20260904175519-3701605` 与 `20260905002953-3824168` 均已 `rolled_back` 且不可复用；有效 run 为 `/srv/subnexus-migration/cutover/20260905020043-3862867`，`READY=prepared`，已完成备份/身份/关闭态/合同核验，仍仅允许维护者人工 switch |
 | 生产开关 | 自动回滚已恢复旧应用切换前设置；候选下次启动前仍由 closed snapshot 强制关闭迁移功能。不要把旧应用当前既有的 Channel Monitor/客服设置状态误写为候选默认开启 |
 | 工作区 | 运行时合同修复提交 `0d083f6b7cf53c440968f9a63e8bc4002017b53f`；应用候选仍固定为 `02774d028d076e934a59f04fd1ee98598ac693a1`；生产脚本 SHA=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132`，测试 SHA=`16fe581ecdf400ce6eb4f609b9a8cde1ee243666b9ab02f2199f3fc23e114880`；业务依赖、前端 lockfile 和 VERSION 未改 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
@@ -106,4 +106,4 @@ registration_ip_cooldown_enabled
 
 1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
 2. 备份已下载并通过 20 个文件 SHA256；PostgreSQL 18.4 原始恢复库、真实克隆 migration/adoption、候选全部关闭态、旧版回归和 Redis 8.8.0 RDB 隔离加载均通过。Redis 证据位于台账记录的 root-only 路径。
-3. Docker 候选门禁仍有效，但两个曾含 `READY` 的 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 与 `/srv/subnexus-migration/cutover/20260905002953-3824168` 都已自动回滚并禁止复用。先推送并以唯一新文件名安装提交 `0d083f6b7` 的脚本，再执行一次全新的无停机 `prepare`，核验新鲜备份、迁移后数据库状态和 stopped probe 合同等价；只有新的 `READY=prepared` 完成核验后才重新生成维护者单行 `switch`/`rollback` 命令。
+3. Docker 候选门禁仍有效；历史两个 run `/srv/subnexus-migration/cutover/20260904175519-3701605` 与 `/srv/subnexus-migration/cutover/20260905002953-3824168` 均已自动回滚并禁止复用。最新脚本已以唯一文件名安装，新的无停机 `prepare`、新鲜备份、身份/关闭态核验和生产 Docker stopped probe 均通过；有效 run 为 `/srv/subnexus-migration/cutover/20260905020043-3862867`。下一步仅由维护者在维护窗口确认无结算任务后手动执行 runbook 中的 `switch`，异常时使用同一 run 的 `rollback`；切换前仍不得开启功能或修改 Nginx。

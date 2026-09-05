@@ -107,7 +107,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 - 在本地空库、目标上游完整迁移和旧项目已知迁移组合上验证 runner、alias/adoption、重复启动及对象契约。
 - 生产 `schema_migrations`、真实对象和生产备份恢复验证移到全部本地批次完成后的 Release Gate；缺少这些证据只阻止发布，不阻止 Batch 1-5 的本地实现。
 
-### Batch 1：活动基础能力（本地实现完成，待最终证据/维护者验收）
+### Batch 1：活动基础能力（本地实现与发布前证据完成，待切换后业务验收）
 
 范围：签到、活动中心基础聚合、排行榜、广播扩展。先迁移数据读取和管理配置，再迁移奖励写入与前端入口。
 
@@ -115,19 +115,19 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 门禁：关闭开关时旧上游用户请求响应和数据库写入与基线一致；开启后重复签到、重复排行刷新、重复公告发送均幂等；用量查询不得改变网关计费结果。
 
-### Batch 2：首充、邀请、学生优惠与注册保护（本地实现完成，待最终证据/维护者验收）
+### Batch 2：首充、邀请、学生优惠与注册保护（本地实现与发布前证据完成，待切换后业务验收）
 
 范围：首充礼包资格和发放、二开邀请活动奖励/注册奖励重试、学生充值优惠和注册 IP 冷却。复用目标项目 payment、affiliate、balance、subscription、Auth 服务，不复制旧支付结算实现。
 
 门禁：订单状态变化、退款/部分退款、并发回调、重复 webhook、重复邀请确认都不能重复发放；退款后的首充资格不得恢复；关闭态 terminal reservation 清理只处理后台补偿，不发奖、不写用户业务数据；奖励流水与余额变动可审计；开关关闭时不改变订单结算和 Affiliate 基础行为。
 
-### Batch 3：发票事务系统（本地实现完成，待最终证据/维护者验收）
+### Batch 3：发票事务系统（本地实现与发布前证据完成，待切换后业务验收）
 
 范围：独立发票表、用户申请/撤销/重提/历史/下载、管理员接单/释放/驳回/开票/替换/作废/重发邮件、文件存储和对账。
 
 门禁：不修改 `payment_orders` 既有语义；文件目录位于持久化 volume/bind 且权限最小化；上传服务端独立校验类型、大小和 SHA256；状态机、接单抢占、重复回调、邮件重发和下载鉴权有集成测试；`subnexus_invoice_enabled=false` 或 public 映射 `invoice_enabled=false` 时普通用户入口、写 API 和后台任务均关闭，历史数据按既定兼容策略可读。
 
-### Batch 4：Battle Pass、Channel Monitor V3 与站点体验（本地实现完成，待最终证据/维护者验收）
+### Batch 4：Battle Pass、Channel Monitor V3 与站点体验（本地实现与发布前证据完成，待切换后业务验收）
 
 范围：独立赛季、任务、进度、奖励和活动中心联动；Channel Monitor V3 展示/时间线与安全模式归一化；默认语言和客服按钮/Markdown 弹窗的双键兼容。旧项目记录显示 `254_battle_pass.sql` 曾在本地验证，线上是否执行必须以真实数据库查询为准。
 
@@ -331,6 +331,6 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
 3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；旧线上 `prepare` 证据仅作历史记录，不能替代新 run。
-4. 维护者人工复核发布清单后，服务器安装经过独立 SHA 校验的脚本并执行无停机 `prepare`；当前 run `/srv/subnexus-migration/cutover/20260905002953-3824168` 已生成并核验 `READY=prepared`，可进入人工 `switch` 前置检查。磁盘不足时必须扩容/挂载独立持久化空间或经批准转移无引用临时资产，不得降低 8 GiB 余量或复用旧时间点备份。
+4. 维护者人工复核发布清单后，服务器安装经过独立 SHA 校验的脚本并执行无停机 `prepare`；当前有效 run `/srv/subnexus-migration/cutover/20260905020043-3862867` 已生成并核验 `READY=prepared`，备份/身份/关闭态设置及生产 stopped probe 均通过，可进入人工 `switch` 前置检查。磁盘不足时必须扩容/挂载独立持久化空间或经批准转移无引用临时资产，不得降低 8 GiB 余量或复用旧时间点备份。
 
-线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，Redis 8.8.0 RDB 已在服务器无网络/无端口隔离候选中实际加载验证，真实克隆的 migration/adoption、候选关闭态启动、旧版 0.1.135 同库回归和 Docker runtime gate 均已通过。旧线上 `prepare` run `/srv/subnexus-migration/cutover/20260904175519-3701605` 曾生成 `READY`，但其后 switch 因重复 `create` 参数自动回滚，不能复用；修复脚本 SHA=`8076d267ebebce97603acd6cc92ea99d3d0d7a25c3a26a9cb3b37ce57dedf0af` 已安装。新的有效 `prepare` run `/srv/subnexus-migration/cutover/20260905002953-3824168` 已生成并核验 `READY=prepared`，备份/manifest/owner/依赖和关闭态设置均通过。当前批准脚本固定在线归档策略：仅排除 `./logs/*.log`，保留压缩历史日志和其他数据，并把策略及 SHA 写入 manifest；非日志归档错误仍失败关闭。应用数据目录当前为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复已审核 owner 合同。下一步仅为维护者在维护窗口核对无结算任务、入口配置和备份证据后手动 `switch`；未切换验收前不得执行生产迁移、打开开关、切流或替换线上版本。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；生产 PostgreSQL custom dump 已由 PostgreSQL 18.4 完整恢复到本机隔离库，Redis 8.8.0 RDB 已在服务器无网络/无端口隔离候选中实际加载验证，真实克隆的 migration/adoption、候选关闭态启动、旧版 0.1.135 同库回归和 Docker runtime gate 均已通过。两个旧线上 `prepare` run `/srv/subnexus-migration/cutover/20260904175519-3701605` 与 `/srv/subnexus-migration/cutover/20260905002953-3824168` 均已因历史缺陷自动回滚，不能复用；当前脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-5291c604-20260905.sh` 的 SHA=`5291c6041305fa77902a113e2ef181615920bd37cbbd80e46e9fe095d0c21132` 已安装并独立核验。新的有效 `prepare` run `/srv/subnexus-migration/cutover/20260905020043-3862867` 已生成并核验 `READY=prepared`，新鲜备份/manifest/owner/依赖/关闭态设置及 stopped probe 合同均通过。当前批准脚本固定在线归档策略：仅排除 `./logs/*.log`，保留压缩历史日志和其他数据，并把策略及 SHA 写入 manifest；非日志归档错误仍失败关闭。应用数据目录当前为 `1000:1000`/`0755`，prepare/switch/rollback 必须显式重复已审核 owner 合同。下一步仅为维护者在维护窗口核对无结算任务、入口配置和备份证据后手动 `switch`；未切换验收前不得执行生产迁移、打开开关、切流或替换线上版本。
