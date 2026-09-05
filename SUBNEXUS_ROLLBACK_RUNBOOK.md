@@ -1,6 +1,8 @@
 # SubNexus 回滚手册
 
-回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络和 release SHA；不得使用历史文档中的硬编码值代替实时 inspect。对于本次 `subnexus-production-cutover.sh` 生成的 prepared run，优先使用该 run 对应的脚本 `rollback RUN_DIRECTORY`，不要用手工 `docker stop/start` 绕过 manifest、owner 和依赖身份校验。
+> 当前权威状态：2026-09-06（Asia/Shanghai）。UI run `20260905163754-200276` 已 `READY=prepared`，尚未切换；stopped probe、备份、Gate 和最终只读复核通过。首次因后续设置哈希漂移失效，第二次备份前空间不足停止，均不得用于回滚交接。第 6 节固定旧回滚对象不变。
+
+回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只能使用完成最终核验的 UI 包装器及其绑定 run，不得单独执行旧控制器的历史 rollback 命令，也不得用手工 `docker stop/start` 绕过 manifest、owner、固定旧回滚对象和依赖身份校验。
 
 本次线上应用数据目录的已审核 owner 是 `1000:1000`、叶目录 mode `0755`。执行 `prepare`、`switch` 或 `rollback` 时，只有在实时 `stat` 与 prepared manifest 一致的前提下，才同时传入以下三项环境变量；不得通过 `chown` 来“修复”不一致：
 
@@ -18,30 +20,23 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 ## 2. 应用异常：快速回滚
 
-适用于隔离演练已证明旧版本兼容新增表/可选字段的情况：
+适用于隔离演练已证明旧版本兼容新增表/可选字段的情况。旧 `/root/...` 占位脚本示例已撤回，本轮只接受切换手册第 12 节在最终就绪后生成的包装器单行命令；该命令必须恢复既有旧 SubNexus，不能把当前 v0.2.1 容器新建为永久回滚对象。
 
-```bash
-SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /root/subnexus-production-cutover-<approved-sha>-<script-sha>.sh rollback <RUN_DIRECTORY>
-```
-
-先用 `docker ps`/`docker inspect` 和 `nginx -t` 做只读确认；上面的脚本会按 manifest 精确停止候选、恢复旧容器和设置。切流恢复仍需由维护者根据实际 Nginx 配置手动执行，再访问健康接口：
+先用 `docker ps`/`docker inspect` 做只读确认，再由维护者执行本轮已发布的包装器命令。本轮使用既有入口，不修改或 reload Nginx；回滚后再访问健康接口：
 
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 docker inspect <旧容器名> <候选容器名> --format '{{.Name}} {{.Config.Image}} {{.State.Running}}'
-nginx -t && nginx -s reload
 curl -fsS --max-time 8 https://<公网健康域名>/health
 ```
 
-如果 Nginx 已切到候选端口，先恢复切换前配置副本再 reload。快速回滚不恢复数据库，因新增隔离表/可选字段应被旧版本忽略；切回后必须验证登录、API Key、余额、订阅、订单、支付回调、用量和健康检查。
+快速回滚不恢复数据库，因新增隔离表/可选字段应被旧版本忽略；切回后必须验证登录、API Key、余额、订阅、订单、支付回调、用量和健康检查。任何 Nginx 配置修复属于单独授权的操作，不能从本轮 UI 命令推导出来。
 
-历史 run（包括最新第四次失败 run）均已自动回滚或进入失败终态，包含 `ROLLED_BACK`/`state=rolled_back` 证据，不可再次执行 `switch` 或 `rollback`。第四次失败根因为 Docker 模板尾部换行在 `Config.Cmd` 捕获中变成额外空参数，导致候选 runtime contract 与 prepared live 容器不一致；新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已完成 `READY=prepared`，stopped probe 验收通过，当前停在人工切换前。
-
-自动回滚只恢复应用容器和切换前设置，没有恢复 PostgreSQL/Redis 备份；旧应用仍 healthy/restart=0，PG/Redis 身份未变。新脚本 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，新 run runtime hash=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`，stopped probe evidence SHA=`87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`。当前回滚仅适用于新 run 在 switch 后确需恢复应用的情况，默认不恢复 PostgreSQL/Redis。
+历史失败 run 的 `ROLLED_BACK`/失败证据保留审计，不得再次 switch/rollback；历史成功 run 也不能直接用作本轮 UI 入口。此前 `20260905055413-3958448` 的 prepare/probe 和切换记录已被后续发布覆盖；v0.2.1 run `20260905114022-4163123` 实际已 switched。旧自动回滚未恢复 PostgreSQL/Redis，当前状态只取信于本轮最终实时检查。
 
 ### 历史回滚命令已撤回
 
-旧脚本、旧 SHA 和历史失败 run 仅作审计事实保留，不得重试或复用。当前新 run 的单行应用回滚命令已记录在 `SUBNEXUS_CUTOVER_RUNBOOK.md` 第 10 节，绑定脚本 `19824a87` 与 run `20260905055413-3958448`；最终 `rollback` 仍由维护者手动执行，默认不恢复 PostgreSQL/Redis。
+旧脚本、旧 SHA 和历史 run 仅作审计事实保留，不得直接重试或复用。切换手册第 10/11 节的旧命令正文已撤回；本轮 rollback 只使用切换手册第 12 节绑定最终 run 的单行命令，由维护者手动执行，默认不恢复 PostgreSQL/Redis。
 
 ## 3. 应用无法启动
 
@@ -64,3 +59,12 @@ docker inspect <候选容器名> --format '{{json .NetworkSettings.Networks}}'
 ## 5. 记录与复盘
 
 每次回滚追加 `SUBNEXUS_CHANGE_MEMORY.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`：写明触发条件、开关、候选/旧版本 SHA、是否恢复数据库、备份校验和、验证结果和下一步。旧版本和备份在维护者确认前长期保留。
+
+## 6. 本轮 UI 固定回滚对象（2026-09-06 Asia/Shanghai，READY=prepared）
+
+- UI candidate commit=`b1ed483ea5fc648cb3c15fcf2e7040e68a151a41`，image=`sha256:32f14750ce73da00dc4c5146b1d9ad6c4420ee2c3dffe098798e41a123c6bd2c`；本轮 run=`/srv/subnexus-migration/cutover/20260905163754-200276` 已 `READY=prepared`，manifest `state=prepared/ui_state=prepared`。
+- UI 包装器 commit=`33d43615c6e17e3f2ae5429f986ad636e971b8cb`；路径 `/srv/subnexus-migration/tools/subnexus-ui-cutover-eef1d8f-20260905.sh`，SHA256=`eef1dfa31c71cfe33096d107561c594e0b509455b65db0caec824196d1cec77d`。原控制器 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh`，SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`；二者独立校验。
+- 旧 SubNexus 完整容器 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；旧 image ID 前缀 `b24b585`；anchor run=`/srv/subnexus-migration/cutover/20260905085804-4072165`。锚定 run 供包装器读取身份合同，不是让维护者重新执行旧控制器命令的入口。
+- 当前线上 v0.2.1 容器 ID 前缀 `9753053d8bd9` 不替代上述旧 SubNexus；本轮不创建新的永久回滚对象。不得删除该旧容器、镜像、anchor manifest 或其备份/证据。
+- 新 prepare 的备份/manifest、固定旧对象合同、stopped probe 和最终只读复核均已通过；尚未执行 switch/rollback，不恢复数据库或修改 Nginx。人工命令只见切换手册第 12 节，且必须绑定同一 run。
+- 首次 UI run `20260905160223-175225` 因 prepare 后全量 settings 哈希漂移而失效，probe 在 create 前停止且无 candidate；具体改键与来源未确定。其三个大备份及 sidecar 已校验/记录后删除，manifest/settings/metadata 和 `INVALIDATED_SETTINGS_DRIFT` 保留，禁止复用。第二次 `20260905163008-194872` 在备份前被空间门禁拒绝，同样不能作为回滚入口；固定旧 `be459...` 对象与 anchor 证据未因此删除。

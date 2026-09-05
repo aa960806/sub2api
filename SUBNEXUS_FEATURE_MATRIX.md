@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移矩阵
 
-> 最后更新：2026-09-05。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已成功切换，切换后新容器健康运行，旧容器保留供 rollback。候选关闭态快照已验证，额外二开功能仍保持关闭。
+> 最后更新：2026-09-06。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。首页 Rain + Glass UI 的最终 run `/srv/subnexus-migration/cutover/20260905163754-200276` 已 `READY=prepared`，stopped probe 和最终只读复核通过，尚未 switch。最终人工命令见切换手册第 12 节，额外二开功能仍保持关闭。
 > 本表是逐模块迁移的唯一状态入口。路径是调查线索，不代表目标代码可以直接复制；“待证据”不等于可上线。
 
 ## 保留功能
