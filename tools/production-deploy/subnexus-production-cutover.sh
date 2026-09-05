@@ -1517,6 +1517,12 @@ if contract["HostConfig"].get("PidsLimit") is None:
     # Docker API serializes an unset pointer as null while the CLI resource
     # metadata uses the controller canonical zero (unlimited) value.
     contract["HostConfig"]["PidsLimit"] = 0
+# Older Docker-created containers can retain a null OomKillDisable pointer,
+# while Docker 29 serializes the same enabled-default behavior as false when
+# recreating the container. Keep true distinct so an unsafe value cannot be
+# hidden by normalization.
+if contract["HostConfig"].get("OomKillDisable") is None:
+    contract["HostConfig"]["OomKillDisable"] = False
 for key in ("CapAdd", "CapDrop"):
     value = contract["HostConfig"].get(key)
     if isinstance(value, list):
@@ -3662,7 +3668,7 @@ create_candidate_container() {
   (( entrypoint_count == 1 )) && args+=(--entrypoint "${captured_entrypoint[0]}")
   for line in "${captured_ports[@]}"; do
     IFS='|' read -r container_port host_ip host_port <<< "$line"
-    if [[ -z "$host_ip" || "$host_ip" == 0.0.0.0 ]]; then args+=(-p "$host_port:$container_port")
+    if [[ -z "$host_ip" ]]; then args+=(-p "$host_port:$container_port")
     else args+=(-p "$host_ip:$host_port:$container_port"); fi
   done
   while IFS='|' read -r type source name destination mode writable propagation; do
@@ -4094,6 +4100,9 @@ switch_run() {
   assert_daemon_still_matches_prepare
   manifest_set candidate_container_id "$candidate_id"
   assert_candidate_container_identity "$candidate_id"
+  # Prove Docker reproduced the prepared runtime metadata before executing
+  # any candidate process (including an image entrypoint migration).
+  assert_candidate_runtime_contract
   docker_rpc start "$candidate_id" >/dev/null || fail 'candidate application failed to start'
   assert_daemon_still_matches_prepare
   wait_for_candidate_health || fail 'candidate did not become healthy within the bounded window'

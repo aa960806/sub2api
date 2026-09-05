@@ -131,6 +131,8 @@ assert_contains 'contract_bind_mounts = []'
 assert_contains 'contract["HostConfig"]["Binds"] = contract_bind_mounts'
 assert_contains 'console_size = host.get("ConsoleSize")'
 assert_contains 'contract["HostConfig"]["ConsoleSize"] = [0, 0]'
+assert_contains 'if contract["HostConfig"].get("OomKillDisable") is None:'
+assert_contains 'contract["HostConfig"]["OomKillDisable"] = False'
 assert_contains 'allowed_log_options = {"max-file", "max-size"}'
 assert_contains 'HostConfig.LogConfig.Config.required'
 assert_contains 'log_config_sha256=%s'
@@ -317,6 +319,7 @@ assert_before_text "$switch_source" 'assert_runtime_still_matches_prepare' 'dock
 assert_before_text "$switch_source" 'docker_rpc stop --time' 'docker_rpc rename "$app_id" "$preserved_name"'
 assert_before_text "$switch_source" 'docker_rpc rename "$app_id" "$preserved_name"' 'close_rollout_gates'
 assert_before_text "$switch_source" 'create_candidate_container' 'docker_rpc start "$candidate_id"'
+assert_before_text "$switch_source" 'assert_candidate_runtime_contract' 'docker_rpc start "$candidate_id"'
 assert_before_text "$switch_source" 'docker_rpc start "$candidate_id"' 'validate_candidate_runtime'
 assert_not_contains '"sha256:$candidate_id"'
 assert_contains 'args=(--name "$candidate_name"'
@@ -349,7 +352,11 @@ create_candidate_source="$(awk '
   expected_image_id="$(printf 'b%.0s' {1..64})"
   expected_candidate_id="$(printf 'd%.0s' {1..64})"
   app_networks=('sub2api-net')
-  captured_ports=()
+  captured_ports=(
+    '8080/tcp|0.0.0.0|18083'
+    '9090/tcp||19090'
+    '7070/tcp|127.0.0.1|17070'
+  )
   captured_entrypoint=()
   candidate_id=''
   candidate_restart_arg() { printf 'unless-stopped\n'; }
@@ -385,6 +392,14 @@ create_candidate_source="$(awk '
     done
     [[ "$image_token" == "sha256:$expected_image_id" ]] ||
       fail "candidate image token mismatch: $image_token"
+    local args_text
+    args_text="$(printf '%s\n' "$@")"
+    [[ "$args_text" == *$'0.0.0.0:18083:8080/tcp\n'* ]] ||
+      fail 'explicit 0.0.0.0 port binding was not preserved'
+    [[ "$args_text" == *$'19090:9090/tcp\n'* ]] ||
+      fail 'empty HostIP port binding was not reproduced'
+    [[ "$args_text" == *$'127.0.0.1:17070:7070/tcp\n'* ]] ||
+      fail 'loopback port binding was not preserved'
     printf '%s\n' "$expected_candidate_id"
   }
   create_candidate_container
@@ -1054,6 +1069,26 @@ JSON
     canonical_runtime_hash="$(capture_runtime_contract_hash fixture)"
     [[ "$last_wins_runtime_hash" == "$canonical_runtime_hash" ]] ||
       fail 'last-wins runtime hash differs from the canonical candidate hash'
+
+    # Docker 29 serializes an unset OomKillDisable pointer as false on a new
+    # container. Both values mean the OOM killer remains enabled and must have
+    # one stable contract hash; true must remain observably different.
+    cat >"$runtime_json" <<'JSON'
+{"Id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Name":"/fixture","Config":{"Env":["A=1"],"Tty":false},"HostConfig":{"OomKillDisable":null,"SecurityOpt":[],"LogConfig":{"Type":"json-file","Config":{}}},"Mounts":[],"NetworkSettings":{"Networks":{}}}
+JSON
+    unset_oom_runtime_hash="$(capture_runtime_contract_hash fixture)"
+    cat >"$runtime_json" <<'JSON'
+{"Id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Name":"/fixture","Config":{"Env":["A=1"],"Tty":false},"HostConfig":{"OomKillDisable":false,"SecurityOpt":[],"LogConfig":{"Type":"json-file","Config":{}}},"Mounts":[],"NetworkSettings":{"Networks":{}}}
+JSON
+    false_oom_runtime_hash="$(capture_runtime_contract_hash fixture)"
+    [[ "$unset_oom_runtime_hash" == "$false_oom_runtime_hash" ]] ||
+      fail 'unset and false OomKillDisable values produced different runtime hashes'
+    cat >"$runtime_json" <<'JSON'
+{"Id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Name":"/fixture","Config":{"Env":["A=1"],"Tty":false},"HostConfig":{"OomKillDisable":true,"SecurityOpt":[],"LogConfig":{"Type":"json-file","Config":{}}},"Mounts":[],"NetworkSettings":{"Networks":{}}}
+JSON
+    true_oom_runtime_hash="$(capture_runtime_contract_hash fixture)"
+    [[ "$true_oom_runtime_hash" != "$false_oom_runtime_hash" ]] ||
+      fail 'true OomKillDisable value was hidden by runtime normalization'
   )
 else
   printf 'subnexus duplicate environment fixtures skipped (requires usable python3)\n'
@@ -1227,6 +1262,31 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&
 JSON
     app_id='fixture-app'
     docker_rpc() { [[ "$1" == inspect ]] || return 98; cat "$fixture_json"; }
+    validate_runtime_contract_supported
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["HostConfig"]["OomKillDisable"] = True
+path.write_text(json.dumps(data))
+PY
+    if (
+      fail() { return 77; }
+      validate_runtime_contract_supported >/dev/null 2>&1
+    ); then
+      fail 'OomKillDisable=true was accepted'
+    fi
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["HostConfig"]["OomKillDisable"] = False
+path.write_text(json.dumps(data))
+PY
     validate_runtime_contract_supported
     FIXTURE_JSON="$fixture_json" python3 - <<'PY'
 import json
