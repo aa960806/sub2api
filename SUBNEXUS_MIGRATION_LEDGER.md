@@ -57,7 +57,8 @@
 | 第二次人工 switch | 已自动回滚，禁止复用 | 候选成功创建、启动并健康，随后运行时合同哈希误报；自动回滚恢复旧应用和切换前设置，未恢复 PostgreSQL/Redis。旧应用 healthy/restart=0，PostgreSQL/Redis 原 ID running/restart=0，失败候选与临时旧名称无残留 |
 | 运行时合同修复 | 本地通过，待安装 | 提交 `0d083f6b7` 将旧容器 `OomKillDisable=null` 与 Docker 29 候选 `false` 归一为同一安全语义，保留 `true` 拒绝；显式保留 `0.0.0.0` 端口 HostIP；候选合同在 entrypoint 启动前先校验并在健康后复核。Windows/WSL 发布夹具通过 |
 | 当前交接 | 网络修复已推送，待维护者手动安装并重新 prepare | run `/srv/subnexus-migration/cutover/20260905020043-3862867` 已因候选网络身份误报自动回滚，所有历史 run 禁止复用。必须由维护者在服务器终端以唯一新文件名安装新脚本并重新执行无停机 `prepare`；新 `READY=prepared` 之前 `cutover_allowed=false`，不得执行 `switch` |
-| 当前容量 | 全新 prepare 前须解决 | 2026-09-05 12:52 Asia/Shanghai 只读复核可用 `19225067520` bytes，现有脚本最低预算约 `23712679936` bytes，至少缺约 4.5 GB。维护者手动安装脚本后须先解决空间缺口；不降低 8 GiB 保留、不复用备份、不按 Docker reclaimable 数值直接删除资产 |
+| 当前容量 | 已解决，prepare 后仍满足余量 | 2026-09-05 清理逐个确认无标签且无容器引用的 dangling 构建中间层后，可用空间约 `40937291776` bytes；prepare 最低预算约 `23712679936` bytes。11 个共享层保留，未使用 prune/force，未降低 8 GiB 保留 |
+| 当前交接 run | `READY=prepared`，待维护者人工 switch | `/srv/subnexus-migration/cutover/20260905051505-3937987`；新脚本 SHA=`bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01`；全新备份/设置/网络/runtime/owner 合同核验通过；switch 未执行，历史 run 不可复用 |
 
 ## 实施批次
 

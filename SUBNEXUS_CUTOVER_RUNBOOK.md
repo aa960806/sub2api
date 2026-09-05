@@ -212,9 +212,9 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 ## 10. 当前人工交接（2026-09-05 12:52 Asia/Shanghai）
 
-修复和文档提交已推送。当前脚本的 WSL/Linux 语法及完整 production cutover 静态/故障夹具通过。只读 SSH 确认旧应用 ID=`be459424b327...`、healthy/restart=0，PG=`8178576aed6f...`、Redis=`5c7adf42247c...` 身份未变；本地健康接口返回 `{"status":"ok"}`。三个历史 run 均明确为 `state=rolled_back`，服务器尚无本次新脚本。
+修复和文档提交已推送。当前脚本的 WSL/Linux 语法及完整 production cutover 静态/故障夹具通过。服务器现已安装新脚本；只读 SSH 确认旧应用 ID=`be459424b327...`、healthy/restart=0，PG=`8178576aed6f...`、Redis=`5c7adf42247c...` 身份未变；本地健康接口返回 `{"status":"ok"}`。三个历史 run 均明确为 `state=rolled_back`。
 
-当前 `/srv` 可用 `19225067520` bytes，完整 prepare 最低预算约 `23712679936` bytes，至少缺约 4.5 GB；实际预算还会按实时数据大小重新计算。不得现在运行 prepare、降低 8 GiB 最低保留或使用全局 prune。脚本安装完成后，须先由维护者解决空间缺口。Docker 报告的 reclaimable 数值不代表已批准删除，旧镜像、容器和备份仍须保留。
+磁盘清理只删除了逐个确认无标签、无容器引用的 dangling 构建中间层，没有使用 prune/force，也没有删除线上或候选资产；11 个共享层保留。当前 `/srv` 可用约 `40937291776` bytes，完整 prepare 最低预算约 `23712679936` bytes。
 
 第一条人工命令只下载固定提交中的脚本、核对 SHA/语法，并以 root:root/0700 安装到新文件名；不执行部署脚本。目标已存在时安全停止，不覆盖旧文件。以下一整行在服务器终端执行：
 
@@ -222,4 +222,14 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 sudo -n /bin/bash --noprofile --norc -c 'set -Eeuo pipefail; umask 077; export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; d=/srv/subnexus-migration/tools; dst="$d/subnexus-production-cutover-bffd1987-20260905.sh"; test "$(realpath -e "$d")" = "$d"; for p in / /srv /srv/subnexus-migration "$d"; do test ! -L "$p"; test "$(stat -c %u "$p")" = 0; m="$(stat -c %a "$p")"; (( (8#$m & 0022) == 0 )); done; test ! -e "$dst"; test ! -L "$dst"; tmp="$(mktemp "$d/.cutover-bffd1987.XXXXXX")"; trap "rm -f -- \"$tmp\"" EXIT; curl --proto "=https" --tlsv1.2 --fail --silent --show-error --location --max-time 60 https://raw.githubusercontent.com/aa960806/sub2api/ca2139d1e70877fba8a41e1410e4d7d29b4ef9c0/tools/production-deploy/subnexus-production-cutover.sh -o "$tmp"; printf "%s  %s\n" bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01 "$tmp" | sha256sum -c -; /bin/bash -n "$tmp"; chmod 700 "$tmp"; ln -- "$tmp" "$dst"; stat -c "%U:%G %a %n" "$dst"; printf "SCRIPT_INSTALLED_NOT_EXECUTED\n"'
 ```
 
-收到 `SCRIPT_INSTALLED_NOT_EXECUTED` 后，代理只读复核实际安装副本。此命令不等于 prepare 已通过，不授权切换；下一条命令须根据维护者回传结果和磁盘处理情况另行生成。
+当前新 run=`/srv/subnexus-migration/cutover/20260905051505-3937987` 已 `READY=prepared`，所有备份/设置/依赖/网络/runtime/owner 合同已复核；第一次重试因 120 秒 dump 超时的 run=`20260905050927-3934297` 仅作失败审计。下面的 switch/rollback 仍必须由维护者在维护窗口手动执行，且 switch 前须确认没有结算或迁移任务。
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-bffd1987-20260905.sh switch /srv/subnexus-migration/cutover/20260905051505-3937987
+```
+
+异常时使用同一 run 的应用回滚命令：
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=bffd1987303d3f247a6df2c70cb90a8576a7530864863154f7dcd4d247892b01 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-bffd1987-20260905.sh rollback /srv/subnexus-migration/cutover/20260905051505-3937987
+```
