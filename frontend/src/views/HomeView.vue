@@ -93,26 +93,15 @@
   <!-- Default Home Page -->
   <div
     v-else
-    class="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
+    class="rain-home relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
   >
-    <!-- Background Decorations -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <div
-        class="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary-400/20 blur-3xl"
-      ></div>
-      <div
-        class="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-primary-500/15 blur-3xl"
-      ></div>
-      <div
-        class="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-primary-300/10 blur-3xl"
-      ></div>
-      <div
-        class="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary-400/10 blur-3xl"
-      ></div>
-      <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
-      ></div>
+    <!-- Rainy glass atmosphere; this layer never participates in interaction. -->
+    <div class="rain-home__backdrop" aria-hidden="true">
+      <div class="rain-home__rain"></div>
+      <div class="rain-home__droplets"></div>
     </div>
+
+    <div class="rain-home__frame">
 
     <!-- Header -->
     <header class="relative z-20 px-6 py-4">
@@ -125,9 +114,9 @@
         </div>
 
         <!-- Nav Actions -->
-        <div class="flex items-center gap-3">
+        <div class="rain-home__nav-actions flex items-center gap-3">
           <!-- Language Switcher -->
-          <LocaleSwitcher />
+          <LocaleSwitcher class="rain-home__locale" />
 
           <!-- Doc Link -->
           <a
@@ -205,7 +194,7 @@
         <!-- Hero Section - Left/Right Layout -->
         <div class="mb-12 flex flex-col items-center justify-between gap-12 lg:flex-row lg:gap-16">
           <!-- Left: Text Content -->
-          <div class="flex-1 text-center lg:text-left">
+          <div class="min-w-0 max-w-full flex-1 text-center lg:text-left">
             <h1
               class="mb-4 text-4xl font-bold text-gray-900 dark:text-white md:text-5xl lg:text-6xl"
             >
@@ -228,7 +217,7 @@
           </div>
 
           <!-- Right: Terminal Animation -->
-          <div class="flex flex-1 justify-center lg:justify-end">
+          <div class="rain-home__terminal flex flex-1 justify-center lg:justify-end">
             <div class="terminal-container">
               <div class="terminal-window">
                 <!-- Window header -->
@@ -268,7 +257,7 @@
         <!-- Feature Tags - Centered -->
         <div class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6">
           <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
+            class="rain-home__tag inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
           >
             <Icon name="swap" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -276,7 +265,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
+            class="rain-home__tag inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
           >
             <Icon name="shield" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -284,7 +273,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
+            class="rain-home__tag inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
           >
             <Icon name="chart" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -384,7 +373,7 @@
         <div class="mb-16 flex flex-wrap items-center justify-center gap-4">
           <!-- Claude - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="rain-home__provider flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
               class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 to-orange-500"
@@ -399,7 +388,7 @@
           </div>
           <!-- GPT - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="rain-home__provider flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
               class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600"
@@ -414,7 +403,7 @@
           </div>
           <!-- Gemini - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="rain-home__provider flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
               class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600"
@@ -429,7 +418,7 @@
           </div>
           <!-- Antigravity - Supported -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
+            class="rain-home__provider flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
               class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-600"
@@ -444,7 +433,7 @@
           </div>
           <!-- More - Coming Soon -->
           <div
-            class="flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
+            class="rain-home__provider flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
           >
             <div
               class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-gray-500 to-gray-600"
@@ -490,6 +479,7 @@
         </div>
       </div>
     </footer>
+    </div>
   </div>
 </template>
 
@@ -740,5 +730,432 @@ onMounted(() => {
     0 0 0 1px rgba(20, 184, 166, 0.2),
     0 0 40px rgba(20, 184, 166, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Rain and glass treatment is scoped to the default home branch. */
+.rain-home {
+  --rain-nav-text: #dce9f3;
+  --rain-nav-surface: #112436;
+  --rain-nav-hover: rgba(183, 235, 255, 0.12);
+  isolation: isolate;
+  background: #07121c !important;
+  color: #f3f8fc;
+}
+
+.rain-home__frame {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: min(1720px, 100%);
+  min-height: 100svh;
+  margin: 0 auto;
+  overflow: hidden;
+  background-color: rgba(4, 8, 19, 0.3);
+  background-image: repeating-linear-gradient(
+    104deg,
+    transparent 0,
+    transparent 25px,
+    rgba(193, 231, 247, 0.11) 26px,
+    transparent 27px,
+    transparent 62px
+  );
+  background-size: 148px 240px;
+  animation: rain-home-fall 1.8s linear infinite;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 24px 70px -12px rgba(1, 4, 12, 0.62);
+  backdrop-filter: blur(14px) saturate(135%);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+}
+
+.rain-home__frame::before,
+.rain-home__frame::after {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  content: '';
+}
+
+.rain-home__frame::before {
+  top: 0;
+  right: 6%;
+  left: 6%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.62), transparent);
+}
+
+.rain-home__frame::after {
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.rain-home__backdrop,
+.rain-home__backdrop::before,
+.rain-home__backdrop::after,
+.rain-home__rain,
+.rain-home__droplets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.rain-home__backdrop {
+  z-index: 0;
+  overflow: hidden;
+  background: #07121c;
+}
+
+.rain-home__backdrop::before {
+  content: '';
+  background:
+    linear-gradient(180deg, rgba(3, 10, 18, 0.3), rgba(3, 10, 18, 0.78)),
+    url('/rain-city-1.jpg') center / cover;
+  filter: blur(2px) brightness(0.62) saturate(0.84);
+  transform: scale(1.04);
+}
+
+.rain-home__backdrop::after {
+  content: '';
+  background: radial-gradient(circle at center, transparent 35%, rgba(1, 6, 12, 0.58) 100%);
+}
+
+.rain-home__rain {
+  z-index: 1;
+  opacity: 0.72;
+  background-image: repeating-linear-gradient(
+    104deg,
+    transparent 0,
+    transparent 17px,
+    rgba(193, 231, 247, 0.2) 18px,
+    transparent 19px,
+    transparent 43px
+  );
+  background-size: 118px 190px;
+  animation: rain-home-fall 1.4s linear infinite;
+  transform: translate3d(-24px, -90px, 0);
+}
+
+.rain-home__droplets {
+  z-index: 2;
+  opacity: 0.44;
+  background-image:
+    radial-gradient(ellipse at 18% 24%, rgba(255, 255, 255, 0.3) 0 1px, transparent 2px),
+    radial-gradient(ellipse at 73% 68%, rgba(208, 243, 255, 0.26) 0 1px, transparent 2px),
+    radial-gradient(ellipse at 46% 82%, rgba(255, 255, 255, 0.22) 0 2px, transparent 3px);
+  background-size: 160px 210px, 230px 300px, 310px 390px;
+  animation: rain-home-shimmer 7s ease-in-out infinite alternate;
+}
+
+.rain-home header {
+  border-bottom: 1px solid rgba(220, 243, 255, 0.14);
+  background: rgba(5, 15, 25, 0.38);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+}
+
+.rain-home header nav,
+.rain-home main > div,
+.rain-home footer > div {
+  max-width: 1120px;
+}
+
+.rain-home header nav,
+.rain-home__nav-actions {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.rain-home__nav-actions {
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.rain-home header,
+.rain-home main,
+.rain-home footer {
+  position: relative;
+  z-index: 2;
+}
+
+.rain-home header {
+  z-index: 3;
+}
+
+.rain-home__locale :deep(button) {
+  color: var(--rain-nav-text);
+}
+
+.rain-home__locale :deep(.absolute) {
+  background: var(--rain-nav-surface);
+  border-color: rgba(122, 159, 180, 0.35);
+}
+
+.rain-home__locale :deep(button:hover) {
+  background: var(--rain-nav-hover);
+}
+
+.rain-home header img {
+  border: 1px solid rgba(190, 237, 255, 0.28);
+  background: rgba(5, 18, 30, 0.62);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26), inset 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.rain-home header a,
+.rain-home header button {
+  color: rgba(235, 247, 255, 0.7);
+}
+
+.rain-home header a:hover,
+.rain-home header button:hover {
+  color: #d9fbff;
+  background: rgba(183, 235, 255, 0.12);
+}
+
+.rain-home main {
+  padding-top: clamp(3.5rem, 9vw, 7.5rem);
+}
+
+.rain-home h1,
+.rain-home h2,
+.rain-home h3 {
+  color: #f5fbff !important;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.34);
+}
+
+.rain-home h1,
+.rain-home main p {
+  overflow-wrap: anywhere;
+}
+
+.rain-home main p,
+.rain-home footer p,
+.rain-home footer a {
+  color: rgba(220, 235, 245, 0.7) !important;
+}
+
+.rain-home .btn-primary {
+  background: linear-gradient(135deg, #55e6f1, #0fb8d2) !important;
+  color: #06202a !important;
+  border: 1px solid rgba(187, 250, 255, 0.75);
+  box-shadow: 0 14px 34px rgba(24, 208, 232, 0.24), inset 0 1px rgba(255, 255, 255, 0.64);
+}
+
+.rain-home .btn-primary:hover {
+  background: linear-gradient(135deg, #88f0f7, #20c8df) !important;
+  box-shadow: 0 18px 42px rgba(24, 208, 232, 0.34), inset 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.rain-home .terminal-window,
+.rain-home .group,
+.rain-home__tag,
+.rain-home__provider {
+  border: 1px solid rgba(202, 239, 255, 0.18);
+  background: linear-gradient(145deg, rgba(21, 38, 57, 0.7), rgba(5, 16, 28, 0.56)) !important;
+  box-shadow: 0 22px 52px rgba(0, 4, 12, 0.28), inset 0 1px rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+.rain-home__tag > span,
+.rain-home__provider > span:first-of-type {
+  color: #dcebf4;
+}
+
+.rain-home__terminal {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rain-home .terminal-container {
+  width: min(420px, 100%);
+  min-width: 0;
+}
+
+.rain-home .terminal-window {
+  width: min(420px, 100%);
+  border-radius: 22px;
+  transform: perspective(1000px) rotateX(1deg) rotateY(-1deg);
+}
+
+.rain-home .terminal-window:hover {
+  transform: perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(-4px);
+}
+
+.rain-home .terminal-header {
+  background: rgba(6, 21, 34, 0.48);
+  border-bottom-color: rgba(214, 241, 255, 0.12);
+}
+
+.rain-home .terminal-title,
+.rain-home .code-comment {
+  color: rgba(180, 211, 225, 0.62);
+}
+
+.rain-home .code-prompt,
+.rain-home .code-success,
+.rain-home .code-url {
+  color: #6ee7cf;
+}
+
+.rain-home .code-cmd,
+.rain-home .code-response {
+  color: #8de8f4;
+}
+
+.rain-home .code-flag {
+  color: #c6b6ff;
+}
+
+.rain-home .cursor {
+  background: #62e9e8;
+}
+
+.rain-home .group {
+  border-radius: 20px;
+  transition: transform 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.rain-home .group:hover {
+  transform: translateY(-4px);
+  border-color: rgba(122, 231, 246, 0.38);
+  background: linear-gradient(145deg, rgba(27, 52, 72, 0.8), rgba(5, 18, 30, 0.66)) !important;
+}
+
+.rain-home footer {
+  border-top-color: rgba(220, 243, 255, 0.14) !important;
+  background: rgba(3, 12, 21, 0.26);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+html:not(.dark) .rain-home {
+  --rain-nav-text: #28495c;
+  --rain-nav-surface: #f2f9fc;
+  --rain-nav-hover: rgba(55, 107, 134, 0.1);
+  color: #183748;
+}
+
+html:not(.dark) .rain-home__frame {
+  background-color: rgba(218, 235, 243, 0.82);
+}
+
+html:not(.dark) .rain-home header,
+html:not(.dark) .rain-home footer {
+  background: rgba(239, 249, 253, 0.66);
+  border-color: rgba(56, 99, 123, 0.2) !important;
+}
+
+html:not(.dark) .rain-home header a:not([href='/login']),
+html:not(.dark) .rain-home header button {
+  color: #28495c;
+}
+
+html:not(.dark) .rain-home h1,
+html:not(.dark) .rain-home h2,
+html:not(.dark) .rain-home h3 {
+  color: #163749 !important;
+  text-shadow: 0 1px rgba(255, 255, 255, 0.45);
+}
+
+html:not(.dark) .rain-home main p,
+html:not(.dark) .rain-home footer p,
+html:not(.dark) .rain-home footer a {
+  color: #3b5a6c !important;
+}
+
+html:not(.dark) .rain-home .group,
+html:not(.dark) .rain-home__tag,
+html:not(.dark) .rain-home__provider {
+  background: rgba(246, 251, 253, 0.8) !important;
+  border-color: rgba(101, 143, 165, 0.32);
+  box-shadow: 0 16px 35px rgba(33, 70, 93, 0.12), inset 0 1px rgba(255, 255, 255, 0.9);
+}
+
+html:not(.dark) .rain-home .group:hover {
+  background: rgba(252, 254, 255, 0.9) !important;
+}
+
+html:not(.dark) .rain-home__tag > span,
+html:not(.dark) .rain-home__provider > span:first-of-type {
+  color: #28495c;
+}
+
+@keyframes rain-home-fall {
+  from { background-position: 0 0; }
+  to { background-position: 82px 190px; }
+}
+
+@keyframes rain-home-shimmer {
+  from { transform: translate3d(-1%, -1%, 0); opacity: 0.28; }
+  to { transform: translate3d(1%, 1%, 0); opacity: 0.52; }
+}
+
+@media (max-width: 640px) {
+  .rain-home__locale :deep(.absolute) {
+    left: 0;
+    right: auto;
+    transform-origin: top left;
+  }
+
+  .rain-home__frame {
+    min-height: 100svh;
+  }
+
+  .rain-home header {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .rain-home main,
+  .rain-home footer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .rain-home .terminal-body {
+    padding: 1rem;
+    font-size: 0.75rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .rain-home {
+    padding: 1.25rem;
+  }
+
+  .rain-home__frame {
+    min-height: calc(100svh - 2.5rem);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .rain-home {
+    padding: 1.75rem;
+  }
+
+  .rain-home__frame {
+    min-height: calc(100svh - 3.5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rain-home__frame,
+  .rain-home__rain,
+  .rain-home__droplets,
+  .rain-home .code-line,
+  .rain-home .cursor {
+    animation: none !important;
+  }
+
+  .rain-home .code-line {
+    opacity: 1 !important;
+  }
 }
 </style>
