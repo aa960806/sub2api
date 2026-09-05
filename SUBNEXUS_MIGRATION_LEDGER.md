@@ -15,12 +15,12 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `5097b31457e6dc9f49e5f5c9c72b925ce79543b3` |
-| 迁移分支发布状态 | `Config.Cmd` 修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已测试、推送并安装；脚本 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`。新 run 已 prepared 且真实 stopped probe 通过；应用候选仍为 `02774d028...` |
+| 迁移分支发布状态 | `Config.Cmd` 修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已测试、推送并安装；脚本 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`。新 run 已成功 switch，应用候选仍为 `02774d028...` |
 | 应用功能候选 SHA | `02774d028d076e934a59f04fd1ee98598ac693a1`（镜像与 Docker runtime gate 均由此提交构建；上游同步父提交为 `23d6e8ec0`） |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.0` / `1.27.0`（最新上游） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
-| 生产数据库状态 | 第二次候选在自动回滚前运行约 35 秒，`9001`-`9013` 已于 `2026-09-05 01:17:03 UTC` 应用且 checksum 与候选 SQL 全部一致；未恢复数据库。旧应用已在迁移后同库上恢复 healthy/restart=0。本轮只执行在线备份和读取校验；新 run `20260905055413-3958448` 已 prepared，最终 switch 尚未执行 |
+| 生产数据库状态 | 第二次候选在自动回滚前运行约 35 秒，`9001`-`9013` 已于 `2026-09-05 01:17:03 UTC` 应用且 checksum 与候选 SQL 全部一致；未恢复数据库。新 run `20260905055413-3958448` 切换后数据库和 Redis 身份未变，均 running/restart=0 |
 
 ## Batch 0 门禁
 

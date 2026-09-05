@@ -209,9 +209,9 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 - 服务器脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh` 已安装为 `root:root`/`0700`；唯一旧 `runtime-probe.nroC3xIz` 已确认无容器后精确删除；
 - 新的无停机 `prepare` run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`；PostgreSQL/Redis/应用归档 sidecar、manifest、runtime/settings 和 owner 合同均通过；
 - stopped probe `ac6fc54a18cddb98fd9abce54ff2be6e23fd3ac02b804580d1220eaa770beadd` 已验证 created/false/0 后精确删除，evidence SHA=`87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`，无候选或 probe 残留；
-- 最终 `switch` 和异常时 `rollback` 单行命令见第 10 节，仅维护者在维护窗口确认后执行。
+- 最终 `switch` 已由维护者执行并成功；异常时仅对同一 run 使用第 10 节的 `rollback` 单行命令。
 
-当前 `cutover_allowed=false` 仍表示等待维护者人工确认；候选的关闭态设置快照已验证，线上旧版本继续使用其原有设置。本轮未开启功能或修改 Nginx。
+此前 `cutover_allowed=false` 的人工确认已完成；候选的关闭态设置快照已验证，线上新容器已健康运行。本轮未开启额外功能或修改 Nginx。
 
 ## 10. 最终人工交接（2026-09-05 14:11:57 Asia/Shanghai）
 
@@ -221,15 +221,15 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 真实 probe 复用了完整候选创建和 runtime contract 校验函数，核实 `created|false|0|0001-01-01T00:00:00Z` 后按精确 ID 删除；临时元数据目录也已删除，原始 manifest 未修改。候选与线上准备记录的 runtime SHA 均为 `7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`。脱敏证据 `/srv/subnexus-migration/diagnostics/stopped-probe-20260905055413-3958448.evidence` 的 SHA 为 `87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`。
 
-最终复核：旧应用 `be459424b327...` 为 running/healthy/restart=0，健康接口返回 `{"status":"ok"}`；PostgreSQL `8178576aed6f...`、Redis `5c7adf42247c...` 原身份 running/restart=0。磁盘清理只删除了逐个确认无标签、无容器引用的 dangling 构建中间层和无容器残留的临时诊断副本；11 个共享层保留，未使用 prune/force，备份和生产资产保留。新备份完成后可用空间 `35573174272` bytes，仍高于 8 GiB 保留。
+最终复核：新应用 `aa1eabd0ac401d83cce20f7a221b324492ef62cc0195408db8ccdf04e7829471` 为 running/healthy/restart=0，健康接口返回 `{"status":"ok"}`；旧应用 `be459424b327...` 已保留为退出状态，供 rollback 使用；PostgreSQL `8178576aed6f...`、Redis `5c7adf42247c...` 原身份 running/restart=0。磁盘清理只删除了逐个确认无标签、无容器引用的 dangling 构建中间层和无容器残留的临时诊断副本；11 个共享层保留，未使用 prune/force，备份和生产资产保留。
 
-确认没有结算或迁移任务后，在服务器终端执行下面一整行切换命令。代理未执行此步骤，旧 run 和旧命令不得复用：
+维护者已在确认没有结算或迁移任务后执行下面这条命令，结果为 `SWITCH_COMPLETED`，切换窗口 `42` 秒：
 
 ```bash
 sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh switch /srv/subnexus-migration/cutover/20260905055413-3958448
 ```
 
-同一批次的应急应用回滚命令如下；不自动恢复数据库。若脚本已输出 `ROLLBACK_COMPLETED`，停止重试切换并保留结果排查：
+同一批次的应急应用回滚命令如下；不自动恢复数据库。仅在新容器异常时执行：
 
 ```bash
 sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256=19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh rollback /srv/subnexus-migration/cutover/20260905055413-3958448

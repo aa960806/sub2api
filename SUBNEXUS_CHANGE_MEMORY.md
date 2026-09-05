@@ -1355,3 +1355,10 @@
 - 脱敏证据 `/srv/subnexus-migration/diagnostics/stopped-probe-20260905055413-3958448.evidence` SHA=`87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`，harness 退出 0。记录 `PREPARED_RUN_VALIDATION=passed`、`PROBE_FULL_CREATE_AND_CONTRACT=passed`、`PROBE_REMOVED=true`、`PREPARED_MANIFEST_UNCHANGED=true`、`LIVE_AND_DEPENDENCIES_UNCHANGED=true`、`FINAL_SWITCH_EXECUTED=false`。
 - 最后服务器复核时间为 `2026-09-05 14:11:57 Asia/Shanghai`：新 run 仍 prepared，candidate 三个身份字段为空，无 probe/candidate/临时诊断目录残留；旧应用 ID=`be459424b327...` 为 running/healthy/restart=0，`/health` 为 ok，PG=`8178576aed6f...`、Redis=`5c7adf42247c...` 原身份 running/restart=0。可用空间 `35573174272` bytes；未停止/重命名/重启旧应用，未恢复数据库、修改 Nginx 或开启功能，旧应用既有设置保留。
 - 本轮前置工作全部完成。最终人工单行 `switch` 和同 run `rollback` 已记录在切换手册第 10 节，显式固定 Docker timeout `120`、脚本 SHA、新 run 和 owner 合同；语法、SHA 和 run 路径检查通过。所有历史失败 run 的可执行命令已撤回，旧项目与 fork `main` 未修改。
+
+## 2026-09-05（Asia/Shanghai）— 维护者执行最终 switch 成功
+
+- 维护者于 `2026-09-05 06:28:07 UTC` 执行本批次唯一批准的 `switch` 命令，run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已写入 `state=switched`、`SWITCHED`，记录切换窗口 `42` 秒；未执行 rollback。
+- 新应用容器 ID=`aa1eabd0ac401d83cce20f7a221b324492ef62cc0195408db8ccdf04e7829471`，running/healthy/restart=0；旧容器 ID=`be459424b327...` 已按设计保留为 `subnexus-cutover-pre-02774d028d07-20260905055413-3958448`，exited/restart=0，供同批次应用 rollback 使用。
+- PostgreSQL=`8178576aed6f...`、Redis=`5c7adf42247c...` 仍为原身份 running/restart=0；应用 `/health` 返回 `{"status":"ok"}`。数据库备份未恢复，Nginx 与功能开关按流程保持原有状态。
+- 本次切换结果已完成只读复核；最终 rollback 仅适用于该 run 的异常恢复，旧脚本、旧 run 和旧命令继续禁止使用。

@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v2.0（2026-09-04，Docker runtime gate 与 owner 合同收口已通过）
-> 状态：最新 `upstream/main` 已合并到独立迁移分支；Batch 1-4、本地夹具、线上只读预检/历史备份、PostgreSQL 18.4 恢复、Redis 8 RDB 隔离恢复、真实克隆 migration/adoption、候选关闭态、旧版回归和 Docker runtime gate 已通过。修复脚本 `19824a87` 已完成无停机 `prepare` 并生成 `READY=prepared`，stopped probe 验收通过，当前停在维护者人工 switch 前。最新授权允许代理完成安装、备份、`prepare`、never-started probe 和范围明确的垃圾清理；仅最终 `switch`/`rollback` 由维护者手动执行
+> 状态：最新 `upstream/main` 已合并到独立迁移分支；所有发布前门禁、备份、关闭态和 stopped probe 均通过。run `20260905055413-3958448` 已由维护者成功切换，当前新应用健康运行，旧容器保留供 rollback；二开功能仍按验收计划保持关闭
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -331,6 +331,6 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
 3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；旧线上 `prepare` 证据仅作历史记录，不能替代新 run。
-4. 历史失败 run 均不可复用。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已生成并核验 `READY=prepared`，备份/身份/关闭态设置和 stopped probe 证据已通过；当前停在维护者人工 switch 前。磁盘可用约 `35573174272` bytes，继续保留 8 GiB 余量且不复用旧时间点备份。
+4. 历史失败 run 均不可复用。新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已由维护者完成 switch，窗口 42 秒；新容器健康，旧容器保留供 rollback。数据库未恢复，磁盘余量和备份保留策略继续有效。
 
 线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；新 run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`，stopped probe 验收通过。最新备份包括 PostgreSQL dump `5086279866` bytes、Redis RDB `7143802` bytes、应用归档 `80910450` bytes；各项 SHA、runtime/settings 合同和 probe 证据统一记录在 `SUBNEXUS_CHANGE_MEMORY.md`。当前停在维护者人工 switch 前，最终单行 `switch`/`rollback` 命令见切换手册第 10 节，必须由维护者手动执行。
