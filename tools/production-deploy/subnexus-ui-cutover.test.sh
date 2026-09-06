@@ -351,7 +351,7 @@ git -C "$git_repo" init -q
 git -C "$git_repo" config user.name fixture
 git -C "$git_repo" config user.email fixture@example.invalid
 git -C "$git_repo" config core.autocrlf false
-mkdir -p "$git_repo/frontend/src/views" "$git_repo/backend/migrations"
+mkdir -p "$git_repo/frontend/src/views" "$git_repo/frontend/src/components/common" "$git_repo/frontend/src/components/home/__tests__" "$git_repo/backend/migrations"
 mkdir -p "$git_repo/frontend/public"
 printf 'old homepage\n' > "$git_repo/frontend/src/views/HomeView.vue"
 printf 'SELECT 1;\n' > "$git_repo/backend/migrations/001.sql"
@@ -359,8 +359,14 @@ git -C "$git_repo" add .
 git -C "$git_repo" commit -qm base
 base_sha="$(git -C "$git_repo" rev-parse HEAD)"
 printf 'new homepage\n' > "$git_repo/frontend/src/views/HomeView.vue"
+printf 'migrated support button\n' > "$git_repo/frontend/src/components/common/CustomerSupportButton.vue"
+printf 'gateway locale presentation\n' > "$git_repo/frontend/src/components/common/LocaleSwitcher.vue"
+printf 'migrated component\n' > "$git_repo/frontend/src/components/home/RainGatewayHome.vue"
+printf 'binding test\n' > "$git_repo/frontend/src/components/home/__tests__/RainGatewayHome.spec.ts"
 printf 'test bitmap\n' > "$git_repo/frontend/public/rain-city-1.jpg"
-git -C "$git_repo" add frontend/public/rain-city-1.jpg
+printf 'test bitmap two\n' > "$git_repo/frontend/public/rain-city-2.jpg"
+printf 'test bitmap three\n' > "$git_repo/frontend/public/rain-city-3.jpg"
+git -C "$git_repo" add frontend/src/components/common/CustomerSupportButton.vue frontend/src/components/common/LocaleSwitcher.vue frontend/src/components/home/RainGatewayHome.vue frontend/src/components/home/__tests__/RainGatewayHome.spec.ts frontend/public/rain-city-1.jpg frontend/public/rain-city-2.jpg frontend/public/rain-city-3.jpg
 git -C "$git_repo" commit -qam ui
 ui_sha="$(git -C "$git_repo" rev-parse HEAD)"
 ui_assert_source_delta "$git_repo" "$base_sha" "$ui_sha"

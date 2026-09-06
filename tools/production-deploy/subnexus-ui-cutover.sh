@@ -119,10 +119,21 @@ ui_assert_source_delta() {
   git -C "$source" diff --no-renames --name-only -z "$base" "$target" > "$changes" || { rm -f -- "$changes"; fail 'cannot compare UI source'; }
   while IFS= read -r -d '' path; do
     case "$path" in
-      frontend/src/views/HomeView.vue|frontend/public/rain-city-1.jpg)
+      frontend/src/views/HomeView.vue|\
+      frontend/src/components/common/CustomerSupportButton.vue|\
+      frontend/src/components/common/LocaleSwitcher.vue|\
+      frontend/src/components/home/GlassDropletsCanvas.vue|\
+      frontend/src/components/home/GlassPane.vue|\
+      frontend/src/components/home/RainGatewayHome.vue|\
+      frontend/src/components/home/RainGlyph.vue|\
+      frontend/src/components/home/RainStreaksCanvas.vue|\
+      frontend/src/components/home/RainyBackground.vue|\
+      frontend/public/rain-city-1.jpg|\
+      frontend/public/rain-city-2.jpg|\
+      frontend/public/rain-city-3.jpg)
         [[ "$(git -C "$source" ls-tree "$target" -- "$path" | awk '{print $1}')" == 100644 ]] || { rm -f -- "$changes"; fail 'UI asset must be a regular tracked file'; }
         count=$((count + 1)) ;;
-      SUBNEXUS_CHANGE_MEMORY.md|SUBNEXUS_CUTOVER_RUNBOOK.md|SUBNEXUS_MIGRATION_LEDGER.md|SUBNEXUS_MIGRATION_PLAN.md|SUBNEXUS_PROJECT_CONTEXT.md|tools/production-deploy/subnexus-ui-cutover.sh|tools/production-deploy/subnexus-ui-cutover.test.sh) ;;
+      frontend/src/components/home/__tests__/RainGatewayHome.spec.ts|SUBNEXUS_CHANGE_MEMORY.md|SUBNEXUS_CUTOVER_RUNBOOK.md|SUBNEXUS_FEATURE_MATRIX.md|SUBNEXUS_MIGRATION_LEDGER.md|SUBNEXUS_MIGRATION_PLAN.md|SUBNEXUS_PROJECT_CONTEXT.md|SUBNEXUS_ROLLBACK_RUNBOOK.md|tools/production-deploy/subnexus-ui-cutover.sh|tools/production-deploy/subnexus-ui-cutover.test.sh) ;;
       *) rm -f -- "$changes"; fail "UI-only release changes a protected path: $path" ;;
     esac
   done < "$changes"
