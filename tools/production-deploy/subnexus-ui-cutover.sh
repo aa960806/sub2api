@@ -223,7 +223,7 @@ ui_load_run() {
   local path="$1" scope="$2" expected
   # The prepared run is authored by this wrapper; anchor validation below
   # switches validation to the original controller's manifest contract.
-  SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256="${SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256:-}"
+  SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256="$ui_controller_sha"
   validate_run_directory "$path" "$scope"
   [[ "$(manifest_value ui_flow)" == application-refresh-v1 && "$(manifest_value ui_controller_sha256)" == "$ui_controller_sha" ]] || fail 'run does not belong to the UI controller'
   assert_root_owned_regular "$run_dir/UI_READY" 'UI readiness marker'
