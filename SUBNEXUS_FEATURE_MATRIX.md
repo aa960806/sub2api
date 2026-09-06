@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移矩阵
 
-> 最后更新：2026-09-06 22:09。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。`F:\Rain` 首页源码直接迁移 run `/srv/subnexus-migration/cutover/20260906134705-774592` 已 `READY=prepared`，stopped probe 和最终只读审计通过，尚未 switch。最终人工命令见切换手册第 13 节，额外二开功能仍保持关闭。
+> 最后更新：2026-09-06 23:25（Asia/Shanghai）。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。`F:\Rain` 首页源码直接迁移 run `/srv/subnexus-migration/cutover/20260906134705-774592` 已 switched，切换后审计和公网桌面/移动验收通过。额外二开功能仍保持原开关值，F01-F13 的逐项业务验收状态没有因首页切换而改变。
 > 本表是逐模块迁移的唯一状态入口。路径是调查线索，不代表目标代码可以直接复制；“待证据”不等于可上线。
 
 ## 保留功能
@@ -39,8 +39,8 @@
 ## 当前状态与统一开关
 
 - 所有迁移功能默认关闭；`9011_subnexus_rollout_gates.sql` 只以 `ON CONFLICT DO NOTHING` 补齐缺失 gate，不覆盖管理员已有值。
-- 当前候选代码门禁、隔离 PostgreSQL、Redis 8 RDB 恢复、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆和 Docker runtime gate 已通过；新 run 已 `READY=prepared`，stopped probe 验收通过；`switch` 与切换后维护者验收仍待执行。候选关闭态快照已验证，本轮未改变旧应用既有设置。
-- 表格中各项“待最终证据/维护者验收”在当前阶段具体指待人工切换后的逐项业务验收；发布前代码、隔离环境、备份、运行时合同和关闭态证据已经完成，不代表任何功能已开启。
+- 当前候选代码门禁、隔离 PostgreSQL、Redis 8 RDB 恢复、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆和 Docker runtime gate 已通过；新 run 已 `SWITCHED=switched`，当前生产 running/healthy/restart=0，切换后审计与公网首页验收通过。
+- 表格中各项“待最终证据/维护者验收”现在仍指 F01-F13 的逐项业务验收。首页 UI 切换、公开导航 smoke 和设置合同通过不代表这些业务功能已开启或完成验收。
 - `RechargeWheelView.vue` 是累计充值奖励转盘，属于 F06；明确排除的是每日消耗转盘。
 
 ## 以上游为准的重叠模块
@@ -96,13 +96,17 @@
 - 排行查询只能读取目标 `usage_logs`/`users`，不得改变网关计费；调度器在排行/周期开关关闭时必须 no-op。
 - 签到写入须在事务内锁定/创建 streak，重复日期、并发请求和 IP 限制必须幂等；关闭时不写任何活动表或余额。
 - 活动中心使用独立新开关，不继承旧 `ACTIVITY_CENTER_CONFIG`；用户列表关闭时返回 `{enabled:false,items:[]}` 且不查表，管理列表关闭时为空且不查表，管理写操作返回禁用错误。管理员配置接口始终保留用于显式开启。
-- 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（282 个文件/1954 个测试）/build、迁移契约及重点并发/关闭态测试；隔离 PostgreSQL、Redis 8 RDB、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆、Docker runtime gate 和线上 `prepare` 已通过，人工 `switch` 仍待执行。前端只在 flag 开启后加载活动 API。
+- 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（282 个文件/1954 个测试）/build、迁移契约及重点并发/关闭态测试；隔离 PostgreSQL、Redis 8 RDB、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆、Docker runtime gate、线上 `prepare` 和本轮首页 switch 均已通过。F01-F13 仍按各自 gate 等待逐项业务验收，前端只在 flag 开启后加载活动 API。
 
-## `F:\Rain` 首页源码直接迁移发布补充（2026-09-06 22:09 Asia/Shanghai，当前权威）
+## `F:\Rain` 首页源码直接迁移发布补充（2026-09-06 23:25 Asia/Shanghai，当前权威）
 
 - 本轮仅替换默认首页 UI：直接迁移目标源码的结构、组件、CSS、三张图片、两层 Canvas、动画和响应式交互。F01-F13、排除项和上游模块的裁决均未变化，也没有新增功能条目。
 - 当前项目的 `site_name`、Logo、副标题、首页内容模式、文档、Model Plaza、认证/管理员路由、语言、主题、客服、providers/footer 和 API CTA 均保留既有配置、显示接口、权限和事件；F12/F13 的 fail-closed 行为保持不变。
 - 应用 commit=`245ecd2630b96a9807df89dc02828bbb436e7624`，tree=`b0f55487331dca07031219d59cd4159cab8a610d`；Vitest `287/287` 文件、`1990/1990` 测试、typecheck、ESLint、build、wrapper `26` 场景、桌面/移动 Playwright 和三图 SHA 对照均通过。
 - 候选 image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`；Gate SHA=`d13c2a3095db4699d1a20939818d003e985f2715655f51e9715f286388d14544`；首页 observer SHA=`bd70fe35573d4a6c2ac6399cf50f9bec0cd18600b387ed8eea0e2f65ee76f678`。
-- 新 run=`/srv/subnexus-migration/cutover/20260906134705-774592`，manifest SHA=`e3809a4d6a09d469c994d38453551d466e73f49b45903aae17f8683fe63fc897`。全新备份、18 个受保护设置、运行时合同、owner、固定旧回滚对象、never-started probe 和最终只读审计均通过；证据 SHA=`0f69354a5d7911a66a6c5ef01fc58ac3160bd838a78fd214f8bb7151ac125609`。
-- 尚未 switch/rollback，所有迁移功能继续保持当前开关值。本轮不创建新的永久回滚对象；唯一人工命令见切换手册第 13 节。
+- 新 run=`/srv/subnexus-migration/cutover/20260906134705-774592`；切换前 `READY=prepared`、`UI_READY=application-refresh-v1` 及 prepared manifest SHA=`e3809a4d6a09d469c994d38453551d466e73f49b45903aae17f8683fe63fc897` 保留作历史证据。维护者已完成 switch：`SWITCHED=switched`、无 `ROLLED_BACK`，manifest `state=switched/ui_state=switched/ui_commit_intent=yes`，切换后 SHA=`86afbaa48b5a22cdd193eb7f95238d8a70c74b870b7151476153317a3f0ffe79`。
+- 当前生产 ID=`86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`，image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`，running/healthy/restart=0；旧 live `c3ea071f4526bdb2502444d8f18b9da4c761aa3d51be6f7e5fc19c910ca6300f`、临时名称、probe 和临时目录均无残留。
+- `2026-09-06T15:19:27Z` 启动的切换后只读审计最终输出 `POST_SWITCH_AUDIT=passed` 且退出码为 `0`；PostgreSQL/Redis 身份、全部备份/sidecar、runtime、18 键设置、应用数据身份和固定 anchor 均通过。
+- 公网 `https://yydsapi.uno` 的 Playwright `1440x1000`/`390x844` 验收通过：无页面错误或溢出，三张图片与两层 Canvas 正常；文档、模型广场、登录、语言、主题以及配置驱动的站名/Logo/副标题正常。客服因既有开关为 `false` 不显示，符合原功能合同；JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
+- 此次只切换首页 UI，未改变 F01-F13 表格中的业务验收结论，也未新建回滚对象或执行 rollback。固定旧 SubNexus `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee` / image `sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd` / anchor `20260905085804-4072165` 仍为唯一回滚目标，exited/restart=0。
+- 本轮 switch 命令已消费，禁止重跑；当前只保留切换手册第 13 节的同 run rollback 单行命令作为异常恢复入口。

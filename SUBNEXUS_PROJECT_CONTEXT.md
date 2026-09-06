@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态：2026-09-06 22:09（Asia/Shanghai）。`F:\Rain` 首页源码的直接迁移候选固定为 `245ecd2630b96a9807df89dc02828bbb436e7624`；新 run `20260906134705-774592` 已完成全新备份、`prepare`、never-started probe 和最终只读审计，尚未 switch。历史 run（包括已经用于当前线上版本的 `20260906100431-660485`）均不是本轮执行入口；以本文文末最新记录和切换手册第 13 节为准。
+> 当前权威状态：2026-09-06 23:25（Asia/Shanghai）。维护者已手动完成 `F:\Rain` 首页源码直接迁移 run `20260906134705-774592` 的 `switch`；应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 对应容器 `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd` 正在生产运行且 `healthy/restart=0`，切换后服务器审计和公网桌面/移动验收均通过，未执行 rollback。该 run 的 switch 已消费，严禁重跑；仅同 run rollback 仍是当前恢复入口。以本文文末最新记录为准。
 
 ## 项目身份
 
@@ -20,12 +20,12 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | 既有迁移及上游 v0.2.1 已发布；本轮仅发布默认首页 UI。UI 候选构建、Docker gate、首页资源门禁、在线 prepare、stopped probe 和最终只读复核均通过；尚未 switch |
+| 迁移阶段 | 既有迁移及上游 v0.2.1 已发布；`F:\Rain` 默认首页 UI 已完成生产 switch，切换后服务器审计及公网桌面/移动验收均通过 |
 | 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 第二次候选启动约 35 秒并于 `2026-09-05 01:17:03 UTC` 应用 `9001`-`9013`；13 条 checksum 与候选 SQL 全部一致。自动回滚未恢复数据库，旧应用已在迁移后同库上恢复健康；未手工执行迁移或恢复 PostgreSQL/Redis |
-| 生产部署/切换 | 当前线上容器为上一版 Rain UI `c3ea071f4526...`；本轮直接源码迁移 run `/srv/subnexus-migration/cutover/20260906134705-774592` 已 prepared 且 stopped probe 通过，尚未切换；历史 UI run 均不可交接 |
-| 生产开关 | 本轮未开启功能、修改首页配置、执行数据库恢复或修改 Nginx；UI 包装器的设置校验和恢复流程以本轮 manifest 为准，不能把历史 closed snapshot 直接用作本轮输入 |
+| 生产部署/切换 | 当前线上容器=`86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`，image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`，`running/healthy/restart=0`；run `/srv/subnexus-migration/cutover/20260906134705-774592` 已 switched，未 rollback；switch 已消费且禁止重跑，仅同 run rollback 保留 |
+| 生产开关 | 本轮未开启功能、修改首页配置、执行数据库/Redis 恢复或修改 Nginx；18 个受保护设置保持原值，客服继续按原配置 `customer_support_enabled=false` 不显示 |
 | 工作区 | 应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 已推送；本轮候选 image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7` |
 | 当前磁盘 | 精确删除失效 run `20260906082131-600835` 的六个大备份/sidecar 后释放 `5264399409` bytes；未使用 prune。新 prepare 与 probe 完成后可用 `21903691776` bytes，仍高于 8 GiB 保留线 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
@@ -108,7 +108,7 @@ registration_ip_cooldown_enabled
 
 1. 已完成线上只读 preflight 和生产 PostgreSQL/Redis/应用数据备份结构校验；服务器备份目录为 `/srv/subnexus-migration/backups/20260903T073714Z`，所有 SHA256 均通过。
 2. 备份已下载并通过 20 个文件 SHA256；PostgreSQL 18.4 原始恢复库、真实克隆 migration/adoption、候选全部关闭态、旧版回归和 Redis 8.8.0 RDB 隔离加载均通过。Redis 证据位于台账记录的 root-only 路径。
-3. 本轮最终 run `/srv/subnexus-migration/cutover/20260906134705-774592` 的全新备份、manifest、固定旧回滚对象、18 个受保护设置与 stopped probe 已通过，最终只读审计确认生产健康；尚未 switch。历史 UI run 禁止复用，最终 switch 和 rollback 由维护者按切换手册第 13 节执行。
+3. 本轮最终 run `/srv/subnexus-migration/cutover/20260906134705-774592` 已由维护者手动 switch 成功；切换后 manifest、生产容器、依赖身份、全新备份/sidecar、18 个受保护设置、运行时合同、固定旧回滚对象和公网 UI 均已复核通过。该 switch 已消费，禁止重跑；仅按切换手册使用同 run rollback 作为当前恢复入口。
 
 ## 2026-09-05 上游 v0.2.1 合并状态
 
@@ -139,7 +139,7 @@ registration_ip_cooldown_enabled
 - 清理日志 `/srv/subnexus-migration/cleanup-rain-invalid-run-20260905160223.txt`，SHA256=`c3e1af6e289292b4b2baa8b76136ea322f19556785a17caf63d6d34c2060d326`；清理后可用 `24025554944` bytes。
 - 最终在线 prepare `/srv/subnexus-migration/cutover/20260906100431-660485`（PID 660485）已 `READY=prepared`；候选镜像、脚本和固定旧回滚对象不变。stopped probe 已精确删除且生产状态未改变，尚未执行 switch/rollback。
 
-## `F:\Rain` 首页源码直接迁移交接（2026-09-06 22:09 Asia/Shanghai，当前权威）
+## `F:\Rain` 首页源码直接迁移切换前快照（2026-09-06 22:09 Asia/Shanghai，历史）
 
 - 本轮以 `F:\Rain` 的真实首页源码为 UI 基础，迁移页面结构、玻璃容器、三张原图、字体/图标表达、两层 Canvas、鼠标视差、动画和响应式行为；默认首页入口改用 `RainGatewayHome`。自定义首页与精简首页分支仍保留。
 - 站点名称、Logo、副标题、文档、模型广场、登录/后台、主题、语言、客服、providers/footer 和 `/v1/messages` 继续使用当前项目配置、路由、权限和事件；未增加或删除业务功能，后端、数据库迁移、依赖锁文件、功能开关和 Nginx 均未改动。
@@ -147,4 +147,14 @@ registration_ip_cooldown_enabled
 - 候选 image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`；归档 SHA=`65f06c3e221cfd08d68f84df882b2b3c858e5b8c939715f41c466eee0cb35f15`；Docker Gate SHA=`d13c2a3095db4699d1a20939818d003e985f2715655f51e9715f286388d14544`；首页 observer SHA=`bd70fe35573d4a6c2ac6399cf50f9bec0cd18600b387ed8eea0e2f65ee76f678`。
 - 新 run=`/srv/subnexus-migration/cutover/20260906134705-774592`，`READY=prepared`、`UI_READY=application-refresh-v1`、manifest `state=prepared/ui_state=prepared/ui_commit_intent=no`，manifest SHA=`e3809a4d6a09d469c994d38453551d466e73f49b45903aae17f8683fe63fc897`。PostgreSQL、Redis、应用数据、设置和 sidecar 三方哈希均通过。
 - 最终审计证据 `/srv/subnexus-migration/diagnostics/rain-prepared-245ecd2630b9-20260906134705-774592.evidence`，SHA=`0f69354a5d7911a66a6c5ef01fc58ac3160bd838a78fd214f8bb7151ac125609`。Probe 容器 `e9d9da3e...` 从未启动并已按完整 ID 删除；run manifest 前后未变，生产应用、PostgreSQL、Redis、18 个受保护设置和固定 anchor 未变。
-- 固定回滚对象仍为旧 SubNexus `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`，名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`。本轮未创建新永久回滚对象，尚未执行 switch/rollback；唯一人工命令见切换手册第 13 节。
+- 固定回滚对象当时仍为旧 SubNexus `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`，名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`。该快照时尚未执行 switch/rollback；当前状态由下节覆盖。
+
+## `F:\Rain` 首页生产切换后状态（2026-09-06 23:25 Asia/Shanghai，当前权威）
+
+- 维护者手动 `switch` 的原始成功行是 `UI_SWITCH_COMPLETED=/srv/subnexus-migration/cutover/20260906134705-774592`。同一 run 的 `READY=prepared`、`UI_READY=application-refresh-v1` 保留，`SWITCHED=switched`，`ROLLED_BACK` 不存在；manifest=`state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`86afbaa48b5a22cdd193eb7f95238d8a70c74b870b7151476153317a3f0ffe79`。
+- `2026-09-06T15:19:27Z` 启动的切换后只读审计最终输出 `POST_SWITCH_AUDIT=passed` 且退出码为 `0`。新生产容器 ID=`86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`，image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`，`running/healthy/restart=0`，`StartedAt=2026-09-06T14:59:13.131115785Z`。manifest 的 `live_app_id` 是切换前容器，当前线上身份取 `candidate_container_id`。
+- 切换前容器 `c3ea071f4526bdb2502444d8f18b9da4c761aa3d51be6f7e5fc19c910ca6300f`、其临时名称、probe 容器和 probe 临时目录均无残留；PostgreSQL `8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf` 与 Redis `5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 保持原身份且 `running/restart=0`。
+- PostgreSQL、Redis、应用数据备份的实际文件、sidecar 和 manifest 三方哈希重算通过；18 个受保护设置 SHA256=`3959daf3caed2f8a4c22023db4b7da8be627fb4b8a087bba4d5309cd8223d558`，runtime contract SHA256=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`。文件权限、previous-container 日志及固定 anchor 检查均通过。
+- 固定旧 SubNexus 回滚对象保持为 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`、name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`、`exited/restart=0`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`，anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。本轮未创建新永久回滚对象，未执行 rollback。
+- 公网 `https://yydsapi.uno` Playwright 验收在 `1440x1000` 与 `390x844` 均无页面错误或溢出；三张 Rain 原图及双 Canvas 正常，未登录文档、模型广场、登录、语言和主题交互通过，配置站点名、Logo、副标题正常；客服因原配置 `customer_support_enabled=false` 按设计不显示。公网 Playwright JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
+- 本 run 的 switch 已消费并禁止重跑，所有历史 switch 命令也不得复用。当前唯一恢复入口是切换手册中绑定本 run 的 rollback 命令。

@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-06 22:09 Asia/Shanghai）：`F:\Rain` 首页源码直接迁移候选 `245ecd2630b96a9807df89dc02828bbb436e7624` 已完成构建、Gate、新 run `20260906134705-774592` 的全新备份/prepare、never-started probe 和最终只读审计；尚未 switch。旧 run `20260906100431-660485` 已属于当前线上上一版 UI，其命令已撤回；历史 run 均不得交接。当前状态取信于文末最新记录。
+> 当前权威状态（2026-09-06 23:25 Asia/Shanghai）：维护者已手动完成 `F:\Rain` 首页源码直接迁移 run `20260906134705-774592` 的 `switch`；应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 对应容器 `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd` 正在生产运行且 `healthy/restart=0`，切换后服务器审计和公网桌面/移动验收均通过，未执行 rollback。该 run 的 switch 已消费，严禁重跑；当前只保留同 run rollback 作为恢复入口，固定旧 SubNexus 回滚对象不变。当前状态取信于文末最新记录。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1442,3 +1442,13 @@
 - Stopped probe 与最终审计：probe ID=`e9d9da3e60a7f134d52ff9389ea3eb594d72e3c921031f59408bdb80ffa62cde`，状态始终 `created|false|0|0001-01-01T00:00:00Z`，运行时合同通过后已按完整 ID 删除，临时目录和容器均无残留。证据 `/srv/subnexus-migration/diagnostics/rain-prepared-245ecd2630b9-20260906134705-774592.evidence` 为 root:root/0600，SHA=`0f69354a5d7911a66a6c5ef01fc58ac3160bd838a78fd214f8bb7151ac125609`；manifest 前后 SHA 不变，最终可用空间 `21903691776` B。
 - 生产身份前后相同：live=`c3ea071f4526bdb2502444d8f18b9da4c761aa3d51be6f7e5fc19c910ca6300f`，image=`sha256:32f14750ce73da00dc4c5146b1d9ad6c4420ee2c3dffe098798e41a123c6bd2c`，running/healthy/restart=0；PostgreSQL=`8178576aed6f...`、Redis=`5c7adf42247c...` 均 running/restart=0。固定旧 SubNexus 仍为 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`、name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`、anchor manifest SHA=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。
 - 人工边界：本轮未执行 switch/rollback，未创建新永久回滚对象。旧 run `20260906100431-660485` 的现行命令已撤回；唯一可执行的 switch/rollback 命令写入切换手册第 13 节，均绑定本次新 run 并显式设置 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120`，由维护者手动执行。
+
+## 2026-09-06 23:25（Asia/Shanghai）— `F:\Rain` 首页生产切换成功并完成切换后验收
+
+- 维护者手动执行本轮 `switch` 成功，终端原始成功行是 `UI_SWITCH_COMPLETED=/srv/subnexus-migration/cutover/20260906134705-774592`。同一 run 保留 `READY=prepared`、`UI_READY=application-refresh-v1`，新增 `SWITCHED=switched`，`ROLLED_BACK` 不存在；manifest 已更新为 `state=switched`、`ui_state=switched`、`ui_commit_intent=yes`，切换后 SHA256=`86afbaa48b5a22cdd193eb7f95238d8a70c74b870b7151476153317a3f0ffe79`。
+- `2026-09-06T15:19:27Z` 启动的切换后只读审计完成全部实际检查，最终输出 `POST_SWITCH_AUDIT=passed` 且退出码为 `0`。新生产容器完整 ID=`86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`，image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`，状态 `running/healthy/restart=0`，`StartedAt=2026-09-06T14:59:13.131115785Z`；manifest 中的 `live_app_id` 是切换前身份，切换后线上身份以 `candidate_container_id` 为准。
+- 切换前线上容器 `c3ea071f4526bdb2502444d8f18b9da4c761aa3d51be6f7e5fc19c910ca6300f`、其切换临时名称、probe 容器和 probe 临时目录均无残留。PostgreSQL `8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf` 与 Redis `5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 保持原身份并为 `running/restart=0`。
+- 全新 PostgreSQL、Redis、应用数据备份的实际文件、sidecar 和 manifest 三方哈希已重新核对通过；18 个受保护设置仍为 SHA256=`3959daf3caed2f8a4c22023db4b7da8be627fb4b8a087bba4d5309cd8223d558`，运行时合同仍为 SHA256=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`。文件 owner/mode、切换前容器日志和 previous-container 证据均通过审计。
+- 固定旧 SubNexus 回滚对象仍为 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`、name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，状态 `exited/restart=0`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`，anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。本轮未创建新永久回滚对象，未执行 rollback。
+- 公网 `https://yydsapi.uno` Playwright 验收在桌面 `1440x1000` 和移动端 `390x844` 均无页面错误或溢出；三张 Rain 原图正常加载，两层 Canvas 均非空。未登录状态下文档、模型广场、登录、语言和主题交互通过，配置驱动的站点名、Logo、副标题正常；客服沿用原配置 `customer_support_enabled=false`，因此按设计不显示。公网 Playwright JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
+- 本 run 的 `switch` 已成功消费，禁止再次执行；所有历史 switch 命令同样禁止复用。当前唯一恢复入口是切换手册中绑定 `/srv/subnexus-migration/cutover/20260906134705-774592` 的同 run `rollback` 命令。
