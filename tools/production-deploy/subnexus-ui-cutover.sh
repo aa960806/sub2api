@@ -94,7 +94,12 @@ ui_install_overrides() {
 }
 
 ui_settings_hash() {
-  db_psql "SELECT json_build_array(key,value)::text FROM settings ORDER BY key;" | sha256sum | awk '{print $1}'
+  local key_list="'${rollout_keys[0]}'" sql key
+  for key in "${rollout_keys[@]:1}"; do key_list+=" ,'$key'"; done
+  for key in "${rollout_content_keys[@]}"; do key_list+=" ,'$key'"; done
+  key_list+=" ,'$invitation_config_key'"
+  sql="SELECT key || E'\\t' || translate(encode(convert_to(value, 'UTF8'), 'base64'), E'\\n\\r', '') FROM settings WHERE key IN ($key_list) ORDER BY key;"
+  db_psql "$sql" | sha256sum | awk '{print $1}'
 }
 
 ui_assert_settings_unchanged() {
