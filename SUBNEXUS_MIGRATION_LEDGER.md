@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 当前权威状态：2026-09-06（Asia/Shanghai）。UI 候选 `b1ed483ea5fc648cb3c15fcf2e7040e68a151a41` 的镜像与门禁不变；首次 UI run 因后续设置哈希漂移失效，第二次因备份前空间不足停止。最终 run `20260905163754-200276` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过，尚未 switch；历史 run 不得交接。
+> 当前权威状态：2026-09-06（Asia/Shanghai）。UI 候选 `b1ed483ea5fc648cb3c15fcf2e7040e68a151a41` 的镜像与门禁不变；首次 UI run 因后续设置哈希漂移失效，第二次因备份前空间不足停止。最终 run `20260906064219-543291` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过，尚未 switch；历史 run 不得交接。
 
 ## 状态定义
 
@@ -58,7 +58,7 @@
 | 运行时合同修复 | 本地通过，待安装 | 提交 `0d083f6b7` 将旧容器 `OomKillDisable=null` 与 Docker 29 候选 `false` 归一为同一安全语义，保留 `true` 拒绝；显式保留 `0.0.0.0` 端口 HostIP；候选合同在 entrypoint 启动前先校验并在健康后复核。Windows/WSL 发布夹具通过 |
 | 当前交接 | 全部前置完成，停在人工 switch 前 | UI wrapper 测试、最终在线 prepare、备份/manifest、运行配置摘要、真实 stopped probe 和最终只读复核全部通过；probe 已删除，原 manifest 未改，旧应用继续健康运行 |
 | 当前容量 | 已解决，新备份后仍满足余量 | 2026-09-05 14:11:57 Asia/Shanghai 可用 `35573174272` bytes；保持 8 GiB 保留，未复用旧备份 |
-| 当前交接 run | `READY=prepared` | `/srv/subnexus-migration/cutover/20260905163754-200276`；UI wrapper SHA=`eef1dfa31c71cfe33096d107561c594e0b509455b65db0caec824196d1cec77d`；Gate SHA=`eb8e8a0b8e9c25f7d9b1b6491974751e12d24d3110e31796cf12ae5843b8fc9b`；最终单行 switch/rollback 命令见切换手册第 12 节。所有历史 run 不得复用 |
+| 当前交接 run | `READY=prepared` | `/srv/subnexus-migration/cutover/20260906064219-543291`；UI wrapper SHA=`eef1dfa31c71cfe33096d107561c594e0b509455b65db0caec824196d1cec77d`；Gate SHA=`eb8e8a0b8e9c25f7d9b1b6491974751e12d24d3110e31796cf12ae5843b8fc9b`；最终单行 switch/rollback 命令见切换手册第 12 节。所有历史 run 不得复用 |
 
 ## 实施批次
 
@@ -245,7 +245,7 @@
 | 在线 prepare（首次失效历史） | `/srv/subnexus-migration/cutover/20260905160223-175225`；因 settings 漂移失效，备份/manifest 仅作审计，不得交接 |
 | 固定回滚对象 | ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor run=`20260905085804-4072165`；旧 image ID 前缀 `b24b585`；不新建永久回滚对象 |
 | 定向清理 | 失败 partial 约 3.386 GB 和 7 个无引用构建镜像；prepare 前可用约 19.1 GB 增至 24.61 GB；日志 `/srv/subnexus-migration/cleanup-rain-20260905.txt`，SHA256=`94a4840ce2fd9b3c3dce40c5864a691675e4ca752b85f3dc3f437e550e2829c2`；未使用 prune |
-| 人工边界 | 最终 switch/rollback 命令已发布于切换手册第 12 节，均绑定 `/srv/subnexus-migration/cutover/20260905163754-200276`；由维护者执行；不修改 Nginx、恢复数据库或开启功能 |
+| 人工边界 | 最终 switch/rollback 命令已发布于切换手册第 12 节，均绑定 `/srv/subnexus-migration/cutover/20260906064219-543291`；由维护者执行；不修改 Nginx、恢复数据库或开启功能 |
 
 ## 2026-09-06 Rain + Glass UI 重试台账（已完成前置，停在人工 switch 前）
 
@@ -256,7 +256,7 @@
 | 第二次 run | `20260905163008-194872`；备份前空间不足，`18797457408 < 23715311616` bytes；未通过，不可交接 |
 | 首次 run 定向清理 | 三个大备份及 sidecar 经 SHA 校验/记录后精确删除；manifest/settings/metadata 保留，未删除固定旧回滚对象 |
 | 清理证据/余量 | `/srv/subnexus-migration/cleanup-rain-invalid-run-20260905160223.txt`；SHA256=`c3e1af6e289292b4b2baa8b76136ea322f19556785a17caf63d6d34c2060d326`；清理后可用 `24025554944` bytes |
-| 第三次 prepare | `/srv/subnexus-migration/cutover/20260905163754-200276`，PID 200276，`READY=prepared`；manifest `state=prepared/ui_state=prepared`，候选镜像/脚本不变 |
-| 备份与证据 | PostgreSQL dump SHA=`57d34a327b15359d330e7810e16a547dd482aef1f2c5d73ef853705a62193a26`；list SHA=`371a88b4d252f7b346a1c4c81e8257cdefb48703d100ea692a09f41e10e790d4`；Redis RDB SHA=`b7ff8ef2f216c7e1f97064cc0c3922837e777c2c10709ae1f5e379fb603f130f`；应用归档 SHA=`634f08f5e71f3b58abe43ecd3eb677ae218633adb3d9cbf8993985376e79f9da` |
-| probe | ID=`095e6839927c2dd511d33974305779f12fd8a639b81731b410827dab1563005d`，状态 `created|false|0|0001-01-01T00:00:00Z` 后精确删除；evidence SHA=`77c8946cd690ebd604c72f68520b98e63986ddc923624245d259725859355724` |
+| 第三次 prepare | `/srv/subnexus-migration/cutover/20260906064219-543291`，PID 543291，`READY=prepared`；manifest `state=prepared/ui_state=prepared`，候选镜像/脚本不变 |
+| 备份与证据 | PostgreSQL dump SHA=`d4aef6f7de945aa3e2576f7821f4429e7bab6cc61cbf43d08d21115250035bb4`；list SHA=`511bdee5b4c6f8482f0f9bd3f6774701cd28bab3c7bd99bcca6038ec158232cd`；Redis RDB SHA=`bec8672390557a230c48e143f0a4f93d532fcea00fabd4bbfc57e277b492ea32`；应用归档 SHA=`24f8ab235037feed7b944c3aa0804d6842a772abb742b0128168789a43fe2fa3`；manifest SHA=`e60b3c28d96bcdf17c23cd8d48e6ce4d594c6328ddea123e02e7909f9345ba14` |
+| probe | ID=`f142539d106f357bd36f4d6be8d5728d930c6c4bc005de85203561867bae7ad4`，状态 `created|false|0|0001-01-01T00:00:00Z` 后精确删除；runtime SHA=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d`；evidence SHA=`01afc07e2e0f060ae62dd27eebb117b69c4d2da79d4cab3c383c5ba56f284dbe` |
 | 人工边界 | 本轮未切换；最终 switch/rollback 命令只见切换手册第 12 节，均绑定同一最终 run，由维护者手动执行；不创建新的永久回滚对象 |
