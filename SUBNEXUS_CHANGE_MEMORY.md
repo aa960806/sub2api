@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-06 Asia/Shanghai）：UI 候选已通过门禁；历史 prepare 因 settings 漂移、空间不足、默认 120 秒 timeout、旧 duplicate-env 参数和 manifest SHA 绑定错误失败，均不可交接。最终 run `20260906090405-624283` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过，禁止历史 run 交接；尚未 switch。旧交接命令仅作审计，当前状态取信于文末最新记录。
+> 当前权威状态（2026-09-06 Asia/Shanghai）：UI 候选已通过门禁；历史 prepare 因 settings 漂移、空间不足、默认 120 秒 timeout、旧 duplicate-env 参数和 manifest SHA 绑定错误失败，均不可交接。最终 run `20260906100431-660485` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过，禁止历史 run 交接；尚未 switch。旧交接命令仅作审计，当前状态取信于文末最新记录。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -12,6 +12,14 @@
 - 最终 run=`/srv/subnexus-migration/cutover/20260906090405-624283`，PID=`624283`，`READY=prepared`，manifest SHA=`7a86d1127e80501110e21af7f688ea98b0c4db0016cf7018b8b7888eb4e13eca`；settings-before=`575bb5c0081341e1d9e8fb54241d491e0e702e26d24bfe7d70412ba22cf741ea`，closed=`6a0ed24c164bb1fa8ebb5edecb8712f77458bfca145c713adfd105257fcda8c3`。
 - 备份 sidecar 已通过：PostgreSQL=`dd0f237410dd874b27f88a494fe2725ae9be017b4ca3406834818b7320737c96`，Redis=`f4e5e56424083c5daee02530bfb09dd88b16cf749485c4ff5aa761372d549027`，应用数据=`cbcb055aa41faa3e9e3b7f5808e3c8e709f075d8eb2969fe847e2369c426c093`。
 - stopped probe ID=`a73b1505dc3a67c17ae31a6d500d6a576bf14f0b753e03ee2ebc4941e4c2a48c`，状态严格为 `created|false|0|0001-01-01T00:00:00Z`，已按完整 ID 删除；probe evidence=`/srv/subnexus-migration/diagnostics/probe-rain-20260906090405-624283.evidence`，SHA=`e958f8fb5fb4fafcd589b5526dcedd3497df08af5e0ed2d6f25c06ba2ce30701`。无 candidate/probe 残留，应用、PostgreSQL、Redis 与旧 anchor 未改变，未执行 switch/rollback。
+
+## 2026-09-06（Asia/Shanghai）— 受保护设置哈希修复后的最终 UI 前置完成
+
+- 已推送 wrapper 修复提交 `2e60d0d55`；线上 wrapper `/srv/subnexus-migration/tools/subnexus-ui-cutover-7c3a42ac-20260906.sh`，SHA256=`7c3a42ac381f3839b5de5d605d465ee13b005ea9321b28ef47427ece2e910d77`。`ui_settings_hash` 只覆盖 rollout/content/invite 受保护键，避免正常通知和内容设置写入造成误报。
+- 最终 prepare run `/srv/subnexus-migration/cutover/20260906100431-660485`，PID=`660485`，`READY=prepared`，`state=prepared`，`ui_state=prepared`，`ui_commit_intent=no`；manifest SHA=`4cdd0bac0157663f9f485847ac92d5cd09d3f6a66b90def09f95f3389c4570b6`。
+- `settings-before` 与受保护 UI settings hash 均为 `575bb5c0081341e1d9e8fb54241d491e0e702e26d24bfe7d70412ba22cf741ea`；closed settings SHA=`6a0ed24c164bb1fa8ebb5edecb8712f77458bfca145c713adfd105257fcda8c3`。
+- stopped probe ID=`1942a6ddf23e50efe23fa2029ac26f9794da202e3bc1479fa88b341a204ce159` 已精确删除；probe evidence SHA=`f253bc1e057f32b4882f8573a10ed9a5d1c524714fe4318a3078f1df8abbd703`。生产应用、PostgreSQL、Redis 健康，无 candidate/probe 残留，未执行 switch/rollback。
+- 定向清理失效 run `624283` 的备份及 sidecar，释放约 5.56 GB；清理 evidence `/srv/subnexus-migration/cleanup-ui-invalid-624283-20260906.txt`，SHA256=`e98d82faee2bb49a256b9dbf69b936a1c44377741cb09ae4f52b6ee56a68a360`。未使用 `docker prune`，未删除固定旧回滚对象。
 
 ## 记录规则
 

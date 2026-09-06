@@ -1,6 +1,6 @@
 # SubNexus 回滚手册
 
-> 当前权威状态：2026-09-06（Asia/Shanghai）。UI run `20260906090405-624283` 已 `READY=prepared`，尚未切换；stopped probe、备份、Gate 和最终只读复核通过。历史 run 均不得用于回滚交接。第 6 节固定旧回滚对象不变。
+> 当前权威状态：2026-09-06（Asia/Shanghai）。UI run `20260906100431-660485` 已 `READY=prepared`，尚未切换；stopped probe、备份、Gate 和最终只读复核通过。历史 run 均不得用于回滚交接。第 6 节固定旧回滚对象不变。
 
 回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只能使用完成最终核验的 UI 包装器及其绑定 run，不得单独执行旧控制器的历史 rollback 命令，也不得用手工 `docker stop/start` 绕过 manifest、owner、固定旧回滚对象和依赖身份校验。
 
@@ -62,8 +62,8 @@ docker inspect <候选容器名> --format '{{json .NetworkSettings.Networks}}'
 
 ## 6. 本轮 UI 固定回滚对象（2026-09-06 Asia/Shanghai，READY=prepared）
 
-- UI candidate commit=`b1ed483ea5fc648cb3c15fcf2e7040e68a151a41`，image=`sha256:32f14750ce73da00dc4c5146b1d9ad6c4420ee2c3dffe098798e41a123c6bd2c`；本轮 run=`/srv/subnexus-migration/cutover/20260906090405-624283` 已 `READY=prepared`，manifest `state=prepared/ui_state=prepared`，manifest SHA=`7a86d1127e80501110e21af7f688ea98b0c4db0016cf7018b8b7888eb4e13eca`。
-- UI 包装器 commit=`7d51ea811`，路径 `/srv/subnexus-migration/tools/subnexus-ui-cutover-0d6d2089-20260906.sh`，SHA256=`0d6d208962e55f2aa75afdb2b490a6652df3c856e4ec132b4af974a942064ca9`。原控制器 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh`，SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`；二者独立校验。
+- UI candidate commit=`b1ed483ea5fc648cb3c15fcf2e7040e68a151a41`，image=`sha256:32f14750ce73da00dc4c5146b1d9ad6c4420ee2c3dffe098798e41a123c6bd2c`；本轮 run=`/srv/subnexus-migration/cutover/20260906100431-660485` 已 `READY=prepared`，manifest `state=prepared/ui_state=prepared`，manifest SHA=`4cdd0bac0157663f9f485847ac92d5cd09d3f6a66b90def09f95f3389c4570b6`。
+- UI 包装器 commit=`2e60d0d55`，路径 `/srv/subnexus-migration/tools/subnexus-ui-cutover-7c3a42ac-20260906.sh`，SHA256=`7c3a42ac381f3839b5de5d605d465ee13b005ea9321b28ef47427ece2e910d77`。原控制器 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh`，SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`；二者独立校验。
 - 旧 SubNexus 完整容器 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；旧 image ID 前缀 `b24b585`；anchor run=`/srv/subnexus-migration/cutover/20260905085804-4072165`。锚定 run 供包装器读取身份合同，不是让维护者重新执行旧控制器命令的入口。
 - 当前线上 v0.2.1 容器 ID 前缀 `9753053d8bd9` 不替代上述旧 SubNexus；本轮不创建新的永久回滚对象。不得删除该旧容器、镜像、anchor manifest 或其备份/证据。
 - 新 prepare 的备份/manifest、固定旧对象合同、stopped probe 和最终只读复核均已通过；尚未执行 switch/rollback，不恢复数据库或修改 Nginx。人工命令只见切换手册第 12 节，且必须绑定同一 run。
