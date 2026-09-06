@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态：2026-09-06（Asia/Shanghai）。UI 候选及最终 wrapper 已固定；首次 UI run 因 prepare 后设置哈希漂移失效，第二次在备份前因空间不足停止。最终 run `20260906082131-600835` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过；尚未 switch。第 12 节为唯一交接入口，下面两条命令是本轮唯一可执行的人工命令。
+> 当前权威状态：2026-09-06（Asia/Shanghai）。UI 候选及最终 wrapper 已固定；历史 run 因 settings 漂移、空间不足、timeout 和 manifest SHA 绑定错误均不可交接。最终 run `20260906090405-624283` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过；尚未 switch。第 12 节为唯一交接入口，下面两条命令是本轮唯一可执行的人工命令。
 
 本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧回滚对象和 stopped probe 均核验完成之后。最终 `switch` 和 `rollback` 由维护者手动执行；构建/gate 通过本身不代表可以切换。
 
@@ -240,20 +240,20 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 | 归档 | `/srv/subnexus-migration/candidate-artifacts/rain-b1ed483ea5fc-retry2/candidate-image.tar`；SHA256=`26422d9eaad7ede983b228e84ee756eae313347b0135bf4e2d48138912c3246b` |
 | Docker gate | `/srv/subnexus-migration/docker-candidate/20260905T155430Z-940fdcd9-bc3c-4d12-8c72-12ed9e27328b/evidence.txt`；passed；SHA256=`eb8e8a0b8e9c25f7d9b1b6491974751e12d24d3110e31796cf12ae5843b8fc9b` |
 | 首页门禁 | `/srv/subnexus-migration/diagnostics/rain-home-b1ed483ea5fc.ENig2O5r`；passed；图片使用 `/rain-city-1.jpg` |
-| UI 包装器 | commit=`a76242e8f7c01e1293ae6bea7e43ef18c19d46cc`；路径 `/srv/subnexus-migration/tools/subnexus-ui-cutover-d24d060c-20260906.sh`；SHA256=`d24d060c34f61d2663c6ba41a518d3bb3a8af3d9e367142f123516bd80485997` |
+| UI 包装器 | commit=`7d51ea811`；路径 `/srv/subnexus-migration/tools/subnexus-ui-cutover-0d6d2089-20260906.sh`；SHA256=`0d6d208962e55f2aa75afdb2b490a6652df3c856e4ec132b4af974a942064ca9` |
 | 原控制器 | `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh`；SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`；与包装器哈希独立校验 |
-| 在线 prepare | `/srv/subnexus-migration/cutover/20260906082131-600835`；`READY=prepared`；manifest `state=prepared`, `ui_state=prepared`；SHA=`b62ee1fde75d7ef5b0f436f1e471086b37c020b04fd49dfbcd13c174b9e1deb8` |
+| 在线 prepare | `/srv/subnexus-migration/cutover/20260906090405-624283`；`READY=prepared`；manifest `state=prepared`, `ui_state=prepared`；SHA=`7a86d1127e80501110e21af7f688ea98b0c4db0016cf7018b8b7888eb4e13eca` |
 | 既有生产应用 | v0.2.1 容器 ID 前缀 `9753053d8bd9`，本轮尚未切换 |
 | 固定旧回滚对象 | `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor run `20260905085804-4072165`；image ID 前缀 `b24b585` |
 
 本轮不创建新的永久回滚对象，当前 v0.2.1 容器不能替代此前旧 SubNexus。最终备份、manifest、固定旧回滚合同、stopped probe 和最终只读复核均已完成；生产应用仍 healthy，PostgreSQL/Redis 身份未改变，尚未执行 switch。以下两条命令绑定同一 run，必须由维护者在维护窗口手动执行；不要执行任何历史命令。
 
 ```bash
-sudo env SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=d24d060c34f61d2663c6ba41a518d3bb3a8af3d9e367142f123516bd80485997d SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-d24d060c-20260906.sh switch /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260906082131-600835
+sudo env SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=0d6d208962e55f2aa75afdb2b490a6652df3c856e4ec132b4af974a942064ca9 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-0d6d2089-20260906.sh switch /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260906090405-624283
 ```
 
 ```bash
-sudo env SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=d24d060c34f61d2663c6ba41a518d3bb3a8af3d9e367142f123516bd80485997d SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-d24d060c-20260906.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260906082131-600835
+sudo env SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=0d6d208962e55f2aa75afdb2b490a6652df3c856e4ec132b4af974a942064ca9 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-0d6d2089-20260906.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260906090405-624283
 ```
 
 已定向删除失败 partial 约 3.386 GB 和 7 个无引用构建镜像，prepare 前空间约 19.1 GB 增至 24.61 GB；清理记录 `/srv/subnexus-migration/cleanup-rain-20260905.txt`，SHA256=`94a4840ce2fd9b3c3dce40c5864a691675e4ca752b85f3dc3f437e550e2829c2`。不使用 prune，不恢复 PostgreSQL/Redis，不修改 Nginx 或开启额外功能。

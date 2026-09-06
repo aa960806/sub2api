@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v2.2（2026-09-06，默认首页 Rain + Glass UI 发布准备）
-> 当前权威状态：2026-09-06（Asia/Shanghai）。上游 v0.2.1 已在线 switched；UI 提交 `b1ed483ea5fc648cb3c15fcf2e7040e68a151a41` 的镜像及门禁不变。首次 prepare 后设置哈希漂移、第二次备份前空间不足，均不可交接；最终 run `20260906082131-600835` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过，最终切换尚未执行。此状态覆盖下文所有旧“当前交接”描述。
+> 当前权威状态：2026-09-06（Asia/Shanghai）。上游 v0.2.1 已在线 switched；UI 提交 `b1ed483ea5fc648cb3c15fcf2e7040e68a151a41` 的镜像及门禁不变。历史 prepare 均不可交接；最终 run `20260906090405-624283` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过，最终切换尚未执行。此状态覆盖下文所有旧“当前交接”描述。
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -333,9 +333,9 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
 3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；旧线上 `prepare` 证据仅作历史记录，不能替代新 run。
-4. 历史失败 run 均不可复用。最终 UI run `/srv/subnexus-migration/cutover/20260906082131-600835` 已 `READY=prepared`，但尚未 switch；生产应用健康，固定旧容器保留供 rollback。数据库未恢复，磁盘余量和备份保留策略继续有效。
+4. 历史失败 run 均不可复用。最终 UI run `/srv/subnexus-migration/cutover/20260906090405-624283` 已 `READY=prepared`，但尚未 switch；生产应用健康，固定旧容器保留供 rollback。数据库未恢复，磁盘余量和备份保留策略继续有效。
 
-线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；最终 run `/srv/subnexus-migration/cutover/20260906082131-600835` 已 `READY=prepared`，stopped probe 验收通过。最新备份、Gate、runtime/settings 合同和 probe 证据的 SHA 统一记录在 `SUBNEXUS_CHANGE_MEMORY.md`。当前停在维护者人工 switch 前，最终单行 `switch`/`rollback` 命令见切换手册第 12 节，必须由维护者手动执行。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；最终 run `/srv/subnexus-migration/cutover/20260906090405-624283` 已 `READY=prepared`，stopped probe 验收通过。最新备份、Gate、runtime/settings 合同和 probe 证据的 SHA 统一记录在 `SUBNEXUS_CHANGE_MEMORY.md`。当前停在维护者人工 switch 前，最终单行 `switch`/`rollback` 命令见切换手册第 12 节，必须由维护者手动执行。
 
 ## 2026-09-05 v0.2.1 发布前历史快照（已被本轮状态覆盖）
 
@@ -345,7 +345,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 1. 本轮范围仅为默认首页雨景与玻璃风格，包括深浅主题、文字可读性和移动端菜单。自定义首页/精简首页分支、API、事件、权限、配置绑定及后端业务不变；图片位于 `frontend/public/rain-city-1.jpg`。UI commit=`b1ed483ea5fc648cb3c15fcf2e7040e68a151a41`，tree=`bb821e2a0003d13cd425ca8ff012dbb26f70b1a6`。
 2. 本地 build、首页 13 项测试及 1440/390/320px 深浅共 6 场景验证通过；服务器候选 Docker gate 和首页资源门禁通过。image=`sha256:32f14750ce73da00dc4c5146b1d9ad6c4420ee2c3dffe098798e41a123c6bd2c`，归档 SHA256=`26422d9eaad7ede983b228e84ee756eae313347b0135bf4e2d48138912c3246b`。
-3. 部署包装器修复提交=`a76242e8f`；安装脚本为 `/srv/subnexus-migration/tools/subnexus-ui-cutover-d24d060c-20260906.sh`，SHA256=`d24d060c34f61d2663c6ba41a518d3bb3a8af3d9e367142f123516bd80485997`。它独立校验旧控制器 SHA，不能混用两种脚本的批准哈希。
+3. 部署包装器修复提交=`7d51ea811`；安装脚本为 `/srv/subnexus-migration/tools/subnexus-ui-cutover-0d6d2089-20260906.sh`，SHA256=`0d6d208962e55f2aa75afdb2b490a6652df3c856e4ec132b4af974a942064ca9`。它独立校验旧控制器 SHA，不能混用两种脚本的批准哈希。
 4. 首次在线 prepare `/srv/subnexus-migration/cutover/20260905160223-175225` 后因 settings 漂移失效；最终有效 run 见文末最新记录，历史失败 run 禁止复用。
 5. 上一批 v0.2.1 run `20260905114022-4163123` 实际已 switched，线上 ID 前缀为 `9753053d8bd9`。本轮固定回滚目标仍为旧 SubNexus `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，锚定 run `20260905085804-4072165`；不新建永久回滚对象，不把当前 v0.2.1 容器替换为回滚目标。
 6. 已清理失败 partial 约 3.386 GB 和 7 个无引用构建镜像，prepare 前空间约 19.1 GB 增至 24.61 GB；清理记录 `/srv/subnexus-migration/cleanup-rain-20260905.txt`，SHA256=`94a4840ce2fd9b3c3dce40c5864a691675e4ca752b85f3dc3f437e550e2829c2`。本轮最终空间、备份/证据 SHA 待 prepare 完成后登记；不使用 prune。
@@ -354,7 +354,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 
 1. 首次 `20260905160223-175225` 的 prepare 曾成功，但后续全量 settings 哈希漂移，probe 在候选创建前安全失败，无 candidate。原控制器只保存 18 键设置快照，不能用它直接解释全量哈希变化；具体外部改键与来源仍未确定，当前哈希复验稳定仅是观察结果。
 2. 第二次 `20260905163008-194872` 在备份前被空间门禁拒绝（`18797457408 < 23715311616` bytes）。首次失效 run 三个大备份及 sidecar 已逐项校验/记录后精确删除，保留 manifest/settings/metadata 与 `INVALIDATED_SETTINGS_DRIFT`；这两个 run 均不得复用。
-3. 最终 `/srv/subnexus-migration/cutover/20260906082131-600835`（PID 600835）已 `READY=prepared`，候选镜像与脚本不变；备份/manifest、全量 settings、固定旧回滚对象、stopped probe 和最终只读复核均已通过，人工命令见切换手册第 12 节。
+3. 最终 `/srv/subnexus-migration/cutover/20260906090405-624283`（PID 624283）已 `READY=prepared`，候选镜像与脚本不变；备份/manifest、全量 settings、固定旧回滚对象、stopped probe 和最终只读复核均已通过，人工命令见切换手册第 12 节。
 4. 失效 run 清理证据 `/srv/subnexus-migration/cleanup-rain-invalid-run-20260905160223.txt`，SHA256=`c3e1af6e289292b4b2baa8b76136ea322f19556785a17caf63d6d34c2060d326`；清理后可用 `24025554944` bytes。固定旧 `be459...` 回滚对象及既有业务数据/证据不变；本轮仍不新建永久回滚对象。
 
 最终动作仍由维护者在维护窗口执行本手册第 12 节的单行 `switch`；异常时只对同一 run 执行单行应用 `rollback`，不创建新的回滚目标。
