@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移矩阵
 
-> 最后更新：2026-09-06。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。首页 Rain + Glass UI 的最终 run `/srv/subnexus-migration/cutover/20260906100431-660485` 已 `READY=prepared`，stopped probe 和最终只读复核通过，尚未 switch。最终人工命令见切换手册第 12 节，额外二开功能仍保持关闭。
+> 最后更新：2026-09-06 22:09。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。`F:\Rain` 首页源码直接迁移 run `/srv/subnexus-migration/cutover/20260906134705-774592` 已 `READY=prepared`，stopped probe 和最终只读审计通过，尚未 switch。最终人工命令见切换手册第 13 节，额外二开功能仍保持关闭。
 > 本表是逐模块迁移的唯一状态入口。路径是调查线索，不代表目标代码可以直接复制；“待证据”不等于可上线。
 
 ## 保留功能
@@ -97,3 +97,12 @@
 - 签到写入须在事务内锁定/创建 streak，重复日期、并发请求和 IP 限制必须幂等；关闭时不写任何活动表或余额。
 - 活动中心使用独立新开关，不继承旧 `ACTIVITY_CENTER_CONFIG`；用户列表关闭时返回 `{enabled:false,items:[]}` 且不查表，管理列表关闭时为空且不查表，管理写操作返回禁用错误。管理员配置接口始终保留用于显式开启。
 - 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（282 个文件/1954 个测试）/build、迁移契约及重点并发/关闭态测试；隔离 PostgreSQL、Redis 8 RDB、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆、Docker runtime gate 和线上 `prepare` 已通过，人工 `switch` 仍待执行。前端只在 flag 开启后加载活动 API。
+
+## `F:\Rain` 首页源码直接迁移发布补充（2026-09-06 22:09 Asia/Shanghai，当前权威）
+
+- 本轮仅替换默认首页 UI：直接迁移目标源码的结构、组件、CSS、三张图片、两层 Canvas、动画和响应式交互。F01-F13、排除项和上游模块的裁决均未变化，也没有新增功能条目。
+- 当前项目的 `site_name`、Logo、副标题、首页内容模式、文档、Model Plaza、认证/管理员路由、语言、主题、客服、providers/footer 和 API CTA 均保留既有配置、显示接口、权限和事件；F12/F13 的 fail-closed 行为保持不变。
+- 应用 commit=`245ecd2630b96a9807df89dc02828bbb436e7624`，tree=`b0f55487331dca07031219d59cd4159cab8a610d`；Vitest `287/287` 文件、`1990/1990` 测试、typecheck、ESLint、build、wrapper `26` 场景、桌面/移动 Playwright 和三图 SHA 对照均通过。
+- 候选 image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`；Gate SHA=`d13c2a3095db4699d1a20939818d003e985f2715655f51e9715f286388d14544`；首页 observer SHA=`bd70fe35573d4a6c2ac6399cf50f9bec0cd18600b387ed8eea0e2f65ee76f678`。
+- 新 run=`/srv/subnexus-migration/cutover/20260906134705-774592`，manifest SHA=`e3809a4d6a09d469c994d38453551d466e73f49b45903aae17f8683fe63fc897`。全新备份、18 个受保护设置、运行时合同、owner、固定旧回滚对象、never-started probe 和最终只读审计均通过；证据 SHA=`0f69354a5d7911a66a6c5ef01fc58ac3160bd838a78fd214f8bb7151ac125609`。
+- 尚未 switch/rollback，所有迁移功能继续保持当前开关值。本轮不创建新的永久回滚对象；唯一人工命令见切换手册第 13 节。

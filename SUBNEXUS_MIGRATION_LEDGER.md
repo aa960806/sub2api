@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 当前权威状态：2026-09-06（Asia/Shanghai）。UI 候选 `b1ed483ea5fc648cb3c15fcf2e7040e68a151a41` 的镜像与门禁不变；历史 UI run 均不可交接。最终 run `20260906100431-660485` 已 `READY=prepared`，stopped probe、备份、Gate 和最终只读复核均通过，尚未 switch；历史 run 不得交接。
+> 当前权威状态：2026-09-06 22:09（Asia/Shanghai）。`F:\Rain` 首页源码直接迁移候选 `245ecd2630b96a9807df89dc02828bbb436e7624` 已完成构建、Gate、新 run `20260906134705-774592` 的全新备份/prepare、never-started probe 和最终只读审计，尚未 switch。旧 run `20260906100431-660485` 已属于当前线上上一版 UI，现行命令已撤回；所有历史 run 均不得交接。
 
 ## 状态定义
 
@@ -15,8 +15,8 @@
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
 | 最新上游基线 SHA | `ab99d56e9626e6cd731592dae8553c9758a0efa2`（版本 `0.2.1`；tag `578785ee7fb35030b094b69624efe25670a36f5f`） |
-| 迁移分支发布状态 | v0.2.1 已在线 switched；本轮 UI 与部署包装器修复均已推送，包装器 commit=`a76242e8f`；最终 UI run 已 prepared，尚未 switch |
-| 应用功能候选 SHA | `b1ed483ea5fc648cb3c15fcf2e7040e68a151a41`，tree=`bb821e2a0003d13cd425ca8ff012dbb26f70b1a6`；后续包装器/文档提交不改变此应用镜像 |
+| 迁移分支发布状态 | v0.2.1 与上一版 Rain UI 已在线 switched；本轮直接源码迁移提交已推送，新 run 已 prepared 且 stopped probe 通过，尚未 switch |
+| 应用功能候选 SHA | `245ecd2630b96a9807df89dc02828bbb436e7624`，tree=`b0f55487331dca07031219d59cd4159cab8a610d`；后续文档提交不改变此应用镜像 |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
 | 目标版本/Go | `0.2.1` / `1.27.0`（本轮 UI 基线） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
@@ -41,8 +41,16 @@
 | 编号 | 门禁 | 状态 | 证据/备注 |
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
-| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 最终 prepare 通过 | 当前 run `/srv/subnexus-migration/cutover/20260906100431-660485` 的 PostgreSQL/Redis/应用归档及设置快照、manifest、sidecar SHA256 全部通过；历史失败 run 备份保留审计，不作为本次输入 |
+| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 最终 prepare 通过 | 当前 run `/srv/subnexus-migration/cutover/20260906134705-774592` 的 PostgreSQL/Redis/应用归档及设置快照、manifest、sidecar SHA256 全部通过；历史 run 备份不作为本次输入 |
 | B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；当前服务器复核的 gate 证据 `20260904T110814Z-be48efa2-3133-4c27-bc9f-a7cbf1d221c9`，evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
+
+## 当前人工交接摘要（2026-09-06 22:09 Asia/Shanghai）
+
+| 项目 | 状态 | 证据/处理 |
+| --- | --- | --- |
+| 当前交接 | 全部前置完成，停在人工 switch 前 | UI wrapper 测试、最终在线 prepare、备份/manifest、运行配置摘要、真实 stopped probe 和最终只读复核全部通过；probe 已删除，原 manifest 未改，旧应用继续健康运行 |
+| 当前容量 | 已解决，新备份后仍满足余量 | 最终 probe 后可用 `21903691776` bytes，保持 8 GiB 保留；仅精确删除已判定失效 run 的六个备份文件/sidecar，未使用 prune |
+| 当前交接 run | `READY=prepared` | `/srv/subnexus-migration/cutover/20260906134705-774592`；UI wrapper SHA=`054507b15851c9547ab347f88ad21d8f9a5203be6123bfb2030e21c88806fd5d`；manifest SHA=`e3809a4d6a09d469c994d38453551d466e73f49b45903aae17f8683fe63fc897`；最终审计 SHA=`0f69354a5d7911a66a6c5ef01fc58ac3160bd838a78fd214f8bb7151ac125609`；人工命令见切换手册第 13 节。所有历史 run 不得复用 |
 
 ## 线上发布尝试历史状态（2026-09-05，非本轮执行入口）
 
@@ -56,9 +64,6 @@
 | 新 prepare 重试 | 历史备份有效，run 已终态 | run `/srv/subnexus-migration/cutover/20260905002953-3824168` 曾有 `READY=prepared`，但第二次人工 switch 因 `OomKillDisable=null/false` 哈希误报自动回滚，现为 `state=rolled_back`；备份保留审计，不得再次作为 switch 输入 |
 | 第二次人工 switch | 已自动回滚，禁止复用 | 候选成功创建、启动并健康，随后运行时合同哈希误报；自动回滚恢复旧应用和切换前设置，未恢复 PostgreSQL/Redis。旧应用 healthy/restart=0，PostgreSQL/Redis 原 ID running/restart=0，失败候选与临时旧名称无残留 |
 | 运行时合同修复 | 本地通过，待安装 | 提交 `0d083f6b7` 将旧容器 `OomKillDisable=null` 与 Docker 29 候选 `false` 归一为同一安全语义，保留 `true` 拒绝；显式保留 `0.0.0.0` 端口 HostIP；候选合同在 entrypoint 启动前先校验并在健康后复核。Windows/WSL 发布夹具通过 |
-| 当前交接 | 全部前置完成，停在人工 switch 前 | UI wrapper 测试、最终在线 prepare、备份/manifest、运行配置摘要、真实 stopped probe 和最终只读复核全部通过；probe 已删除，原 manifest 未改，旧应用继续健康运行 |
-| 当前容量 | 已解决，新备份后仍满足余量 | 2026-09-05 14:11:57 Asia/Shanghai 可用 `35573174272` bytes；保持 8 GiB 保留，未复用旧备份 |
-| 当前交接 run | `READY=prepared` | `/srv/subnexus-migration/cutover/20260906100431-660485`；UI wrapper SHA=`7c3a42ac381f3839b5de5d605d465ee13b005ea9321b28ef47427ece2e910d77`；manifest SHA=`4cdd0bac0157663f9f485847ac92d5cd09d3f6a66b90def09f95f3389c4570b6`；Gate、probe、备份和 settings 证据见变更记忆文末；最终单行 switch/rollback 命令见切换手册第 12 节。所有历史 run 不得复用 |
 
 ## 实施批次
 
@@ -245,9 +250,9 @@
 | 在线 prepare（首次失效历史） | `/srv/subnexus-migration/cutover/20260905160223-175225`；因 settings 漂移失效，备份/manifest 仅作审计，不得交接 |
 | 固定回滚对象 | ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；名称 `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor run=`20260905085804-4072165`；旧 image ID 前缀 `b24b585`；不新建永久回滚对象 |
 | 定向清理 | 失败 partial 约 3.386 GB 和 7 个无引用构建镜像；prepare 前可用约 19.1 GB 增至 24.61 GB；日志 `/srv/subnexus-migration/cleanup-rain-20260905.txt`，SHA256=`94a4840ce2fd9b3c3dce40c5864a691675e4ca752b85f3dc3f437e550e2829c2`；未使用 prune |
-| 人工边界 | 最终 switch/rollback 命令已发布于切换手册第 12 节，均绑定 `/srv/subnexus-migration/cutover/20260906100431-660485`；由维护者执行；不修改 Nginx、恢复数据库或开启功能 |
+| 人工边界 | 该交接后续已完成 switch；当时命令现已撤回，run `/srv/subnexus-migration/cutover/20260906100431-660485` 不得用于本轮；当前入口见切换手册第 13 节 |
 
-## 2026-09-06 Rain + Glass UI 重试台账（已完成前置，停在人工 switch 前）
+## 2026-09-06 Rain + Glass UI 重试台账（历史，后续已 switched）
 
 | 项目 | 当前结果 |
 | --- | --- |
@@ -258,5 +263,21 @@
 | 清理证据/余量 | `/srv/subnexus-migration/cleanup-rain-invalid-run-20260905160223.txt`；SHA256=`c3e1af6e289292b4b2baa8b76136ea322f19556785a17caf63d6d34c2060d326`；清理后可用 `24025554944` bytes |
 | 最终 prepare | `/srv/subnexus-migration/cutover/20260906100431-660485`，PID 660485，`READY=prepared`；manifest `state=prepared/ui_state=prepared`，manifest SHA=`4cdd0bac0157663f9f485847ac92d5cd09d3f6a66b90def09f95f3389c4570b6`，候选镜像不变 |
 | 备份与证据 | PostgreSQL dump、Redis RDB、应用归档及 sidecar SHA 全部通过；manifest SHA=`4cdd0bac0157663f9f485847ac92d5cd09d3f6a66b90def09f95f3389c4570b6`；settings-before SHA=`575bb5c0081341e1d9e8fb54241d491e0e702e26d24bfe7d70412ba22cf741ea`；closed SHA=`6a0ed24c164bb1fa8ebb5edecb8712f77458bfca145c713adfd105257fcda8c3` |
-| probe | ID=`1942a6ddf23e50efe23fa2029ac26f9794da202e3bc1479fa88b341a204ce159`，状态 `created|false|0|0001-01-01T00:00:00Z` 后精确删除；evidence SHA=`f253bc1e057f32b4882f8573a10ed9a5d1c524714fe4318a3078f1df8abbd703` |
-| 人工边界 | 本轮未切换；最终 switch/rollback 命令只见切换手册第 12 节，均绑定同一最终 run，由维护者手动执行；不创建新的永久回滚对象 |
+| probe | ID=`1942a6ddf23e50efe23fa2029ac26f9794da202e3bc1479fa88b341a204ce159`，状态 `created\|false\|0\|0001-01-01T00:00:00Z` 后精确删除；evidence SHA=`f253bc1e057f32b4882f8573a10ed9a5d1c524714fe4318a3078f1df8abbd703` |
+| 人工边界 | 该表为上一版 UI 历史记录；其命令已撤回。当前 switch/rollback 命令只见切换手册第 13 节，均绑定新 run，由维护者手动执行；不创建新的永久回滚对象 |
+
+## `F:\Rain` 首页源码直接迁移最终交接台账（2026-09-06 22:09 Asia/Shanghai，当前权威）
+
+| 项目 | 状态 | 证据 |
+| --- | --- | --- |
+| UI 范围 | 通过 | 直接迁移 `F:\Rain` 首页结构、组件、CSS、三张原图、两层 Canvas、动画和响应式行为；当前配置/数据接口、按钮事件、路由、权限、认证、开关和业务逻辑保持不变 |
+| 源码 | 通过并已推送 | commit=`245ecd2630b96a9807df89dc02828bbb436e7624`；tree=`b0f55487331dca07031219d59cd4159cab8a610d` |
+| 本地门禁 | 通过 | Vitest `287/287` 文件、`1990/1990` 测试；定向首页 `4/4`；TypeScript、ESLint、build；UI wrapper `26` 场景；Playwright `1440x900`/`390x844` 无错误或溢出、Canvas 非空；三图 SHA 与源一致 |
+| 构建 | 通过 | image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`；archive SHA=`65f06c3e221cfd08d68f84df882b2b3c858e5b8c939715f41c466eee0cb35f15`；source bundle SHA=`46bc0be1aca008eb6297f9935b7a4a0a1164494e49781f329542a3f905d5de57` |
+| Docker Gate/首页 observer | 通过 | Gate evidence SHA=`d13c2a3095db4699d1a20939818d003e985f2715655f51e9715f286388d14544`；首页 evidence SHA=`bd70fe35573d4a6c2ac6399cf50f9bec0cd18600b387ed8eea0e2f65ee76f678`；均 `cleanup_failed=false`，无临时候选残留 |
+| 失效备份清理 | 通过 | run `20260906082131-600835` 六个备份/sidecar共 `5264399409` bytes 精确删除；证据 SHA=`8992b5d48686997901fedd33bd89d3c552b624e31516e9e0b83489776abb9b40`；未 prune，生产和固定 anchor 未变 |
+| 在线 prepare | 通过 | run=`/srv/subnexus-migration/cutover/20260906134705-774592`；`READY=prepared`、`UI_READY=application-refresh-v1`；manifest `state=prepared/ui_state=prepared/ui_commit_intent=no`，SHA=`e3809a4d6a09d469c994d38453551d466e73f49b45903aae17f8683fe63fc897` |
+| 备份/设置/合同 | 通过 | PostgreSQL `5192049672` B、Redis `7915377` B、应用数据 `82805759` B；全部 sidecar 与 manifest 三方哈希通过；18 个受保护设置哈希=`3959daf3caed2f8a4c22023db4b7da8be627fb4b8a087bba4d5309cd8223d558`；runtime contract=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d` |
+| Stopped probe/最终复核 | 通过 | 审计脚本 SHA=`3d1e4a6734750256e4c6744e4c6857a63c764c7b7994e6ead5bcc0583c858959`；probe ID=`e9d9da3e...` 从未启动且已删除；证据 SHA=`0f69354a5d7911a66a6c5ef01fc58ac3160bd838a78fd214f8bb7151ac125609`；manifest、live、PG、Redis、settings、anchor 前后不变 |
+| 固定回滚 | 通过且未变 | old ID=`be459424b327...`；image=`sha256:b24b585...`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor manifest SHA=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e` |
+| 人工边界 | 待维护者 | 尚未 switch/rollback；唯一命令见切换手册第 13 节，均绑定新 run，显式 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120`；不新建回滚对象、不恢复数据库、不改 Nginx/开关 |
