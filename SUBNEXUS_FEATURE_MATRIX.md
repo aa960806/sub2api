@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移矩阵
 
-> 最后更新：2026-09-07（Asia/Shanghai）。F01-F13 的当前业务实现、API、权限、路由、开关和数据边界保持不变；本轮仅把 `F:\Sub2Api\SubNexus` 中保留功能的用户端页面结构、组件和视觉表现迁入当前项目。候选 UI commit、镜像和远端 run 尚未生成；阶段性定向验证已通过，最终全量门禁和桌面/移动视觉验收仍须在提交前统一重跑。
+> 最后更新：2026-09-07（Asia/Shanghai）。F01-F13 的当前业务实现、API、权限、路由、开关和数据边界保持不变；本轮仅把 `F:\Sub2Api\SubNexus` 中保留功能的用户端页面结构、组件和视觉表现迁入当前项目。候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已推送，全部本地门禁、隔离构建、Docker Gate、无停机 `prepare`、全新备份、never-started probe 和严格最终审计均通过；生产尚未 switch。
 > 本表是逐模块迁移的唯一状态入口。路径是调查线索，不代表目标代码可以直接复制；“待证据”不等于可上线。
 
 ## 保留功能
@@ -98,7 +98,7 @@
 - 活动中心使用独立新开关，不继承旧 `ACTIVITY_CENTER_CONFIG`；用户列表关闭时返回 `{enabled:false,items:[]}` 且不查表，管理列表关闭时为空且不查表，管理写操作返回禁用错误。管理员配置接口始终保留用于显式开启。
 - 已通过本地后端全量（默认与 `unit` 标签）、前端 typecheck/Vitest（282 个文件/1954 个测试）/build、迁移契约及重点并发/关闭态测试；隔离 PostgreSQL、Redis 8 RDB、miniredis/候选主机 smoke、生产备份克隆、旧版回滚克隆、Docker runtime gate、线上 `prepare` 和本轮首页 switch 均已通过。F01-F13 仍按各自 gate 等待逐项业务验收，前端只在 flag 开启后加载活动 API。
 
-## `F:\Rain` 首页源码直接迁移发布补充（2026-09-06 23:25 Asia/Shanghai，当前权威）
+## `F:\Rain` 首页源码直接迁移发布补充（2026-09-06 23:25 Asia/Shanghai，上一版生产快照）
 
 - 本轮仅替换默认首页 UI：直接迁移目标源码的结构、组件、CSS、三张图片、两层 Canvas、动画和响应式交互。F01-F13、排除项和上游模块的裁决均未变化，也没有新增功能条目。
 - 当前项目的 `site_name`、Logo、副标题、首页内容模式、文档、Model Plaza、认证/管理员路由、语言、主题、客服、providers/footer 和 API CTA 均保留既有配置、显示接口、权限和事件；F12/F13 的 fail-closed 行为保持不变。
@@ -109,7 +109,7 @@
 - `2026-09-06T15:19:27Z` 启动的切换后只读审计最终输出 `POST_SWITCH_AUDIT=passed` 且退出码为 `0`；PostgreSQL/Redis 身份、全部备份/sidecar、runtime、18 键设置、应用数据身份和固定 anchor 均通过。
 - 公网 `https://yydsapi.uno` 的 Playwright `1440x1000`/`390x844` 验收通过：无页面错误或溢出，三张图片与两层 Canvas 正常；文档、模型广场、登录、语言、主题以及配置驱动的站名/Logo/副标题正常。客服因既有开关为 `false` 不显示，符合原功能合同；JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
 - 此次只切换首页 UI，未改变 F01-F13 表格中的业务验收结论，也未新建回滚对象或执行 rollback。固定旧 SubNexus `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee` / image `sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd` / anchor `20260905085804-4072165` 仍为唯一回滚目标，exited/restart=0。
-- 本轮 switch 命令已消费，禁止重跑；当前只保留切换手册第 13 节的同 run rollback 单行命令作为异常恢复入口。
+- 该轮 run 不得作为新的 `prepare`/`switch` 输入，已消费的 switch 禁止重跑；第 13 节 rollback 是状态窗口例外。只有本轮新 manifest 仍为 `prepared`、switch 进程已退出或未运行且当前生产仍为 `86104829...` 时，该 rollback 才提供当前生产应急恢复。若执行它，本轮新 prepared run 与第 14 节 switch 立即失效，必须重新准备并审计。switch 运行中只等待返回且不并发 rollback；进程退出且新 manifest 已离开 `prepared` 后才改用第 14 节同 run rollback。
 
 ## 2026-09-07 保留功能用户端 UI 对齐状态
 
@@ -131,4 +131,8 @@
 
 共享样式只在 `.subnexus-legacy-surface main` 下生效，避免影响 AppHeader/AppSidebar；完整页面按白名单 opt-in，Dashboard 和 Payment 仅局部 opt-in。明确不迁移每日消耗转盘、红包雨、运行日历、Media Studio 或 Creative Workshop，也不恢复旧活动红点、旧单入口和旧奖励联动。
 
-当前是本地未提交候选。wrapper 的 34 个 production UI 文件与 18 个证据文件共 52 项精确覆盖候选差异；阶段性定向测试、typecheck、lint、build 和 26 场景 wrapper 测试已取得通过结果，最终全量重跑、Playwright 对比、隔离构建和远端发布证据仍待完成。因此 F01-F13 的业务实现状态不变，本节只更新显示层迁移状态。
+显示层候选已经固定并完成全部切换前证据：commit=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`、tree=`7b0ee6db2dc96fd97106ca175640b3a15e8ec233`，wrapper 的 34 个 production UI 文件与 18 个证据文件共 52 项精确覆盖 `245ecd2630b96a9807df89dc02828bbb436e7624..f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 差异。定向/全量测试、typecheck、lint、build、26 场景 wrapper、桌面/移动明暗主题 Playwright 对比、隔离构建和远端 Gate 均通过；image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`。
+
+prepare run=`/srv/subnexus-migration/cutover/20260907045159-1121373`，manifest SHA256=`87b51ae80dccc6ae4590537bcc2636795b0a650db84a7bb40a9531b4ce85d135`，状态为 `prepared` 且没有 `SWITCHED`/`ROLLED_BACK`。严格最终审计脚本 SHA256=`5239d9c17d03f7bd6dce24daed7e2c1d8216d9e98b854cafec4a364fec13f7f6`，evidence SHA256=`9dc1293e6ab16af8b1f805b30e39eba5ecfa55e2b07015ae251a308b70c234ea`，结果为 `FINAL_PRE_SWITCH_AUDIT=passed`、`FINAL_SWITCH_EXECUTED=false`。代理停在维护者手动 switch 前，固定旧 SubNexus 回滚对象不变且未新建永久回滚对象。维护者启动 switch 后必须等待进程返回，wrapper 负责失败自动恢复；只有进程退出且 manifest 已离开 `prepared` 后，第 14 节 rollback 才适用。
+
+表格各项“待最终证据/维护者验收”仍专指 F01-F13 在功能开关开启后的逐项业务验收，不代表本轮 UI 发布前置尚未完成；所有相关生产功能开关继续保持原值。
