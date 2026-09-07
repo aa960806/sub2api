@@ -1,10 +1,10 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态：2026-09-07（Asia/Shanghai）。保留二开用户端界面候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已推送并完成镜像、Docker Gate、无停机 `prepare`、全新备份、never-started probe 和严格最终审计。生产仍运行切换前容器 `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`；本轮没有 `SWITCHED`/`ROLLED_BACK`。只有新 manifest 仍为 `prepared` 且本轮 `switch` 进程已退出或未运行时，第 13 节旧 Rain run 的 rollback 才是当前生产应急恢复入口；`switch` 进程运行期间必须等待其返回且不得并发执行任何 rollback。进程退出后，只有新 manifest 已离开 `prepared`，才可使用第 14 节同 run rollback。
+> 当前权威状态：2026-09-07（Asia/Shanghai）。保留二开用户端界面候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已完成切换。当前线上容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`，`running/healthy/restart=0`；run `/srv/subnexus-migration/cutover/20260907045159-1121373` 的 manifest 已为 `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`，并有 `SWITCHED=switched`、无 `ROLLED_BACK`。第 13 节旧 Rain rollback 窗口已关闭并撤回；唯一保留的可执行回滚是第 14 节绑定本轮 run 的 rollback，须在 switch 进程已退出、manifest 已离开 `prepared` 且确认需要恢复固定旧 SubNexus 时执行。
 
-本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧回滚对象和 stopped probe 均核验完成之后。本轮新 UI 的最终 `switch` 必须由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
+本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧回滚对象和 stopped probe 均核验完成之后。本轮新 UI 的 `switch` 已由维护者手动完成；当前只保留与同一 run 绑定的 rollback。构建或 Gate 通过本身不代表可以切换。
 
-最新授权允许代理完成提交推送、隔离构建、上传安装、候选 Gate、全新备份、无停机 `prepare`、never-started probe、最终审计及范围明确的无用垃圾清理；到新 run 的最终 `switch` 前必须停止并交给维护者，同时给出绑定同一新 run 的 rollback 命令。历史失败、已回滚或已成功切换的 run 均不得作为新的 `prepare`/`switch` 输入；唯一例外是第 13 节成功 Rain run 可在该节明确的 pre-switch 状态窗口内执行 rollback。
+最新授权允许代理完成提交推送、隔离构建、上传安装、候选 Gate、全新备份、无停机 `prepare`、never-started probe、最终审计、范围明确的无用垃圾清理和切换后文档收口；本轮 `switch` 已由维护者完成。历史失败、已回滚或已成功切换的 run 均不得作为新的 `prepare`/`switch` 输入；第 13 节旧 Rain rollback 窗口已关闭，唯一现行 rollback 为第 14 节同 run 入口。
 
 ## 1. 发布前硬门禁
 
@@ -206,12 +206,12 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 当时流程完成“新脚本安装、prepare 和 stopped probe 验证”，以下为历史进度记录，不是当前人工执行入口：
 
-- 本节列出的失败或已覆盖命令不得作为新的 `prepare`/`switch` 输入，也不得再次执行 rollback；第 13 节的窗口内 rollback 是单独列明的例外；
+- 本节列出的失败或已覆盖命令不得作为新的 `prepare`/`switch` 输入，也不得再次执行 rollback；第 13 节旧 Rain rollback 窗口已关闭，当前恢复只使用第 14 节同 run rollback；
 - 修复提交 `fbca62fbccb5a783d8d35cb9dcc4025cdb1c4a44` 已推送，脚本 SHA 为 `19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，测试 SHA 为 `7e981ff118b795b40b38d22eb0a09667d7ac25977d9f17c5a30590dccece9763`；Git Bash/WSL full test 和 Linux 动态执行均通过；
 - 服务器脚本 `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905.sh` 已安装为 `root:root`/`0700`；唯一旧 `runtime-probe.nroC3xIz` 已确认无容器后精确删除；
 - 新的无停机 `prepare` run `/srv/subnexus-migration/cutover/20260905055413-3958448` 已 `READY=prepared`；PostgreSQL/Redis/应用归档 sidecar、manifest、runtime/settings 和 owner 合同均通过；
 - stopped probe `ac6fc54a18cddb98fd9abce54ff2be6e23fd3ac02b804580d1220eaa770beadd` 已验证 created/false/0 后精确删除，evidence SHA=`87399f0bc40f41dee0600e1efd421f6953f75359cc067ee943d3ce1ba80627e0`，无候选或 probe 残留；
-- 该历史批次的最终 `switch` 曾由维护者执行并成功；其后续历史状态见第 13 节。当前发布入口在第 14 节；只有新 manifest 仍为 `prepared` 且新 `switch` 进程已退出或未运行时才可使用第 13 节 rollback，进程运行中等待其返回，进程退出且 manifest 已离开 `prepared` 后才使用第 14 节 rollback。第 10 节旧命令已撤回。
+- 该历史批次的最终 `switch` 曾由维护者执行并成功；其后续历史状态见第 13 节。第 13 节 rollback 窗口已关闭，当前发布后的恢复入口仅为第 14 节同 run rollback；第 10 节旧命令已撤回。
 
 此前 `cutover_allowed=false` 的人工确认已完成；候选的关闭态设置快照已验证，线上新容器已健康运行。本轮未开启额外功能或修改 Nginx。
 
@@ -254,7 +254,7 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 首次失效 run 的三个大备份及 sidecar 已逐项校验/记录后精确删除，manifest/settings/metadata 与 `INVALIDATED_SETTINGS_DRIFT` 保留。清理证据 `/srv/subnexus-migration/cleanup-rain-invalid-run-20260905160223.txt`，SHA256=`c3e1af6e289292b4b2baa8b76136ea322f19556785a17caf63d6d34c2060d326`，清理后可用 `24025554944` bytes；固定旧回滚对象不变。最终 run 备份 SHA 及 stopped probe 证据见变更记忆文末；本段失效 run 不得作为新的 `prepare`/`switch` 输入，也不是 rollback 入口。
 
-## 13. `F:\Rain` 首页源码直接迁移切换结果与回滚入口（2026-09-06 23:25 Asia/Shanghai，已 switched）
+## 13. `F:\Rain` 首页源码直接迁移切换结果（2026-09-06 23:25 Asia/Shanghai，历史，rollback 已关闭）
 
 | 固定项 | 当前值 |
 | --- | --- |
@@ -275,13 +275,9 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 | 公网验收 | `https://yydsapi.uno` 桌面/移动端均为直接迁移的 Rain UI；三张城市图片加载成功，两层 Canvas 非空，无页面错误或横向溢出；未登录状态下文档、模型广场、登录、语言、主题交互正常，客服按原功能开关保持关闭 |
 | 固定旧回滚对象 | ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；exited/restart=0；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`；anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e` |
 
-本轮只替换默认首页 UI，未改变配置/API/按钮业务、数据库、Nginx 或功能开关。全新备份、18 个受保护设置、owner、运行时合同、磁盘预算和固定 anchor 均已通过；本轮没有创建新的永久回滚对象。该成功 run 不得作为新的 `prepare`/`switch` 输入，其 switch 命令早已消费且禁止重跑；下列 rollback 是明确保留的状态窗口例外。只有第 14 节新 run 的 manifest 仍为 `state=prepared/ui_state=prepared`、新 `switch` 进程已退出或未运行，并且当前生产仍是 `86104829...` 时，以下 rollback 才适用。若实际执行以下 rollback，当前生产身份会改变，本轮新 prepared run 与第 14 节绑定它的 switch 命令立即失效；不得继续执行第 14 节任一命令，必须从新生产身份重新 `prepare`、完成 probe 与严格审计并重新交接。若新 `switch` 进程正在运行，必须等待其返回且不得并发执行本节或第 14 节 rollback；该进程的失败路径会自动尝试恢复切换前当前容器。进程退出后若新 manifest 已离开 `prepared`，此旧入口失效，需要恢复固定旧 SubNexus 时改用第 14 节同 run rollback。
+本节保留上一版 Rain UI 的发布事实和固定对象供审计。其 rollback 曾只在本轮 retained-UI switch 前的状态窗口内有效；当前生产已切换为 retained-UI candidate，该窗口已关闭，旧命令已撤回（`WITHDRAWN/CLOSED after retained-UI switch`）。不得从本节或 Git 历史复制执行。
 
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=054507b15851c9547ab347f88ad21d8f9a5203be6123bfb2030e21c88806fd5d SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-054507b1-20260906.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260906134705-774592
-```
-
-## 14. 保留二开用户端界面最终人工交接（2026-09-07，已 prepared，尚未 switch）
+## 14. 保留二开用户端界面切换结果与现行回滚入口（2026-09-07，已 switched）
 
 | 固定项 | 当前值 |
 | --- | --- |
@@ -293,19 +289,19 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 | 原控制器 | `/srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh`；SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65` |
 | Docker Gate | `/srv/subnexus-migration/docker-candidate/20260907T044220Z-38d5e210-40a5-40f4-a52a-d521af351d7e/evidence.txt`；SHA256=`6ed8c611f8c86893c49f5594f6f2b39cd01b010e26f68a7b0b2afcde82e39c8a` |
 | 首页 observer | `/srv/subnexus-migration/diagnostics/rain-home-f6f6dafe1fb2.oNeOWKxE/evidence.txt`；SHA256=`272626c264aaf7d12811460707f231a903af89affbec342315434c1ea7cfac70` |
-| 在线 prepare | `/srv/subnexus-migration/cutover/20260907045159-1121373`；`READY=prepared`、`UI_READY=application-refresh-v1`；manifest `state=prepared/ui_state=prepared/ui_commit_intent=no`，无 `SWITCHED`/`ROLLED_BACK`；manifest SHA256=`87b51ae80dccc6ae4590537bcc2636795b0a650db84a7bb40a9531b4ce85d135` |
+| 切换前 prepare（历史证据） | `/srv/subnexus-migration/cutover/20260907045159-1121373`；`READY=prepared`、`UI_READY=application-refresh-v1`；切换前 manifest `state=prepared/ui_state=prepared/ui_commit_intent=no`；SHA256=`87b51ae80dccc6ae4590537bcc2636795b0a650db84a7bb40a9531b4ce85d135` |
 | 全新备份 | PostgreSQL `5275269397` B / SHA256=`d5528d86bcdd84c86ba5db056235a94349045f63f985de3d55ce4064053548c3`；catalog `118684` B / `7dd511aac04df73ea95f0d4bc74a8b4b3b32b44dca6a5bc3d76d56829ccefc85`；Redis `9703822` B / `28052d344e428c96da409c35225ad099b0ba3751f9f5f5ca9491a5c8661546aa`；应用数据 `71058234` B / `f686be37409fa776253f62e9bcc638b6e3028209276a9e6dd93ac478a92819a2`；实际文件、sidecar、manifest 与格式/复读检查全部通过 |
-| 设置/运行合同 | 18 个受保护设置 SHA256=`3959daf3caed2f8a4c22023db4b7da8be627fb4b8a087bba4d5309cd8223d558`；runtime contract SHA256=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d` |
+| 设置/运行合同 | 切换前 prepare 的 18 个受保护设置 SHA256=`3959daf3caed2f8a4c22023db4b7da8be627fb4b8a087bba4d5309cd8223d558`；切换后当前 SHA256=`eddb4a4333c07c1cea357f12e2adb0bede963f6f0806f6757895c8d3f0f092d4`（唯一变化为管理员 PUT 的 `subnexus_invite_activities_config`，其余 17 项保持 prepare 值）；runtime contract SHA256=`7dc88dd8f76be1a69c6d4f322deb1b1e0eda8be94be61d37cac850091578453d` |
 | Stopped probe | ID=`44891195f23177ccf3c05e30b54755eb9345980649772218c96385ee5dbdbe51`；从未启动，按完整 ID 删除，无临时容器/目录残留；probe log SHA256=`bec9ea3cf132de3839397747d957c2ac7e7522d7a24de499e11404f374f90c1d` |
-| 严格最终审计 | `/srv/subnexus-migration/tools/audit-retained-ui-prepared-5239d9c1-20260907.sh`，SHA256=`5239d9c17d03f7bd6dce24daed7e2c1d8216d9e98b854cafec4a364fec13f7f6`；evidence=`/srv/subnexus-migration/diagnostics/retained-ui-prepared-f6f6dafe1fb2-20260907045159-1121373-v2.evidence`，SHA256=`9dc1293e6ab16af8b1f805b30e39eba5ecfa55e2b07015ae251a308b70c234ea`；`FINAL_PRE_SWITCH_AUDIT=passed`、`FINAL_SWITCH_EXECUTED=false`，审计时可用空间 `56049311744` B |
-| 当前生产/依赖 | live=`86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`，running/healthy/restart=0；PostgreSQL=`8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf`、Redis=`5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 身份未变 |
+| Switch 结果 | `UI_SWITCH_COMPLETED=/srv/subnexus-migration/cutover/20260907045159-1121373`；`SWITCHED=switched`，`ROLLED_BACK` 不存在；切换后 manifest `state=switched/ui_state=switched/ui_commit_intent=yes`；SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3` |
+| 当前生产 | candidate ID=`232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`；image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`；`running/healthy/restart=0`；`candidate_container_intent=6f5b820275e40f0738ac841e4c6edb1dd3b92cb9066f1d8b132aaf5c97622ada` |
+| 切换后服务器审计 | `/srv/subnexus-migration/tools/audit-retained-ui-switched-d5652bda-20260907.sh`，SHA256=`d5652bda85a82e5eaa20db5f5b80a86c691bcdbbb10f58d199636f0ff7f6766d`；evidence=`/srv/subnexus-migration/diagnostics/retained-ui-switched-f6f6dafe1fb2-20260907045159-1121373.evidence`，SHA256=`58edc5b2d6e3ca6535ae10741ce4aed9275609f5d5e8dad1c48407372349afb9`；`POST_SWITCH_AUDIT=passed` |
+| 当前生产/依赖 | 当前应用 candidate=`232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511` 为 `running/healthy/restart=0`；PostgreSQL=`8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf`、Redis=`5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 身份未变且均 `running/restart=0` |
+| 设置漂移裁决 | 切换后唯一变化键为 `subnexus_invite_activities_config`；Nginx 记录管理员 `PUT /api/v1/admin/invite-activities/config` 返回 200，数据库 `updated_at=2026-09-07T06:45:51.718553Z`；未回写或恢复，其他 17 项保持 prepare 值 |
+| 切换清理 | 旧 live `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`、temporary name、gate/probe 容器及目录已按精确身份清理；失败审计 partial 与迁移上传副本共 27 个临时文件已删除，清理证据 `/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt`，SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558` |
 | 固定旧回滚对象 | ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`；anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e` |
 
-全部前置工作已完成，代理停在 `switch` 前。下面第一条命令只允许维护者手动执行一次；执行前必须实际确认没有结算、迁移或奖励任务正在运行。命令使用已 prepared 的同一 wrapper/run，不创建新永久回滚对象，不修改 Nginx 或功能开关。执行前若新 manifest 仍为 `state=prepared/ui_state=prepared`、该 `switch` 进程已退出或未运行且当前生产仍为 `86104829...`，当前生产应急恢复才使用第 13 节。若第 13 节 rollback 已实际执行，本轮 prepared run 和下列 switch 命令立即失效，必须重新 `prepare`、完成 probe 与严格审计并取得新交接。启动下列 switch 后保持当前终端等待进程返回，不得另开会话并发执行第 13 或第 14 节 rollback；wrapper 会在失败路径自动尝试恢复切换前当前容器。进程退出后重新读取 manifest：仍为 `prepared` 时第 14 节 rollback 不适用；已离开 `prepared` 且需要恢复固定旧 SubNexus 时才使用第 14 节 rollback。
-
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=dd320d0982d357704d88bd702805cca69c36304ea6f5db523a572b10bdbdf49a SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh switch /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260907045159-1121373
-```
+切换已经由维护者完成，switch 命令已消费并从当前交接中撤回，禁止重跑。当前 manifest 已离开 `prepared`；若需要恢复固定旧 SubNexus，只能在 switch 进程已退出并确认恢复条件后执行下方同 run rollback。该 rollback 不创建新的永久回滚对象，不恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关。
 
 下列 rollback 命令在新 run 仍为 `prepared` 时会被 wrapper 主动拒绝。不得在 switch 进程运行中并发执行；先等待原 switch 进程退出并让 wrapper 完成成功提交或失败自动恢复，再重新读取 manifest。只有进程已经退出、manifest 已离开 `prepared` 且仍需恢复固定旧 SubNexus 时才执行此命令。命令绑定同一个 wrapper/run；默认不恢复 PostgreSQL/Redis，也不修改 Nginx 或功能开关。
 
