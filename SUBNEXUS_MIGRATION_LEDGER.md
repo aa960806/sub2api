@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 当前权威状态：2026-09-06 23:25（Asia/Shanghai；审计启动时间 `2026-09-06T15:19:27Z`）。`F:\Rain` 首页源码直接迁移提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 已通过 run `20260906134705-774592` 完成 switch；当前生产容器 `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd` running/healthy/restart=0。`SWITCHED=switched`、无 `ROLLED_BACK`；历史 run 和已消费的 switch 命令均不得重试。
+> 当前权威状态：2026-09-07（Asia/Shanghai）。上一版生产基线仍为 `245ecd2630b96a9807df89dc02828bbb436e7624`；本轮“旧 SubNexus 保留二开用户端界面 + 当前项目功能/API”迁移处于本地未提交阶段，尚无候选镜像、远端 Gate、prepare run 或可执行切换命令。完成全部前置工作后停在新 run 的 `switch` 前；固定旧 SubNexus 回滚对象保持不变。
 
 ## 状态定义
 
@@ -287,3 +287,19 @@
 | 公网首页验收 | 通过 | `https://yydsapi.uno` 在 Playwright `1440x1000`/`390x844` 无错误或溢出；三图加载、两层 Canvas 非空，文档/模型广场/登录/语言/主题正常；站名、Logo、副标题按配置显示；客服因原开关 `false` 按既有逻辑不显示；JSON 报告 SHA=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855` |
 | 固定回滚 | 通过且未变 | old ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`；anchor manifest SHA=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`；exited/restart=0 |
 | 当前人工边界 | 仅异常 rollback | 本轮未创建新永久回滚对象，也未执行 rollback。switch 命令已经消费并禁止重跑；当前只保留切换手册第 13 节绑定同一 run、显式 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120` 的 rollback 单行命令，不恢复数据库、不改 Nginx/开关 |
+
+## 保留二开用户端 UI 迁移台账（2026-09-07，本地候选）
+
+| 项目 | 状态 | 证据与边界 |
+| --- | --- | --- |
+| 目标 | 进行中 | 直接迁移 `F:\Sub2Api\SubNexus` 保留功能的用户端显示；当前项目 API、路由、鉴权、权限、配置、开关和业务处理保持不变 |
+| 覆盖 UI | 本地实现完成，待最终验收 | 活动中心、排行榜、Affiliate、三个邀请活动、公告/跑马灯、客服、签到、首充、学生优惠、发票、Battle Pass、Channel Monitor V3；AmountInput 恢复旧版默认选中，中文学生资格文案恢复 |
+| 作用域 | 通过（代码审计） | 通用 primitive 限定于 `.subnexus-legacy-surface main`；完整页面 opt-in，Dashboard/Payment 局部 opt-in，Channel Monitor V1/V2 不变 |
+| 排除项 | 通过（静态审计） | 无每日消耗转盘、红包雨、运行日历、Media Studio、Creative Workshop 的新入口、路由、API 或任务；不恢复旧活动红点和单入口 |
+| 发布 allowlist | 通过（当前工作树） | 34 production + 18 evidence = 52，和候选差异精确匹配；API、后端、迁移、router、依赖/锁文件、全局样式、Tailwind 和 Rain 首页拒绝；临时 `.codex-ui-mock-server.mjs` 不入提交 |
+| 阶段验证 | 通过，待统一复跑 | 邀请活动 19 项、scoped dark 7 项、邀请页面 typecheck、相关组件定向测试、ESLint、build，以及 wrapper 26 组故障/恢复测试已有通过记录 |
+| 最终本地门禁 | 待执行 | 最终定向/全量 Vitest、typecheck、lint、build、wrapper、`git diff --check` 和桌面/移动明暗主题 Playwright 对比 |
+| 候选身份 | 待生成 | 尚未提交 UI commit，不登记 tree、镜像、归档、wrapper 或 Gate SHA；生产 base=`245ecd2630b96a9807df89dc02828bbb436e7624` |
+| 远端前置 | 待执行 | 隔离构建、上传安装、Docker Gate、无停机 prepare、全新备份、stopped probe 和最终审计完成前不得生成 switch 命令 |
+| 固定回滚 | 保持不变 | old ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；anchor=`20260905085804-4072165`；不创建新永久回滚对象 |
+| 人工边界 | 待新 run 就绪后交接 | 代理完成全部前置工作后停在 switch 前，交付绑定同一新 run 的 switch 和 rollback 单行命令，由维护者执行 switch |

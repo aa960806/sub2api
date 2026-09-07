@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <AppLayout legacy-surface>
     <div class="mx-auto max-w-[1440px] space-y-5">
       <header class="flex flex-col gap-4 border-b border-gray-200 px-5 pb-5 sm:flex-row sm:items-center sm:justify-between dark:border-dark-700">
         <div>
@@ -203,10 +203,10 @@
       </section>
     </div>
 
-    <ConfirmDialog :show="showSubmitConfirm" :title="t('invoice.user.confirmTitle')" :message="t('invoice.user.confirmMessage', { count: selectedOrders.size, amount: selectedAmount, title: form.title_name })" @confirm="submitRequest" @cancel="showSubmitConfirm = false" />
-    <ConfirmDialog :show="!!cancelTarget" :title="t('invoice.user.cancelTitle')" :message="t('invoice.user.cancelMessage')" danger @confirm="cancelRequest" @cancel="cancelTarget = null" />
+    <ConfirmDialog :show="showSubmitConfirm" :title="t('invoice.user.confirmTitle')" :message="t('invoice.user.confirmMessage', { count: selectedOrders.size, amount: selectedAmount, title: form.title_name })" legacy-panel @confirm="submitRequest" @cancel="showSubmitConfirm = false" />
+    <ConfirmDialog :show="!!cancelTarget" :title="t('invoice.user.cancelTitle')" :message="t('invoice.user.cancelMessage')" danger legacy-panel @confirm="cancelRequest" @cancel="cancelTarget = null" />
 
-    <BaseDialog :show="!!detail" :title="detail?.request_no || t('invoice.user.detail')" width="wide" @close="closeDetail">
+    <BaseDialog :show="!!detail" :title="detail?.request_no || t('invoice.user.detail')" width="wide" legacy-panel @close="closeDetail">
       <div v-if="detail" class="space-y-5">
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div><p class="text-xs text-gray-500">{{ t('invoice.fields.status') }}</p><span class="badge mt-1" :class="statusClass(detail.status)">{{ statusLabel(detail.status) }}</span></div>
@@ -226,7 +226,7 @@
       <template #footer><div class="flex flex-wrap justify-end gap-2"><button v-if="detail?.status === 'ISSUED' || detail?.status === 'VOIDED'" class="btn btn-secondary" @click="downloadInvoice(detail)"><Icon name="download" size="sm" />{{ t('invoice.actions.download') }}</button><button v-if="detail?.status === 'REJECTED' && config.enabled" class="btn btn-primary" @click="startResubmit(detail)">{{ t('invoice.actions.resubmit') }}</button><button v-if="config.enabled && (detail?.status === 'PENDING' || detail?.status === 'REJECTED')" class="btn btn-danger" @click="cancelTarget = detail">{{ t('invoice.actions.cancel') }}</button></div></template>
     </BaseDialog>
 
-    <BaseDialog :show="!!resubmitTarget" :title="t('invoice.actions.resubmit')" width="wide" @close="resubmitTarget = null">
+    <BaseDialog :show="!!resubmitTarget" :title="t('invoice.actions.resubmit')" width="wide" legacy-panel @close="resubmitTarget = null">
       <form id="invoice-resubmit-form" class="grid gap-4 sm:grid-cols-2" @submit.prevent="resubmitRequest">
         <p class="sm:col-span-2 text-xs text-gray-500 dark:text-dark-400"><span class="text-red-500">*</span> {{ t('invoice.user.requiredHint') }}</p>
         <div class="sm:col-span-2 inline-flex w-fit rounded-lg bg-gray-100 p-1 dark:bg-dark-800">
@@ -330,6 +330,65 @@ onMounted(async () => { await loadConfig(); await loadHistory(); if (config.enab
 </script>
 
 <style scoped>
+.card {
+  @apply rounded-xl border-gray-200/70 dark:border-dark-700/60;
+}
+
+.btn {
+  @apply rounded-lg;
+}
+
+.btn-primary {
+  @apply bg-primary-600 text-white shadow-sm hover:bg-primary-700 hover:shadow dark:bg-primary-600 dark:hover:bg-primary-500;
+  background-image: none;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white shadow-sm hover:bg-red-700 hover:shadow;
+  background-image: none;
+}
+
+.btn-icon,
+.input {
+  @apply rounded-lg;
+}
+
+.input:hover:not(:focus) {
+  @apply border-gray-300 dark:border-dark-500;
+}
+
+html.dark .input:disabled {
+  background-color: #141d2e;
+}
+
+.badge {
+  @apply ring-1 ring-inset;
+}
+
+.badge-primary {
+  @apply ring-primary-600/10 dark:ring-primary-400/20;
+}
+
+.badge-success {
+  @apply ring-emerald-600/10 dark:ring-emerald-400/20;
+}
+
+.badge-warning {
+  @apply ring-amber-600/10 dark:ring-amber-400/20;
+}
+
+.badge-danger {
+  @apply ring-red-600/10 dark:ring-red-400/20;
+}
+
+.badge-gray {
+  @apply ring-gray-500/10 dark:ring-dark-400/20;
+}
+
+.badge-purple {
+  @apply ring-purple-600/10 dark:ring-purple-400/20;
+}
+
 .table-th {
   @apply whitespace-nowrap px-5 py-3 text-left text-xs font-semibold text-gray-500 dark:text-dark-400;
 }

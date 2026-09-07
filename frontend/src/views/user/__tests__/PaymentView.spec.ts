@@ -24,8 +24,16 @@ const showError = vi.hoisted(() => vi.fn())
 const showInfo = vi.hoisted(() => vi.fn())
 const showWarning = vi.hoisted(() => vi.fn())
 const getCheckoutInfo = vi.hoisted(() => vi.fn())
+const getFirstRechargeGift = vi.hoisted(() => vi.fn())
 const bridgeInvoke = vi.hoisted(() => vi.fn())
 const translate = vi.hoisted(() => vi.fn((key: string) => key))
+const appStore = vi.hoisted(() => ({
+  publicSettingsLoaded: true,
+  cachedPublicSettings: {} as Record<string, boolean>,
+  showError,
+  showInfo,
+  showWarning,
+}))
 
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
@@ -74,16 +82,13 @@ vi.mock('@/stores/subscriptions', () => ({
 }))
 
 vi.mock('@/stores', () => ({
-  useAppStore: () => ({
-    showError,
-    showInfo,
-    showWarning,
-  }),
+  useAppStore: () => appStore,
 }))
 
 vi.mock('@/api/payment', () => ({
   paymentAPI: {
     getCheckoutInfo,
+    getFirstRechargeGift,
   },
 }))
 
@@ -739,5 +744,66 @@ describe('PaymentView WeChat JSAPI flow', () => {
     expect(showWarning).toHaveBeenCalledWith('payment.errors.mobilePaymentFallbackToQr')
     expect(showError).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toContain('weixin://wxpay/bizpayurl?pr=fallback-native')
+  })
+})
+
+describe('PaymentView first recharge gift', () => {
+  it('renders the legacy gift card and keeps the first_recharge_gift order contract', async () => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    window.localStorage.clear()
+    routerReplace.mockReset().mockResolvedValue(undefined)
+    routerPush.mockReset().mockResolvedValue(undefined)
+    appStore.cachedPublicSettings = { subnexus_first_recharge_enabled: true }
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture())
+    getFirstRechargeGift.mockReset().mockResolvedValue({
+      data: {
+        enabled: true,
+        purchased: false,
+        pending: false,
+        price: 10,
+        credited_amount: 15,
+        ratio: 1.5,
+      },
+    })
+    createOrder.mockReset().mockResolvedValue({
+      order_id: 901,
+      amount: 10,
+      pay_amount: 10,
+      fee_rate: 0,
+      expires_at: '2099-01-01T00:10:00.000Z',
+      payment_type: 'wxpay',
+      qr_code: 'weixin://wxpay/bizpayurl?pr=first-recharge',
+      out_trade_no: 'sub2_first_901',
+    })
+
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(getFirstRechargeGift).toHaveBeenCalledOnce()
+    expect(wrapper.find('.first-recharge-card').exists()).toBe(true)
+    expect(zh.payment.firstRecharge.ratio).toBe('首充比例 x{ratio}')
+    expect(en.payment.firstRecharge.ratio).toBe('First recharge ratio x{ratio}')
+    const purchase = wrapper.get('.first-recharge-button')
+    expect(purchase.classes()).toContain('btn-wxpay')
+    await purchase.trigger('click')
+    await flushPromises()
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 10,
+      payment_type: 'wxpay',
+      order_type: 'first_recharge_gift',
+    }))
+
+    wrapper.unmount()
+    appStore.cachedPublicSettings = {}
   })
 })

@@ -15,7 +15,10 @@
           <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
             {{ pageTitle }}
           </h1>
-          <p v-if="pageDescription" class="text-xs text-gray-500 dark:text-dark-400">
+          <p
+            v-if="showPageDescription && pageDescription"
+            class="text-xs text-gray-500 dark:text-dark-400"
+          >
             {{ pageDescription }}
           </p>
         </div>
@@ -261,6 +264,12 @@ import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+
+withDefaults(defineProps<{
+  showPageDescription?: boolean
+}>(), {
+  showPageDescription: true,
+})
 
 const router = useRouter()
 const route = useRoute()

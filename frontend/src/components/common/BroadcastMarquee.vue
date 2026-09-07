@@ -4,7 +4,7 @@
     class="pointer-events-none fixed left-1/2 top-3 z-[100000] w-[min(820px,calc(100vw-24px))] -translate-x-1/2"
     data-testid="broadcast-marquee"
   >
-    <div class="pointer-events-auto flex min-h-12 items-center gap-3 overflow-hidden rounded-md border border-amber-200 bg-white/95 px-3 py-2 shadow-lg shadow-amber-900/10 backdrop-blur dark:border-amber-400/30 dark:bg-dark-900/95">
+    <div class="broadcast-panel pointer-events-auto flex items-center gap-3 overflow-hidden rounded-lg border border-amber-200 bg-white/95 px-3 py-2 shadow-lg shadow-amber-900/10 backdrop-blur dark:border-amber-400/30 dark:bg-dark-900/95">
       <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
         <Icon name="bell" size="sm" aria-hidden="true" />
       </div>
@@ -23,7 +23,7 @@
       </div>
       <button
         type="button"
-        class="btn-icon shrink-0 text-gray-400 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-100"
+        class="btn-icon shrink-0 rounded-lg text-gray-400 hover:text-gray-700 dark:text-dark-400 dark:hover:text-dark-100"
         :aria-label="t('marquee.dismiss')"
         :title="t('marquee.dismiss')"
         @click="dismiss"
@@ -177,6 +177,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+html.dark .broadcast-panel { background-color: rgb(20 29 46 / 95%); }
+
 .marquee-track {
   display: inline-block;
   min-width: 100%;

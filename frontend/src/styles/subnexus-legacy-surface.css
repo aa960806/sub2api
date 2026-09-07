@@ -1,0 +1,171 @@
+.subnexus-legacy-surface main .btn {
+    border-radius: 0.5rem;
+  }
+
+  .subnexus-legacy-surface main .btn-primary,
+  .subnexus-legacy-surface main .btn-danger,
+  .subnexus-legacy-surface main .btn-success,
+  .subnexus-legacy-surface main .btn-warning,
+  .subnexus-legacy-surface main .btn-stripe,
+  .subnexus-legacy-surface main .btn-airwallex,
+  .subnexus-legacy-surface main .btn-alipay,
+  .subnexus-legacy-surface main .btn-wxpay {
+    background-image: none;
+  }
+
+  .subnexus-legacy-surface main .btn-primary {
+    background-color: #0d9488;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+  }
+
+  .subnexus-legacy-surface main .btn-primary:hover {
+    background-color: #0f766e;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%);
+  }
+
+  html.dark .subnexus-legacy-surface main .btn-primary {
+    background-color: #0d9488;
+  }
+
+  html.dark .subnexus-legacy-surface main .btn-primary:hover {
+    background-color: #14b8a6;
+  }
+
+  .subnexus-legacy-surface main .btn-danger {
+    background-color: #dc2626;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+  }
+
+  .subnexus-legacy-surface main .btn-danger:hover {
+    background-color: #b91c1c;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%);
+  }
+
+  .subnexus-legacy-surface main .btn-success {
+    background-color: #059669;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+  }
+
+  .subnexus-legacy-surface main .btn-success:hover {
+    background-color: #047857;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%);
+  }
+
+  .subnexus-legacy-surface main .btn-warning {
+    background-color: #f59e0b;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+  }
+
+  .subnexus-legacy-surface main .btn-warning:hover {
+    background-color: #d97706;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%);
+  }
+
+  .subnexus-legacy-surface main .btn-sm {
+    border-radius: 0.375rem;
+  }
+
+  .subnexus-legacy-surface main .btn-md,
+  .subnexus-legacy-surface main .btn-icon {
+    border-radius: 0.5rem;
+  }
+
+  .subnexus-legacy-surface main .btn-lg {
+    border-radius: 0.75rem;
+  }
+
+  .subnexus-legacy-surface main .input {
+    border-radius: 0.5rem;
+  }
+
+  .subnexus-legacy-surface main .input:hover:not(:focus) {
+    border-color: #d1d5db;
+  }
+
+  html.dark .subnexus-legacy-surface main .input:hover:not(:focus) {
+    border-color: #64748b;
+  }
+
+  html.dark .subnexus-legacy-surface main .input:disabled {
+    background-color: #141d2e;
+  }
+
+  .subnexus-legacy-surface main .glass-card {
+    border-radius: 0.75rem;
+  }
+
+  .subnexus-legacy-surface main .card {
+    border-color: rgb(229 231 235 / 70%);
+  }
+
+  .subnexus-legacy-surface main .card:not(.ac-card) {
+    border-radius: 0.75rem;
+  }
+
+  html.dark .subnexus-legacy-surface main .card {
+    border-color: rgb(51 65 85 / 60%);
+  }
+
+  .subnexus-legacy-surface main .card-hover:hover {
+    box-shadow: 0 6px 24px rgb(0 0 0 / 7%);
+  }
+
+  .subnexus-legacy-surface main .badge {
+    box-shadow: inset 0 0 0 1px rgb(59 130 246 / 50%);
+  }
+
+  .subnexus-legacy-surface main .badge-primary {
+    box-shadow: inset 0 0 0 1px rgb(13 148 136 / 10%);
+  }
+
+  .subnexus-legacy-surface main .badge-success {
+    box-shadow: inset 0 0 0 1px rgb(5 150 105 / 10%);
+  }
+
+  .subnexus-legacy-surface main .badge-warning {
+    box-shadow: inset 0 0 0 1px rgb(217 119 6 / 10%);
+  }
+
+  .subnexus-legacy-surface main .badge-danger {
+    box-shadow: inset 0 0 0 1px rgb(220 38 38 / 10%);
+  }
+
+  .subnexus-legacy-surface main .badge-gray {
+    box-shadow: inset 0 0 0 1px rgb(107 114 128 / 10%);
+  }
+
+  .subnexus-legacy-surface main .badge-purple {
+    box-shadow: inset 0 0 0 1px rgb(147 51 234 / 10%);
+  }
+
+  html.dark .subnexus-legacy-surface main .badge-primary {
+    box-shadow: inset 0 0 0 1px rgb(45 212 191 / 20%);
+  }
+
+  html.dark .subnexus-legacy-surface main .badge-success {
+    box-shadow: inset 0 0 0 1px rgb(52 211 153 / 20%);
+  }
+
+  html.dark .subnexus-legacy-surface main .badge-warning {
+    box-shadow: inset 0 0 0 1px rgb(251 191 36 / 20%);
+  }
+
+  html.dark .subnexus-legacy-surface main .badge-danger {
+    box-shadow: inset 0 0 0 1px rgb(248 113 113 / 20%);
+  }
+
+  html.dark .subnexus-legacy-surface main .badge-gray {
+    box-shadow: inset 0 0 0 1px rgb(148 163 184 / 20%);
+  }
+
+  html.dark .subnexus-legacy-surface main .badge-purple {
+    box-shadow: inset 0 0 0 1px rgb(192 132 252 / 20%);
+  }
+
+  html.dark .subnexus-legacy-surface main [class~='dark:bg-dark-900'] {
+    background-color: #141d2e;
+  }
+
+html.dark .subnexus-legacy-surface main [class~='dark:bg-dark-900/40'] {
+    background-color: rgb(20 29 46 / 40%);
+}

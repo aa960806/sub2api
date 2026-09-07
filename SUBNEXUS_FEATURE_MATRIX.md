@@ -1,6 +1,6 @@
 # SubNexus 二开功能迁移矩阵
 
-> 最后更新：2026-09-06 23:25（Asia/Shanghai）。当前代码已在 `feature/subnexus-migration` 完成迁移实现和定向/全量测试；隔离 PostgreSQL、Redis 8 RDB、候选主机 smoke、旧版回滚克隆、线上只读预检、生产备份结构校验和 Docker runtime gate 均已通过。`F:\Rain` 首页源码直接迁移 run `/srv/subnexus-migration/cutover/20260906134705-774592` 已 switched，切换后审计和公网桌面/移动验收通过。额外二开功能仍保持原开关值，F01-F13 的逐项业务验收状态没有因首页切换而改变。
+> 最后更新：2026-09-07（Asia/Shanghai）。F01-F13 的当前业务实现、API、权限、路由、开关和数据边界保持不变；本轮仅把 `F:\Sub2Api\SubNexus` 中保留功能的用户端页面结构、组件和视觉表现迁入当前项目。候选 UI commit、镜像和远端 run 尚未生成；阶段性定向验证已通过，最终全量门禁和桌面/移动视觉验收仍须在提交前统一重跑。
 > 本表是逐模块迁移的唯一状态入口。路径是调查线索，不代表目标代码可以直接复制；“待证据”不等于可上线。
 
 ## 保留功能
@@ -110,3 +110,25 @@
 - 公网 `https://yydsapi.uno` 的 Playwright `1440x1000`/`390x844` 验收通过：无页面错误或溢出，三张图片与两层 Canvas 正常；文档、模型广场、登录、语言、主题以及配置驱动的站名/Logo/副标题正常。客服因既有开关为 `false` 不显示，符合原功能合同；JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
 - 此次只切换首页 UI，未改变 F01-F13 表格中的业务验收结论，也未新建回滚对象或执行 rollback。固定旧 SubNexus `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee` / image `sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd` / anchor `20260905085804-4072165` 仍为唯一回滚目标，exited/restart=0。
 - 本轮 switch 命令已消费，禁止重跑；当前只保留切换手册第 13 节的同 run rollback 单行命令作为异常恢复入口。
+
+## 2026-09-07 保留功能用户端 UI 对齐状态
+
+| 功能 | 本轮用户端显示迁移 | 保持不变的当前合同 |
+| --- | --- | --- |
+| F01 签到 | Dashboard 签到组件局部采用旧版视觉 primitive | 签到状态、领取 API、冻结/IP/幂等和功能开关不变 |
+| F02 排行榜 | 直接迁移旧版榜单层次、排名、空态和响应式显示 | 当前用量查询、周期、奖励及权限逻辑不变 |
+| F03 活动中心 | 直接迁移旧版活动列表、筛选、卡片和详情显示 | 仍只读取当前允许的 `custom` 类型和当前公共开关 |
+| F04 公告/跑马灯 | 对齐旧版公告、弹窗、滚动锁和跑马灯表现 | 当前公告 API、管理员广播来源过滤和开关不变 |
+| F05 首充 | Payment 中首充区块局部对齐旧版显示 | 当前资格、订单、预约 CAS、履约/退款和幂等不变 |
+| F06 邀请活动 | 对齐 Affiliate、邀请抽奖、累计充值奖励转盘和邀请里程碑；保留当前三个独立活动入口 | 当前 API、路由、请求参数、资格、奖励流水、余额事务和子开关不变 |
+| F07 发票 | 对齐用户发票列表、状态和操作区域 | 当前文件、状态机、step-up、审计与权限边界不变 |
+| F08 Battle Pass | 对齐赛季、任务、进度和奖励显示 | 当前扫描器、用量口径、奖励幂等和 gate 不变 |
+| F09 学生优惠 | Payment 区块及 AmountInput 对齐旧版默认选中；中文资格文案为“学生身份已生效” | 当前身份状态、支付、退款反向、scheduler 和 step-up 不变 |
+| F10 注册 IP 冷却 | 无独立用户页面，不新增可见入口 | 当前注册/OAuth reservation、finalize、release 和 fail-closed 行为不变 |
+| F11 Channel Monitor V3 | 对齐 V3 卡片和页面视觉；V1/V2 保持当前显示 | 当前模式归一化、探测协议、runner/maintenance gate 不变 |
+| F12 默认语言 | 不增加独立页面，旧版可见文案随现有 i18n 接入 | 当前服务器默认、浏览器/localStorage 优先级和非法值处理不变 |
+| F13 客服 | 对齐悬浮按钮和安全 Markdown 弹窗 | 当前公共配置、URL/Markdown 白名单、开关和新窗口保护不变 |
+
+共享样式只在 `.subnexus-legacy-surface main` 下生效，避免影响 AppHeader/AppSidebar；完整页面按白名单 opt-in，Dashboard 和 Payment 仅局部 opt-in。明确不迁移每日消耗转盘、红包雨、运行日历、Media Studio 或 Creative Workshop，也不恢复旧活动红点、旧单入口和旧奖励联动。
+
+当前是本地未提交候选。wrapper 的 34 个 production UI 文件与 18 个证据文件共 52 项精确覆盖候选差异；阶段性定向测试、typecheck、lint、build 和 26 场景 wrapper 测试已取得通过结果，最终全量重跑、Playwright 对比、隔离构建和远端发布证据仍待完成。因此 F01-F13 的业务实现状态不变，本节只更新显示层迁移状态。

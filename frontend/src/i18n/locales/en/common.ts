@@ -62,6 +62,8 @@ export default {
     verifying: 'Verifying...',
     processing: 'Processing...',
     contactSupport: 'Contact Support',
+    customerSupportSubtitle: 'We are here to help',
+    customerSupportEmpty: 'No support information available',
     add: 'Add',
     invalidEmail: 'Please enter a valid email address',
     optional: 'optional',

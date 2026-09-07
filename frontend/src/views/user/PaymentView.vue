@@ -41,27 +41,27 @@
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
               <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
             </div>
-            <div v-if="showFirstRechargeGift" class="card border-emerald-200 p-5 dark:border-emerald-500/30">
+            <div v-if="showFirstRechargeGift" class="first-recharge-card card border-primary-200 bg-primary-50/70 p-5 dark:border-primary-400/30 dark:bg-primary-500/10">
               <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div class="flex min-w-0 items-start gap-3">
-                  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-emerald-600 text-white">
-                    <Icon name="gift" size="md" />
+                <div class="flex items-start gap-3">
+                  <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white">
+                    <Icon name="gift" size="lg" />
                   </div>
-                  <div class="min-w-0">
-                    <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('payment.firstRecharge.title') }}</p>
-                    <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                  <div>
+                    <p class="text-sm font-semibold text-primary-900 dark:text-primary-100">{{ t('payment.firstRecharge.title') }}</p>
+                    <p class="mt-1 text-sm text-primary-700 dark:text-primary-200">
                       {{ t('payment.firstRecharge.offer', {
                         price: formatSelectedPaymentAmount(firstRechargeGift.price),
                         credit: firstRechargeGift.credited_amount.toFixed(2),
                       }) }}
                     </p>
-                    <p v-if="firstRechargeGift.ratio > 0" class="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                    <p v-if="firstRechargeGift.ratio > 0" class="mt-1 text-xs text-primary-600 dark:text-primary-300">
                       {{ t('payment.firstRecharge.ratio', { ratio: firstRechargeGift.ratio.toFixed(2) }) }}
                     </p>
                   </div>
                 </div>
                 <button
-                  class="btn btn-primary shrink-0 px-5"
+                  :class="['first-recharge-button btn shrink-0 px-5', paymentButtonClass]"
                   :disabled="!canSubmitFirstRechargeGift || submitting"
                   @click="handleFirstRechargeGift"
                 >
@@ -82,7 +82,7 @@
               />
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
             </div>
-            <div v-if="showStudentBenefit" class="card p-6" data-testid="student-recharge-selector">
+            <div v-if="showStudentBenefit" class="student-recharge-card card p-6" data-testid="student-recharge-selector">
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('payment.studentRecharge.modeTitle') }}</p>
@@ -1468,3 +1468,21 @@ onMounted(async () => {
   subscriptionStore.fetchActiveSubscriptions().catch(() => {})
 })
 </script>
+
+<style scoped>
+.first-recharge-card { border-radius: 0.75rem; }
+.student-recharge-card {
+  border-color: rgb(229 231 235 / 70%);
+  border-radius: 0.75rem;
+}
+html.dark .student-recharge-card { border-color: rgb(51 65 85 / 60%); }
+.first-recharge-button { border-radius: 0.5rem; }
+.first-recharge-button.btn-primary {
+  background-color: #0d9488;
+  background-image: none;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+}
+.first-recharge-button.btn-primary:hover { background-color: #0f766e; }
+html.dark .first-recharge-button.btn-primary { background-color: #0d9488; }
+html.dark .first-recharge-button.btn-primary:hover { background-color: #14b8a6; }
+</style>

@@ -185,3 +185,37 @@ watch(() => appStore.cachedPublicSettings?.subnexus_checkin_enabled, (enabled) =
 
 onMounted(() => { void ensureFeatureAndLoad() })
 </script>
+
+<style scoped>
+.card {
+  border-color: rgb(229 231 235 / 70%);
+  border-radius: 0.75rem;
+}
+
+html.dark .card {
+  border-color: rgb(51 65 85 / 60%);
+}
+
+.btn {
+  border-radius: 0.5rem;
+}
+
+.btn-primary {
+  background-color: #0d9488;
+  background-image: none;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+}
+
+.btn-primary:hover {
+  background-color: #0f766e;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 10%), 0 1px 2px -1px rgb(0 0 0 / 10%);
+}
+
+html.dark .btn-primary {
+  background-color: #0d9488;
+}
+
+html.dark .btn-primary:hover {
+  background-color: #14b8a6;
+}
+</style>

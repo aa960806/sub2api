@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
-> 版本：v2.4（2026-09-06，`F:\Rain` 首页源码直接迁移已发布）
-> 当前权威状态：2026-09-06 23:25（Asia/Shanghai；审计启动时间 `2026-09-06T15:19:27Z`）。本轮 UI 应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 已通过 run `/srv/subnexus-migration/cutover/20260906134705-774592` 完成切换；`SWITCHED=switched`、无 `ROLLED_BACK`，manifest `state=switched/ui_state=switched/ui_commit_intent=yes`，切换后 SHA=`86afbaa48b5a22cdd193eb7f95238d8a70c74b870b7151476153317a3f0ffe79`。当前生产容器为 `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`，running/healthy/restart=0。历史 prepare/失败记录均只作审计，不得作为操作入口。
+> 版本：v2.5（2026-09-07，保留二开用户端界面迁移准备中）
+> 当前权威状态：生产基线仍为 `245ecd2630b96a9807df89dc02828bbb436e7624`。本轮以 `F:\Sub2Api\SubNexus` 的保留二开用户端源码为视觉实现基础，继续绑定当前项目已有 API、路由、权限、配置、开关和业务处理；候选 UI commit、镜像和远端 run 均待后续固定。历史 prepare 和已消费的 switch 只作审计，不得作为本轮入口；完成所有前置工作后停在新 `switch` 前。
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -371,3 +371,16 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 8. 公网 `https://yydsapi.uno` 的 Playwright 桌面 `1440x1000` 与移动 `390x844` 验收通过：无页面错误或溢出，三张 Rain 原图加载成功，两层 Canvas 非空；文档、模型广场、登录、语言和主题交互正常，站名、Logo、副标题继续由配置读取。客服开关原值为 `false`，因此按钮按既有逻辑不显示；JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
 9. 固定回滚目标仍为旧 SubNexus：ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`，name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`，anchor manifest SHA=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`；该对象 exited/restart=0。本轮未创建新永久回滚对象，也未执行 rollback。
 10. 本轮 switch 命令已消费，禁止再次执行。当前只保留切换手册第 13 节绑定同一 run 的 rollback 单行命令作为异常恢复入口；默认不恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关。
+
+## 14. 保留二开用户端界面完整迁移计划（2026-09-07）
+
+1. UI 以 `F:\Sub2Api\SubNexus` 的保留二开页面源码为基础，迁移真实结构、组件、CSS、文案、动画、弹窗和响应式行为；业务继续以当前 fork 为唯一实现来源，包括 API、请求参数、路由、权限、认证、配置、开关、支付、奖励、幂等和数据写入。不得为了视觉一致复制旧后端或改变当前业务合同。
+2. 范围覆盖活动中心、排行榜、Affiliate、邀请抽奖、累计充值奖励转盘、邀请里程碑、公告/跑马灯、客服、签到、首充、学生优惠、发票、Battle Pass 与 Channel Monitor V3。F10 注册 IP 冷却和 F12 默认语言没有独立用户页，只保留当前行为；Channel Monitor V1/V2 保持当前 UI。
+3. 通用旧版 primitive 统一限定在 `.subnexus-legacy-surface main`；完整页面显式 opt-in，Dashboard 只包围签到，Payment 只包围首充和学生优惠。AmountInput 需要保持旧版默认选择，中文学生资格状态使用“学生身份已生效”。
+4. 排除每日消耗转盘、红包雨、运行日历、Media Studio、Creative Workshop/创意工坊，也不恢复旧活动红点、旧单入口或旧活动奖励联动。发布差异不得包含 API、后端、迁移、router、依赖/锁文件、全局样式、Tailwind 或上一版 Rain 首页。
+5. 最终 wrapper allowlist 为 34 个 production UI 文件和 18 个证据文件，共 52 个。提交前及提交后都要从生产 base `245ecd2630b96a9807df89dc02828bbb436e7624` 到候选 target 做完整集合、文件模式和祖先关系检查；`.codex-ui-mock-server.mjs` 仅用于本地视觉夹具，不能进入 Git 或发布制品。
+6. 本地门禁包括定向和全量 Vitest、typecheck、lint、build、wrapper fault/recovery 测试、`git diff --check`，以及桌面/移动、明暗主题的旧/新页面 Playwright 对比、溢出检查和关键交互验证。当前只有阶段性结果，全部重跑完成前不得固定发布状态。
+7. 固定并推送唯一 UI commit 后，使用隔离构建脚本生成带 commit provenance 的候选镜像和 source bundle；逐项固定 tree、镜像 ID、归档、metadata、base-images、build log、wrapper 和 observer SHA。随后执行候选 Docker Gate，但不接触生产流量。
+8. Gate 通过后使用 `base=245ecd2630b96a9807df89dc02828bbb436e7624` 和实时确认的生产身份执行无停机 `prepare`。prepare 必须生成全新 PostgreSQL、Redis 和应用数据备份，验证 sidecar、受保护设置、运行时合同、owner、网络、空间及固定 anchor；不能复用历史 run 或历史制品。
+9. 对全新 run 执行 never-started stopped probe，确认候选严格处于 `created|false|0|0001-01-01T00:00:00Z` 后按完整 ID 删除，并再次证明 manifest、生产应用、PostgreSQL、Redis、设置和 anchor 未变化。
+10. 最终审计通过后停止。交付一条绑定新 wrapper/新 run 的 switch 命令和一条绑定同一 wrapper/同一 run 的 rollback 命令；switch 由维护者手动执行。rollback 必须恢复固定旧 SubNexus，不恢复 PostgreSQL/Redis，不修改 Nginx/开关，也不创建新的永久回滚对象。

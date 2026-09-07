@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <AppLayout legacy-surface>
     <div class="space-y-6">
       <div v-if="loading" class="flex justify-center py-12">
         <div

@@ -341,7 +341,7 @@ for scenario in success stop_failed rename_failed start_failed created_without_i
   case_count=$((case_count + 1))
 done
 
-# Exercise the real Git allowlist rather than mirroring it with a fixture.
+# Exercise every path exported by the real Git allowlist.
 source <(head -n -1 "$controller")
 export PATH="$fixture_path"
 source "$subject"
@@ -351,27 +351,90 @@ git -C "$git_repo" init -q
 git -C "$git_repo" config user.name fixture
 git -C "$git_repo" config user.email fixture@example.invalid
 git -C "$git_repo" config core.autocrlf false
-mkdir -p "$git_repo/frontend/src/views" "$git_repo/frontend/src/components/common" "$git_repo/frontend/src/components/home/__tests__" "$git_repo/backend/migrations"
-mkdir -p "$git_repo/frontend/public"
-printf 'old homepage\n' > "$git_repo/frontend/src/views/HomeView.vue"
-printf 'SELECT 1;\n' > "$git_repo/backend/migrations/001.sql"
+all_allowed_paths=("${ui_production_source_paths[@]}" "${ui_evidence_source_paths[@]}")
+duplicate_allowed_paths="$(printf '%s\n' "${all_allowed_paths[@]}" | sort | uniq -d)"
+[[ -z "$duplicate_allowed_paths" ]] || test_fail "duplicate UI allowlist path: $duplicate_allowed_paths"
+for path in "${all_allowed_paths[@]}"; do
+  mkdir -p "$git_repo/$(dirname -- "$path")"
+  printf 'base %s\n' "$path" > "$git_repo/$path"
+done
 git -C "$git_repo" add .
 git -C "$git_repo" commit -qm base
 base_sha="$(git -C "$git_repo" rev-parse HEAD)"
-printf 'new homepage\n' > "$git_repo/frontend/src/views/HomeView.vue"
-printf 'migrated support button\n' > "$git_repo/frontend/src/components/common/CustomerSupportButton.vue"
-printf 'gateway locale presentation\n' > "$git_repo/frontend/src/components/common/LocaleSwitcher.vue"
-printf 'migrated component\n' > "$git_repo/frontend/src/components/home/RainGatewayHome.vue"
-printf 'binding test\n' > "$git_repo/frontend/src/components/home/__tests__/RainGatewayHome.spec.ts"
-printf 'test bitmap\n' > "$git_repo/frontend/public/rain-city-1.jpg"
-printf 'test bitmap two\n' > "$git_repo/frontend/public/rain-city-2.jpg"
-printf 'test bitmap three\n' > "$git_repo/frontend/public/rain-city-3.jpg"
-git -C "$git_repo" add frontend/src/components/common/CustomerSupportButton.vue frontend/src/components/common/LocaleSwitcher.vue frontend/src/components/home/RainGatewayHome.vue frontend/src/components/home/__tests__/RainGatewayHome.spec.ts frontend/public/rain-city-1.jpg frontend/public/rain-city-2.jpg frontend/public/rain-city-3.jpg
-git -C "$git_repo" commit -qam ui
+for path in "${all_allowed_paths[@]}"; do
+  printf 'updated %s\n' "$path" >> "$git_repo/$path"
+done
+git -C "$git_repo" commit -qam all-allowed-paths
 ui_sha="$(git -C "$git_repo" rev-parse HEAD)"
 ui_assert_source_delta "$git_repo" "$base_sha" "$ui_sha"
-printf 'SELECT 2;\n' > "$git_repo/backend/migrations/001.sql"
-git -C "$git_repo" commit -qam migration
-bad_sha="$(git -C "$git_repo" rev-parse HEAD)"
-if (ui_assert_source_delta "$git_repo" "$base_sha" "$bad_sha") >/dev/null 2>&1; then test_fail 'backend/migration drift passed the UI-only check'; fi
+
+assert_forbidden_path() {
+  local forbidden_path="$1" bad_sha
+  git -C "$git_repo" checkout -q -f "$ui_sha"
+  mkdir -p "$git_repo/$(dirname -- "$forbidden_path")"
+  printf 'forbidden %s\n' "$forbidden_path" > "$git_repo/$forbidden_path"
+  git -C "$git_repo" add -- "$forbidden_path"
+  git -C "$git_repo" commit -qm "forbidden $forbidden_path"
+  bad_sha="$(git -C "$git_repo" rev-parse HEAD)"
+  if (ui_assert_source_delta "$git_repo" "$base_sha" "$bad_sha") >/dev/null 2>&1; then
+    test_fail "protected path passed the UI-only check: $forbidden_path"
+  fi
+}
+
+for forbidden_path in \
+  frontend/src/api/forbidden.ts \
+  backend/migrations/001.sql \
+  frontend/package.json \
+  frontend/pnpm-lock.yaml \
+  frontend/src/style.css \
+  frontend/tailwind.config.js \
+  frontend/src/router/index.ts \
+  frontend/src/views/HomeView.vue \
+  frontend/src/components/common/LocaleSwitcher.vue \
+  frontend/src/components/home/GlassDropletsCanvas.vue \
+  frontend/src/components/home/GlassPane.vue \
+  frontend/src/components/home/RainGatewayHome.vue \
+  frontend/src/components/home/RainGlyph.vue \
+  frontend/src/components/home/RainStreaksCanvas.vue \
+  frontend/src/components/home/RainyBackground.vue \
+  frontend/src/components/home/__tests__/RainGatewayHome.spec.ts \
+  frontend/public/rain-city-1.jpg \
+  frontend/public/rain-city-2.jpg \
+  frontend/public/rain-city-3.jpg; do
+  assert_forbidden_path "$forbidden_path"
+done
+
+git -C "$git_repo" checkout -q -f "$base_sha"
+printf 'evidence only\n' >> "$git_repo/SUBNEXUS_CHANGE_MEMORY.md"
+git -C "$git_repo" commit -qam evidence-only
+evidence_only_sha="$(git -C "$git_repo" rev-parse HEAD)"
+if (ui_assert_source_delta "$git_repo" "$base_sha" "$evidence_only_sha") >/dev/null 2>&1; then
+  test_fail 'evidence-only release satisfied the production UI count'
+fi
+
+assert_invalid_allowed_mode() {
+  local mutation="$1" invalid_path="$2" bad_sha blob
+  git -C "$git_repo" checkout -q -f "$base_sha"
+  printf 'valid production UI change\n' >> "$git_repo/frontend/src/views/user/ActivityCenterView.vue"
+  git -C "$git_repo" add -- frontend/src/views/user/ActivityCenterView.vue
+  case "$mutation" in
+    delete)
+      git -C "$git_repo" rm -q -- "$invalid_path" ;;
+    symlink)
+      blob="$(printf 'elsewhere' | git -C "$git_repo" hash-object -w --stdin)"
+      git -C "$git_repo" update-index --add --cacheinfo 120000 "$blob" "$invalid_path" ;;
+    executable)
+      git -C "$git_repo" update-index --chmod=+x "$invalid_path" ;;
+    *) test_fail "unknown allowed-path mutation: $mutation" ;;
+  esac
+  git -C "$git_repo" commit -qm "invalid allowed path $mutation"
+  bad_sha="$(git -C "$git_repo" rev-parse HEAD)"
+  if (ui_assert_source_delta "$git_repo" "$base_sha" "$bad_sha") >/dev/null 2>&1; then
+    test_fail "invalid allowed path mode passed: $mutation $invalid_path"
+  fi
+}
+
+assert_invalid_allowed_mode delete frontend/src/views/user/InviteLotteryView.vue
+assert_invalid_allowed_mode symlink SUBNEXUS_CHANGE_MEMORY.md
+assert_invalid_allowed_mode executable tools/production-deploy/subnexus-ui-cutover.test.sh
 printf 'UI cutover tests passed: %s fault/recovery cases and source-contract checks\n' "$case_count"

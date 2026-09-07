@@ -1,6 +1,6 @@
 # SubNexus 回滚手册
 
-> 当前权威状态：2026-09-06 23:25（Asia/Shanghai）。本轮 UI run `20260906134705-774592` 已成功 switched，切换后生产、公网、依赖、备份和固定旧回滚对象审计均通过，尚未 rollback。历史 run 均不得用于回滚交接；第 7 节固定旧回滚对象不变，并指向绑定本轮成功 run 的唯一回滚入口。
+> 当前权威状态：2026-09-07（Asia/Shanghai）。生产仍运行 `245ecd2630b96a9807df89dc02828bbb436e7624` 对应的上一版 UI；本轮保留二开用户端界面迁移尚未产生新 commit、镜像或 prepare run，因此尚无本轮 rollback 命令。第 7 节只保留当前生产版本的历史恢复入口；新发布最终必须通过同一新 run 指向既有旧 SubNexus，不能创建新的永久回滚对象。
 
 回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只能使用完成最终核验的 UI 包装器及其绑定 run，不得单独执行旧控制器的历史 rollback 命令，也不得用手工 `docker stop/start` 绕过 manifest、owner、固定旧回滚对象和依赖身份校验。
 
@@ -79,3 +79,19 @@ docker inspect <候选容器名> --format '{{json .NetworkSettings.Networks}}'
 - 本轮没有创建新的永久回滚对象；当前生产 `86104829...` 不是回滚目标。Rollback 通过本轮 manifest 锁定上述旧 ID/image/name/anchor；固定旧对象仍 exited/restart=0。回滚默认不恢复 PostgreSQL/Redis，不修改 Nginx 或开关。
 - PostgreSQL `8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf`、Redis `5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 身份未变且 running/restart=0；18 个受保护设置、runtime contract、备份及 sidecar、文件权限和 fixed anchor 已通过切换后审计。公网桌面/移动端 Rain UI、三图、双 Canvas 及未登录交互均通过，客服按原开关保持关闭。
 - 唯一现行 rollback 单行命令位于切换手册第 13 节；仅在当前 UI 确需恢复时由维护者手动执行。此处不复制命令，避免两个操作入口发生漂移。
+
+## 8. 保留二开用户端 UI 候选的回滚合同（2026-09-07，尚未 prepare）
+
+本轮只修改用户端显示层，生产 base 为 `245ecd2630b96a9807df89dc02828bbb436e7624`。UI commit、候选镜像和 prepare run 尚未生成，因此当前不存在本轮可执行 rollback 命令；不得把第 7 节的历史 run 或命令复制为新发布入口。
+
+新 `prepare` 必须把以下固定旧 SubNexus 写入新 manifest 并逐项验证：
+
+- ID：`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`
+- image：`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`
+- name：`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`
+- anchor：`/srv/subnexus-migration/cutover/20260905085804-4072165`
+- anchor manifest SHA256：`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`
+
+prepare 不得创建回滚容器或回滚镜像。switch 期间当前生产容器只用于失败窗口内的临时恢复；候选健康并提交后按精确 ID 删除，不能长期保留或升级为新回滚目标。固定旧对象、旧镜像、anchor manifest 及其必要证据不得纳入空间清理。
+
+最终 rollback 必须通过与 switch 相同的新 wrapper 和新 run 执行：删除本轮候选，恢复上述旧容器，保留管理员在切换后对设置的正常更新，默认不恢复 PostgreSQL/Redis、不修改 Nginx、不切换功能开关。只有新 run 的备份、manifest、stopped probe 和最终审计全部通过后，才在切换手册新增唯一单行命令并交给维护者；代理停在 switch 前。

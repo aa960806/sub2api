@@ -299,7 +299,7 @@ export default {
     firstRecharge: {
       title: 'First recharge offer',
       offer: 'Pay {price} and receive ${credit} in balance',
-      ratio: 'Credit multiplier x{ratio}',
+      ratio: 'First recharge ratio x{ratio}',
       purchase: 'Buy now',
       pending: 'Awaiting payment',
     },

@@ -1,5 +1,8 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-950">
+  <div
+    class="min-h-screen bg-gray-50 dark:bg-dark-950"
+    :class="{ 'subnexus-legacy-surface': legacySurface }"
+  >
     <!-- Background Decoration -->
     <div class="pointer-events-none fixed inset-0 bg-mesh-gradient"></div>
 
@@ -12,7 +15,7 @@
       :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']"
     >
       <!-- Header -->
-      <AppHeader />
+      <AppHeader :show-page-description="!legacySurface" />
 
       <!-- Main Content -->
       <main class="p-4 md:p-6 lg:p-8">
@@ -24,6 +27,7 @@
 
 <script setup lang="ts">
 import '@/styles/onboarding.css'
+import '@/styles/subnexus-legacy-surface.css'
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
@@ -31,6 +35,12 @@ import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+
+withDefaults(defineProps<{
+  legacySurface?: boolean
+}>(), {
+  legacySurface: false,
+})
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
@@ -50,3 +60,9 @@ onMounted(() => {
 
 defineExpose({ replayTour })
 </script>
+
+<style scoped>
+html.dark .subnexus-legacy-surface {
+  background-color: #0b1220;
+}
+</style>

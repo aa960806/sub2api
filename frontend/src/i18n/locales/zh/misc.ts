@@ -323,13 +323,13 @@ export default {
     firstRecharge: {
       title: '新手首充礼包',
       offer: '支付 {price}，到账 ${credit}',
-      ratio: '到账倍率 x{ratio}',
+      ratio: '首充比例 x{ratio}',
       purchase: '立即购买',
       pending: '待支付',
     },
     studentRecharge: {
       modeTitle: '充值方式',
-      eligible: '当前账号已启用学生优惠资格',
+      eligible: '学生身份已生效',
       standard: '普通充值',
       student: '学生专享',
       bonus: '学生额外赠额',

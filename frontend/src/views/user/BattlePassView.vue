@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <AppLayout legacy-surface>
     <div class="space-y-5">
       <div v-if="loading" class="card px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-400">{{ t('common.loading') }}</div>
 
@@ -454,6 +454,19 @@ onMounted(load)
 </script>
 
 <style scoped>
+.card {
+  @apply rounded-xl border-gray-200/70 dark:border-dark-700/60;
+}
+
+.btn {
+  @apply rounded-lg;
+}
+
+.btn-primary {
+  @apply bg-primary-600 text-white shadow-sm hover:bg-primary-700 hover:shadow dark:bg-primary-600 dark:hover:bg-primary-500;
+  background-image: none;
+}
+
 .bp-summary { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; border-left:4px solid #10b981; background:#f0fdf4; padding:24px; }.dark .bp-summary { background:rgba(6,78,59,.22); }
 .bp-summary__eyebrow { margin:0; color:#047857; font-size:12px; font-weight:600; }.bp-summary h1 { margin:5px 0 0; color:#111827; font-size:24px; font-weight:700; }.dark .bp-summary h1 { color:#fff; }
 .bp-summary__description,.bp-summary__time { margin:8px 0 0; color:#4b5563; font-size:14px; }.dark .bp-summary__description,.dark .bp-summary__time { color:#cbd5e1; }

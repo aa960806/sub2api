@@ -10,6 +10,8 @@
           v-for="amt in filteredAmounts"
           :key="amt"
           type="button"
+          :aria-pressed="modelValue === amt"
+          :data-amount="amt"
           :class="[
             'rounded-lg border-2 px-4 py-3 text-center font-medium transition-colors',
             modelValue === amt
@@ -37,6 +39,7 @@
           inputmode="decimal"
           :value="customText"
           :placeholder="placeholderText"
+          data-testid="recharge-amount-input"
           class="input w-full py-3 pl-8 pr-4"
           @input="handleInput"
         />
@@ -67,11 +70,24 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const customText = ref('')
+let initialDefaultPending = true
 
 // 0 = no limit
 const filteredAmounts = computed(() =>
   props.amounts.filter((a) => (props.min <= 0 || a >= props.min) && (props.max <= 0 || a <= props.max))
 )
+
+watch(filteredAmounts, (amounts) => {
+  if (!initialDefaultPending) return
+  if (props.modelValue !== null) {
+    initialDefaultPending = false
+    return
+  }
+  if (amounts.length === 0) return
+
+  initialDefaultPending = false
+  emit('update:modelValue', amounts[0])
+}, { immediate: true })
 
 const placeholderText = computed(() => {
   if (props.min > 0 && props.max > 0) return `${props.min} - ${props.max}`
@@ -104,8 +120,13 @@ function handleInput(e: Event) {
 }
 
 watch(() => props.modelValue, (v) => {
-  if (v !== null && String(v) !== customText.value) {
-    customText.value = String(v)
+  if (v === null) {
+    customText.value = ''
+    return
   }
+
+  const currentValue = Number(customText.value)
+  if (customText.value !== '' && Number.isFinite(currentValue) && currentValue === v) return
+  customText.value = String(v)
 }, { immediate: true })
 </script>

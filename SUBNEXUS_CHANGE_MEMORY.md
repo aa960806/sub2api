@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-06 23:25 Asia/Shanghai）：维护者已手动完成 `F:\Rain` 首页源码直接迁移 run `20260906134705-774592` 的 `switch`；应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 对应容器 `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd` 正在生产运行且 `healthy/restart=0`，切换后服务器审计和公网桌面/移动验收均通过，未执行 rollback。该 run 的 switch 已消费，严禁重跑；当前只保留同 run rollback 作为恢复入口，固定旧 SubNexus 回滚对象不变。当前状态取信于文末最新记录。
+> 当前权威状态（2026-09-07 Asia/Shanghai）：生产仍运行上一版应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624`；本轮正在把 `F:\Sub2Api\SubNexus` 的保留二开用户端界面直接迁移到当前项目，同时继续使用当前项目既有 API、路由、权限、功能开关和业务逻辑。本轮 UI 候选尚未提交，尚无新镜像或远端 run；完成本地验证、隔离构建、Gate、无停机 `prepare`、stopped probe 和最终审计后，必须停在 `switch` 前交给维护者。固定旧 SubNexus 回滚对象不变，不创建新的永久回滚对象。当前状态取信于文末最新记录。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1452,3 +1452,15 @@
 - 固定旧 SubNexus 回滚对象仍为 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`、name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，状态 `exited/restart=0`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`，anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。本轮未创建新永久回滚对象，未执行 rollback。
 - 公网 `https://yydsapi.uno` Playwright 验收在桌面 `1440x1000` 和移动端 `390x844` 均无页面错误或溢出；三张 Rain 原图正常加载，两层 Canvas 均非空。未登录状态下文档、模型广场、登录、语言和主题交互通过，配置驱动的站点名、Logo、副标题正常；客服沿用原配置 `customer_support_enabled=false`，因此按设计不显示。公网 Playwright JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
 - 本 run 的 `switch` 已成功消费，禁止再次执行；所有历史 switch 命令同样禁止复用。当前唯一恢复入口是切换手册中绑定 `/srv/subnexus-migration/cutover/20260906134705-774592` 的同 run `rollback` 命令。
+
+## 2026-09-07（Asia/Shanghai）— 保留二开用户端界面完整迁移（本地候选，发布前）
+
+- 维护者将本轮目标明确为：以 `F:\Sub2Api\SubNexus` 中 F01-F13 保留能力的用户端源码为实际显示基础，迁移页面结构、组件层次、样式、文案、弹窗、响应式行为和交互反馈；数据来源、API、请求参数、路由、鉴权、权限判断、功能开关、支付和奖励处理继续使用 `F:\MySub2\sub2api` 当前实现。不得新增或删除业务功能。
+- 已覆盖的用户端显示包括活动中心、排行榜、邀请抽奖、累计充值奖励转盘、邀请里程碑、Affiliate 邀请页、公告/跑马灯、客服按钮与 Markdown 弹窗、签到、首充、学生优惠、发票、Battle Pass 和 Channel Monitor V3。通用旧版 primitive 通过 `.subnexus-legacy-surface main` 限定作用域；Dashboard 只在签到组件局部启用，Payment 只在首充和学生优惠区块局部启用，Channel Monitor V1/V2 保持当前实现。
+- 充值金额输入恢复旧版默认选中行为并增加组件测试；中文学生资格副文案恢复为“学生身份已生效”。三个邀请活动仍保留当前独立入口，不恢复旧版单入口或活动红点；站点名称、Logo 和可配置内容继续来自当前公共设置。
+- 明确排除每日消耗转盘、红包雨、运行日历、Media Studio 和 Creative Workshop/创意工坊。没有恢复这些功能的页面、路由、API、任务或旧活动联动。
+- 发布 wrapper 使用相对生产基线的精确 allowlist：34 个 production UI 文件和 18 个测试/记忆/部署证据文件，共 52 个；与当前候选差异精确匹配。API、后端、数据库迁移、router、`package.json`、锁文件、全局 `style.css`、Tailwind 和既有 Rain 首页不在放行范围；删除、符号链接、可执行位以及仅文档/测试的候选均会被拒绝。`.codex-ui-mock-server.mjs` 是本地临时工具，必须排除于提交和制品。
+- 已取得的阶段性证据包括：邀请活动 19 项测试通过、scoped dark 编译 7 项测试通过、邀请页面 typecheck 通过、BaseDialog/客服/滚动锁等定向检查通过、生产构建和 ESLint 通过，以及 UI wrapper 26 组故障/恢复与 source-contract 测试通过。最终提交前仍须统一重跑定向及全量 Vitest、typecheck、lint、build、wrapper、`git diff --check`，并完成桌面/移动、明暗主题的实际 Playwright 对比和溢出检查；阶段性证据不能提前写成最终 Release Gate。
+- 本轮候选 UI commit/tree 尚未固定，也没有新镜像、归档、远端 Gate、prepare run 或可执行切换命令。生产 base 固定为 `245ecd2630b96a9807df89dc02828bbb436e7624`；提交后必须重新证明完整目标从该 base 派生，并重新计算镜像、归档、source bundle、wrapper 和全部证据 SHA。
+- 发布顺序固定为：本地最终验证与提交推送、隔离构建、上传并安装唯一制品、候选 Docker Gate、无停机 `prepare`、全新备份校验、never-started stopped probe、设置/运行时/空间/生产身份最终审计。全部完成后停在新 run 的 `switch` 前，由维护者手动执行 switch；同时只提供绑定同一新 run 的 rollback。
+- 固定旧 SubNexus 回滚对象保持不变：ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`，name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`，anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。本轮不得创建新的永久回滚容器或镜像，也不得把当前生产应用改作回滚目标。

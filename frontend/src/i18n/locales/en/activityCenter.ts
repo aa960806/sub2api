@@ -2,8 +2,12 @@ export default {
   activityCenter: {
     title: 'Activity Center',
     description: 'View currently available activity entries',
+    summary: 'View activities available to join',
+    availableCount: '{count} activities are available',
     disabledTitle: 'Activity center is currently disabled',
-    emptyTitle: 'No activities are available',
+    disabledSubtitle: 'More activities are coming soon',
+    emptyTitle: 'No activities are available to join',
+    emptySubtitle: 'New activities are coming soon',
     activeLabel: 'Active',
     startsAt: 'Starts: {date}',
     endsAt: 'Ends: {date}',

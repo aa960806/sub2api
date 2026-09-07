@@ -9,6 +9,64 @@ ui_controller_path=''
 ui_anchor_validation=0
 ui_expected_settings_hash=''
 
+readonly -a ui_production_source_paths=(
+  'frontend/src/components/common/AnnouncementBell.vue'
+  'frontend/src/components/common/AnnouncementPopup.vue'
+  'frontend/src/components/common/BaseDialog.vue'
+  'frontend/src/components/common/BroadcastMarquee.vue'
+  'frontend/src/components/common/ConfirmDialog.vue'
+  'frontend/src/components/common/CustomerSupportButton.vue'
+  'frontend/src/components/common/CustomerSupportModal.vue'
+  'frontend/src/components/layout/AppHeader.vue'
+  'frontend/src/components/layout/AppLayout.vue'
+  'frontend/src/components/payment/AmountInput.vue'
+  'frontend/src/components/user/dashboard/UserDashboardCheckIn.vue'
+  'frontend/src/components/user/monitor/ChannelMonitorV3Card.vue'
+  'frontend/src/i18n/locales/en/activityCenter.ts'
+  'frontend/src/i18n/locales/en/common.ts'
+  'frontend/src/i18n/locales/en/inviteActivities.ts'
+  'frontend/src/i18n/locales/en/leaderboard.ts'
+  'frontend/src/i18n/locales/en/misc.ts'
+  'frontend/src/i18n/locales/zh/activityCenter.ts'
+  'frontend/src/i18n/locales/zh/common.ts'
+  'frontend/src/i18n/locales/zh/inviteActivities.ts'
+  'frontend/src/i18n/locales/zh/leaderboard.ts'
+  'frontend/src/i18n/locales/zh/misc.ts'
+  'frontend/src/styles/subnexus-legacy-surface.css'
+  'frontend/src/utils/bodyScrollLock.ts'
+  'frontend/src/views/user/ActivityCenterView.vue'
+  'frontend/src/views/user/AffiliateView.vue'
+  'frontend/src/views/user/BattlePassView.vue'
+  'frontend/src/views/user/ChannelStatusV3View.vue'
+  'frontend/src/views/user/InviteLotteryView.vue'
+  'frontend/src/views/user/InviteMilestoneView.vue'
+  'frontend/src/views/user/InvoicesView.vue'
+  'frontend/src/views/user/LeaderboardView.vue'
+  'frontend/src/views/user/PaymentView.vue'
+  'frontend/src/views/user/RechargeWheelView.vue'
+)
+
+readonly -a ui_evidence_source_paths=(
+  'frontend/src/components/common/__tests__/CustomerSupportButton.spec.ts'
+  'frontend/src/components/common/__tests__/CustomerSupportModal.spec.ts'
+  'frontend/src/components/common/__tests__/ScopedDarkModeStyles.spec.ts'
+  'frontend/src/components/layout/__tests__/SubnexusLegacySurface.spec.ts'
+  'frontend/src/components/payment/__tests__/AmountInput.spec.ts'
+  'frontend/src/utils/__tests__/bodyScrollLock.spec.ts'
+  'frontend/src/views/user/__tests__/InviteActivitiesViews.spec.ts'
+  'frontend/src/views/user/__tests__/LeaderboardView.spec.ts'
+  'frontend/src/views/user/__tests__/PaymentView.spec.ts'
+  'SUBNEXUS_CHANGE_MEMORY.md'
+  'SUBNEXUS_CUTOVER_RUNBOOK.md'
+  'SUBNEXUS_FEATURE_MATRIX.md'
+  'SUBNEXUS_MIGRATION_LEDGER.md'
+  'SUBNEXUS_MIGRATION_PLAN.md'
+  'SUBNEXUS_PROJECT_CONTEXT.md'
+  'SUBNEXUS_ROLLBACK_RUNBOOK.md'
+  'tools/production-deploy/subnexus-ui-cutover.sh'
+  'tools/production-deploy/subnexus-ui-cutover.test.sh'
+)
+
 ui_usage() {
   printf '%s\n' \
     'usage: subnexus-ui-cutover.sh prepare CONTROLLER SOURCE TARGET_SHA BASE_SHA IMAGE_ID ARCHIVE ARCHIVE_SHA GATE LIVE_APP ANCHOR_RUN OLD_ID OLD_IMAGE_ID OLD_NAME [PUBLIC_HEALTH_URL]' \
@@ -109,8 +167,25 @@ ui_assert_settings_unchanged() {
   [[ "$actual" == "$ui_expected_settings_hash" ]] || fail 'production settings changed; no settings were restored'
 }
 
+ui_source_path_class() {
+  local path="$1" allowed
+  for allowed in "${ui_production_source_paths[@]}"; do
+    if [[ "$path" == "$allowed" ]]; then
+      printf 'production\n'
+      return 0
+    fi
+  done
+  for allowed in "${ui_evidence_source_paths[@]}"; do
+    if [[ "$path" == "$allowed" ]]; then
+      printf 'evidence\n'
+      return 0
+    fi
+  done
+  return 1
+}
+
 ui_assert_source_delta() {
-  local source="$1" base="$2" target="$3" path count=0
+  local source="$1" base="$2" target="$3" path path_class mode count=0
   valid_sha40 "$base" && valid_sha40 "$target" || fail 'UI source SHA is invalid'
   git -C "$source" cat-file -e "$base^{commit}" || fail 'UI base commit is unavailable'
   git -C "$source" merge-base --is-ancestor "$base" "$target" || fail 'UI target does not descend from the live base'
@@ -118,27 +193,13 @@ ui_assert_source_delta() {
   changes="$(mktemp)" || fail 'cannot create source comparison metadata'
   git -C "$source" diff --no-renames --name-only -z "$base" "$target" > "$changes" || { rm -f -- "$changes"; fail 'cannot compare UI source'; }
   while IFS= read -r -d '' path; do
-    case "$path" in
-      frontend/src/views/HomeView.vue|\
-      frontend/src/components/common/CustomerSupportButton.vue|\
-      frontend/src/components/common/LocaleSwitcher.vue|\
-      frontend/src/components/home/GlassDropletsCanvas.vue|\
-      frontend/src/components/home/GlassPane.vue|\
-      frontend/src/components/home/RainGatewayHome.vue|\
-      frontend/src/components/home/RainGlyph.vue|\
-      frontend/src/components/home/RainStreaksCanvas.vue|\
-      frontend/src/components/home/RainyBackground.vue|\
-      frontend/public/rain-city-1.jpg|\
-      frontend/public/rain-city-2.jpg|\
-      frontend/public/rain-city-3.jpg)
-        [[ "$(git -C "$source" ls-tree "$target" -- "$path" | awk '{print $1}')" == 100644 ]] || { rm -f -- "$changes"; fail 'UI asset must be a regular tracked file'; }
-        count=$((count + 1)) ;;
-      frontend/src/components/home/__tests__/RainGatewayHome.spec.ts|SUBNEXUS_CHANGE_MEMORY.md|SUBNEXUS_CUTOVER_RUNBOOK.md|SUBNEXUS_FEATURE_MATRIX.md|SUBNEXUS_MIGRATION_LEDGER.md|SUBNEXUS_MIGRATION_PLAN.md|SUBNEXUS_PROJECT_CONTEXT.md|SUBNEXUS_ROLLBACK_RUNBOOK.md|tools/production-deploy/subnexus-ui-cutover.sh|tools/production-deploy/subnexus-ui-cutover.test.sh) ;;
-      *) rm -f -- "$changes"; fail "UI-only release changes a protected path: $path" ;;
-    esac
+    path_class="$(ui_source_path_class "$path")" || { rm -f -- "$changes"; fail "UI-only release changes a protected path: $path"; }
+    mode="$(git -C "$source" ls-tree "$target" -- "$path" | awk '{print $1}')" || { rm -f -- "$changes"; fail 'cannot inspect an allowed UI release path'; }
+    [[ "$mode" == 100644 ]] || { rm -f -- "$changes"; fail "UI release path must be a regular tracked file: $path"; }
+    if [[ "$path_class" == production ]]; then count=$((count + 1)); fi
   done < "$changes"
   rm -f -- "$changes"
-  (( count > 0 )) || fail 'UI release has no homepage or image changes'
+  (( count > 0 )) || fail 'UI release has no approved user-interface changes'
 }
 
 ui_assert_base_image() {

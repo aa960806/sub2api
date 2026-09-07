@@ -1,10 +1,10 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态：2026-09-06 23:25（Asia/Shanghai）。`F:\Rain` 首页源码直接迁移已通过 run `20260906134705-774592` 完成 switch，切换后生产、公网、依赖、备份和固定旧回滚对象审计均通过。成功 run 的 switch 命令已撤回且严禁重跑；第 13 节只保留绑定同一 run 的 rollback 入口。
+> 当前权威状态：2026-09-07（Asia/Shanghai）。生产基线为 `245ecd2630b96a9807df89dc02828bbb436e7624`；本轮保留二开用户端界面迁移仍在本地候选阶段，尚未固定 UI commit、镜像、wrapper 或远端 run。第 13 节仅记录上一版生产及其当前恢复入口；本轮发布约束见第 14 节，取得全新 `READY=prepared` 和完整审计证据前不得生成或执行新命令。
 
-本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧回滚对象和 stopped probe 均核验完成之后。本轮 `switch` 已由维护者手动执行；现存人工命令仅供确有需要时 rollback，构建/gate 通过本身不代表可以切换或回滚。
+本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧回滚对象和 stopped probe 均核验完成之后。本轮新 UI 的最终 `switch` 必须由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
 
-最新授权允许代理完成安装脚本、全新备份、`prepare`、never-started probe 验收及范围明确的无用垃圾清理；本轮最终 `switch` 已由维护者执行，后续如需 `rollback` 仍必须交给维护者手动执行。任何历史失败、已回滚或已成功切换的 run 都不得重试 switch 或复用旧命令。
+最新授权允许代理完成提交推送、隔离构建、上传安装、候选 Gate、全新备份、无停机 `prepare`、never-started probe、最终审计及范围明确的无用垃圾清理；到新 run 的最终 `switch` 前必须停止并交给维护者，同时给出绑定同一新 run 的 rollback 命令。任何历史失败、已回滚或已成功切换的 run 都不得复用。
 
 ## 1. 发布前硬门禁
 
@@ -280,3 +280,20 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 ```bash
 sudo env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=054507b15851c9547ab347f88ad21d8f9a5203be6123bfb2030e21c88806fd5d SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-054507b1-20260906.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260906134705-774592
 ```
+
+## 14. 保留二开用户端界面发布约束（2026-09-07，尚未 prepare）
+
+| 项目 | 本轮约束 |
+| --- | --- |
+| 生产基线 | `245ecd2630b96a9807df89dc02828bbb436e7624`；新 target 必须是其后代 |
+| UI 来源 | `F:\Sub2Api\SubNexus` 的保留二开用户端结构、组件、样式、文案、弹窗和响应式交互 |
+| 功能来源 | 当前项目既有 API、路由、鉴权、权限、配置、功能开关、请求参数和业务处理 |
+| 精确范围 | 34 个 production UI 文件 + 18 个测试/记忆/部署证据文件 = 52 个；提交后必须再次与 `base..target` 完整差异逐项相等 |
+| 明确排除 | 每日消耗转盘、红包雨、运行日历、Media Studio、Creative Workshop；同时拒绝 API、后端、迁移、router、依赖/锁文件、全局样式和 Tailwind 变化 |
+| 当前制品状态 | UI commit/tree、镜像、归档、wrapper SHA、Gate evidence 和 prepare run 均待生成；不得复用第 13 节或任何历史 run 的值 |
+| 固定控制器 | 原生产控制器继续使用 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`；新 wrapper 必须从最终提交重新哈希并用新路径安装 |
+| 回滚锚点 | 继续使用 anchor `20260905085804-4072165`、旧容器 `be459424...`、旧镜像 `b24b585...` 和既有名称；不得创建新永久回滚对象 |
+
+发布前必须按顺序完成最终本地测试和视觉验收、固定并推送 UI commit、隔离构建、制品哈希核对、候选 Docker Gate、无停机 `prepare`、全新 PostgreSQL/Redis/应用数据备份与 sidecar 校验、stopped probe、受保护设置/运行时合同/空间/生产身份审计。Gate 和 prepare 都必须实时确认生产容器及 PostgreSQL/Redis 身份，不能直接采用历史脚本内写死的 live ID。
+
+在新 run 出现 `READY=prepared`、`UI_READY=application-refresh-v1`，且 stopped probe 从未启动、已按完整 ID 删除、manifest 前后未变之后，才能生成两条最终单行命令。第一条是绑定新 wrapper 和新 run 的 `switch`；第二条是绑定同一 wrapper 和同一 run 的 `rollback`，且 manifest 必须指向固定旧 SubNexus。此处不预填占位命令，避免未完成证据被误执行。代理在交付这两条命令时停止，由维护者手动执行 switch。

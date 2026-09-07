@@ -62,6 +62,8 @@ export default {
     verifying: '验证中...',
     processing: '处理中...',
     contactSupport: '联系客服',
+    customerSupportSubtitle: '我们随时为您提供帮助',
+    customerSupportEmpty: '暂无客服信息',
     add: '添加',
     invalidEmail: '请输入有效的邮箱地址',
     optional: '可选',

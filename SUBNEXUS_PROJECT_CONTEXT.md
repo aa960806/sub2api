@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态：2026-09-06 23:25（Asia/Shanghai）。维护者已手动完成 `F:\Rain` 首页源码直接迁移 run `20260906134705-774592` 的 `switch`；应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 对应容器 `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd` 正在生产运行且 `healthy/restart=0`，切换后服务器审计和公网桌面/移动验收均通过，未执行 rollback。该 run 的 switch 已消费，严禁重跑；仅同 run rollback 仍是当前恢复入口。以本文文末最新记录为准。
+> 当前权威状态：2026-09-07（Asia/Shanghai）。生产仍运行上一版应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624`；当前工作是在不改变功能/API 的前提下，将 `F:\Sub2Api\SubNexus` 的保留二开用户端界面迁入本项目。新 UI 尚未提交、构建或 prepare；完成全部前置验证后停在最终 `switch` 前。固定旧 SubNexus 回滚对象继续保留，不创建新的永久回滚对象。以本文文末最新记录为准。
 
 ## 项目身份
 
@@ -12,7 +12,7 @@
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新上游基线：`upstream/main=ab99d56e9626e6cd731592dae8553c9758a0efa2`（版本 `0.2.1`，发布标签 `v0.2.1=578785ee7fb35030b094b69624efe25670a36f5f`）
-- 当前迁移分支：`feature/subnexus-migration`；本轮应用候选固定为 `245ecd2630b96a9807df89dc02828bbb436e7624`，tree=`b0f55487331dca07031219d59cd4159cab8a610d`。当前分支 tip 必须以 `git rev-parse HEAD` 实时核对；后续文档提交不会改变已固定镜像；`main` 未修改。
+- 当前迁移分支：`feature/subnexus-migration`；生产应用基线为 `245ecd2630b96a9807df89dc02828bbb436e7624`，本轮 UI 候选 commit/tree 尚待本地提交后固定。当前分支 tip 必须以 `git rev-parse HEAD` 实时核对；`main` 未修改。
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -20,13 +20,13 @@
 
 | 状态项 | 当前值 |
 | --- | --- |
-| 迁移阶段 | 既有迁移及上游 v0.2.1 已发布；`F:\Rain` 默认首页 UI 已完成生产 switch，切换后服务器审计及公网桌面/移动验收均通过 |
-| 业务代码迁移 | F01-F13 已接入目标后端、前端、路由、Wire、设置和测试；所有迁移功能默认关闭 |
+| 迁移阶段 | 既有业务迁移、上游 v0.2.1 和 `F:\Rain` 首页已经发布；本轮保留二开用户端界面迁移处于本地候选阶段 |
+| 业务代码迁移 | F01-F13 后端、API、路由、Wire、设置与功能开关保持当前实现；本轮只迁移对应用户端显示层，所有迁移功能继续遵守现有开关 |
 | 新 fork 数据库迁移 | 已新增 `9001`–`9013` 共 13 个业务/兼容 SQL；runner 有 27 组显式旧文件名接管门禁（23 组内容映射、2 组语义接管、2 组独立表接管） |
 | 生产数据库访问 | 第二次候选启动约 35 秒并于 `2026-09-05 01:17:03 UTC` 应用 `9001`-`9013`；13 条 checksum 与候选 SQL 全部一致。自动回滚未恢复数据库，旧应用已在迁移后同库上恢复健康；未手工执行迁移或恢复 PostgreSQL/Redis |
-| 生产部署/切换 | 当前线上容器=`86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`，image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7`，`running/healthy/restart=0`；run `/srv/subnexus-migration/cutover/20260906134705-774592` 已 switched，未 rollback；switch 已消费且禁止重跑，仅同 run rollback 保留 |
+| 生产部署/切换 | 当前生产仍是 `245ecd2630b96a9807df89dc02828bbb436e7624` 对应的上一版 Rain 应用；本轮尚无远端 run，历史 run 不得复用。完成新 Gate、无停机 prepare、stopped probe 和最终审计后停在 switch 前 |
 | 生产开关 | 本轮未开启功能、修改首页配置、执行数据库/Redis 恢复或修改 Nginx；18 个受保护设置保持原值，客服继续按原配置 `customer_support_enabled=false` 不显示 |
-| 工作区 | 应用提交 `245ecd2630b96a9807df89dc02828bbb436e7624` 已推送；本轮候选 image=`sha256:e472d61e8db88ec5cdd0c0c4ad9e9db11b28c3495a14af02287c99b6addf23a7` |
+| 工作区 | 用户端 UI 改动仍在 `feature/subnexus-migration` 工作树中；候选 commit/tree/image 均未固定，不得把当前未提交状态写作发布制品 |
 | 当前磁盘 | 精确删除失效 run `20260906082131-600835` 的六个大备份/sidecar 后释放 `5264399409` bytes；未使用 prune。新 prepare 与 probe 完成后可用 `21903691776` bytes，仍高于 8 GiB 保留线 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
 
@@ -158,3 +158,83 @@ registration_ip_cooldown_enabled
 - 固定旧 SubNexus 回滚对象保持为 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`、name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`、`exited/restart=0`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`，anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。本轮未创建新永久回滚对象，未执行 rollback。
 - 公网 `https://yydsapi.uno` Playwright 验收在 `1440x1000` 与 `390x844` 均无页面错误或溢出；三张 Rain 原图及双 Canvas 正常，未登录文档、模型广场、登录、语言和主题交互通过，配置站点名、Logo、副标题正常；客服因原配置 `customer_support_enabled=false` 按设计不显示。公网 Playwright JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
 - 本 run 的 switch 已消费并禁止重跑，所有历史 switch 命令也不得复用。当前唯一恢复入口是切换手册中绑定本 run 的 rollback 命令。
+
+## 保留二开用户端界面工作包（2026-09-07，当前）
+
+本工作包采用分离的来源合同：用户看到的页面结构、组件、CSS、文案、弹窗、动画和响应式行为以 `F:\Sub2Api\SubNexus` 中保留二开实现为准；功能和数据以当前 `F:\MySub2\sub2api` 为准。按钮外观与位置可使用旧版实现，点击事件、路由、权限、API 地址、请求参数、配置读取和业务处理必须继续绑定当前代码。
+
+当前覆盖活动中心、排行榜、Affiliate、邀请抽奖、累计充值奖励转盘、邀请里程碑、公告/跑马灯、客服、签到、首充、学生优惠、发票、Battle Pass 和 Channel Monitor V3。共享旧版视觉 primitive 只在 `.subnexus-legacy-surface main` 内生效；Dashboard/Payment 采用局部 opt-in，AppHeader/AppSidebar 及 Channel Monitor V1/V2 不受全局覆盖。AmountInput 保留旧版默认选择，中文学生资格副文案为“学生身份已生效”。
+
+每日消耗转盘、红包雨、运行日历、Media Studio、Creative Workshop 明确排除；旧活动红点、旧单入口和旧奖励联动也不恢复。F10 注册 IP 冷却与 F12 默认语言没有新增页面，其当前功能合同原样保留。
+
+本轮仍是未提交的本地候选。精确发布范围为 34 个 production UI 文件和 18 个测试/记忆/部署证据文件，共 52 个；当前 wrapper 会拒绝 API、后端、数据库迁移、router、依赖、锁文件、全局样式、Tailwind、上一版 Rain 首页、删除、符号链接和可执行位变化。`.codex-ui-mock-server.mjs` 是本地临时文件，必须在提交前排除。
+
+### 本轮精确发布 allowlist（52 项）
+
+34 个 production UI 路径：
+
+```text
+frontend/src/components/common/AnnouncementBell.vue
+frontend/src/components/common/AnnouncementPopup.vue
+frontend/src/components/common/BaseDialog.vue
+frontend/src/components/common/BroadcastMarquee.vue
+frontend/src/components/common/ConfirmDialog.vue
+frontend/src/components/common/CustomerSupportButton.vue
+frontend/src/components/common/CustomerSupportModal.vue
+frontend/src/components/layout/AppHeader.vue
+frontend/src/components/layout/AppLayout.vue
+frontend/src/components/payment/AmountInput.vue
+frontend/src/components/user/dashboard/UserDashboardCheckIn.vue
+frontend/src/components/user/monitor/ChannelMonitorV3Card.vue
+frontend/src/i18n/locales/en/activityCenter.ts
+frontend/src/i18n/locales/en/common.ts
+frontend/src/i18n/locales/en/inviteActivities.ts
+frontend/src/i18n/locales/en/leaderboard.ts
+frontend/src/i18n/locales/en/misc.ts
+frontend/src/i18n/locales/zh/activityCenter.ts
+frontend/src/i18n/locales/zh/common.ts
+frontend/src/i18n/locales/zh/inviteActivities.ts
+frontend/src/i18n/locales/zh/leaderboard.ts
+frontend/src/i18n/locales/zh/misc.ts
+frontend/src/styles/subnexus-legacy-surface.css
+frontend/src/utils/bodyScrollLock.ts
+frontend/src/views/user/ActivityCenterView.vue
+frontend/src/views/user/AffiliateView.vue
+frontend/src/views/user/BattlePassView.vue
+frontend/src/views/user/ChannelStatusV3View.vue
+frontend/src/views/user/InviteLotteryView.vue
+frontend/src/views/user/InviteMilestoneView.vue
+frontend/src/views/user/InvoicesView.vue
+frontend/src/views/user/LeaderboardView.vue
+frontend/src/views/user/PaymentView.vue
+frontend/src/views/user/RechargeWheelView.vue
+```
+
+18 个测试、记忆和部署证据路径：
+
+```text
+frontend/src/components/common/__tests__/CustomerSupportButton.spec.ts
+frontend/src/components/common/__tests__/CustomerSupportModal.spec.ts
+frontend/src/components/common/__tests__/ScopedDarkModeStyles.spec.ts
+frontend/src/components/layout/__tests__/SubnexusLegacySurface.spec.ts
+frontend/src/components/payment/__tests__/AmountInput.spec.ts
+frontend/src/utils/__tests__/bodyScrollLock.spec.ts
+frontend/src/views/user/__tests__/InviteActivitiesViews.spec.ts
+frontend/src/views/user/__tests__/LeaderboardView.spec.ts
+frontend/src/views/user/__tests__/PaymentView.spec.ts
+SUBNEXUS_CHANGE_MEMORY.md
+SUBNEXUS_CUTOVER_RUNBOOK.md
+SUBNEXUS_FEATURE_MATRIX.md
+SUBNEXUS_MIGRATION_LEDGER.md
+SUBNEXUS_MIGRATION_PLAN.md
+SUBNEXUS_PROJECT_CONTEXT.md
+SUBNEXUS_ROLLBACK_RUNBOOK.md
+tools/production-deploy/subnexus-ui-cutover.sh
+tools/production-deploy/subnexus-ui-cutover.test.sh
+```
+
+上述两组路径必须和最终 `245ecd2630b96a9807df89dc02828bbb436e7624..target` 差异集合完全一致；允许路径不是可选上限，最终候选也不能缺少其中任一当前迁移路径。wrapper 仍逐项拒绝删除、重命名、符号链接、可执行位或其他文件模式变化。
+
+生产基线为 `245ecd2630b96a9807df89dc02828bbb436e7624`。尚未生成本轮 commit/tree、镜像、归档、Gate evidence 或 prepare run；任何历史值都不能作为本轮操作入口。后续完成最终本地测试与视觉验收、提交推送、隔离构建、候选 Gate、无停机 prepare、全新备份、stopped probe 和最终审计，然后停在 switch 前。
+
+固定旧 SubNexus 始终为 ID `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、image `sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`、name `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`、anchor `/srv/subnexus-migration/cutover/20260905085804-4072165`。新 prepare 只在 manifest 中绑定该对象，不创建新永久回滚容器或镜像；最终 rollback 命令必须使用与 switch 相同的新 run。

@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <AppLayout legacy-surface>
     <div class="space-y-5 pb-12">
       <section class="glass-card overflow-hidden p-0">
         <header class="flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:px-6">
@@ -160,3 +160,17 @@ onBeforeUnmount(() => {
   if (countdownTimer) window.clearInterval(countdownTimer)
 })
 </script>
+
+<style scoped>
+.glass-card {
+  border-radius: 0.75rem;
+}
+
+.badge-warning {
+  box-shadow: inset 0 0 0 1px rgb(217 119 6 / 10%);
+}
+
+html.dark .badge-warning {
+  box-shadow: inset 0 0 0 1px rgb(251 191 36 / 20%);
+}
+</style>
