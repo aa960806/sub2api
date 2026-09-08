@@ -54,6 +54,8 @@ if [[ "${1:-}" == --case ]]; then
   base="$(printf 'f%.0s' {1..40})"
   settings="$(printf '1%.0s' {1..64})"
   image_id="$(printf '2%.0s' {1..64})"
+  current_image="$(printf '9%.0s' {1..64})"
+  current_config_image=subnexus:current
   app_name=production-app
   temporary_name=production-app-ui-prior-20260905010101-42
   old_name=original-subnexus
@@ -61,22 +63,35 @@ if [[ "${1:-}" == --case ]]; then
   manifest_file="$run_dir/manifest.env"
   store="$fixture/containers"
   if [[ "$resuming" != resume ]]; then
+  mkdir "$fixture/original-anchor"
   printf '%s\n' immutable-original-run > "$fixture/original-evidence"
   printf '%s\n' "$settings" > "$fixture/settings"
   printf '%s\n' "$app_name" > "$store/$current.name"
   printf '%s\n' true > "$store/$current.running"
+  printf '%s\n' "$current_image" > "$store/$current.image"
+  printf '%s\n' "$current_config_image" > "$store/$current.config-image"
   printf '%s\n' "$old_name" > "$store/$original.name"
   printf '%s\n' false > "$store/$original.running"
   printf '%s\n' original-image > "$store/$original.image"
+  printf '%s\n' original:fixed > "$store/$original.config-image"
   printf '%s\n' \
     'state=prepared' 'ui_state=prepared' 'run_id=20260905010101-42' \
-    "live_app_id=$current" "live_app_name=$app_name" 'live_app_image_id=sha256:current-image' \
+    "live_app_id=$current" "live_app_name=$app_name" "live_app_image_id=sha256:$current_image" \
     "target_sha=$target" "ui_base_sha=$base" 'source_root=/unused/source' \
     "candidate_image_id=$image_id" 'candidate_container_id=' 'candidate_container_name=' 'candidate_container_intent=' \
     "ui_rollback_id=$original" "ui_rollback_name=$old_name" 'ui_rollback_image=sha256:original-image' \
-    "ui_temporary_name=$temporary_name" 'ui_commit_intent=no' "ui_settings_sha256=$settings" > "$manifest_file"
+    "ui_anchor_run=$fixture/original-anchor" 'ui_anchor_manifest_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'ui_anchor_state=present' \
+    "ui_new_rollback_id=$current" "ui_new_rollback_image=sha256:$current_image" \
+    "ui_new_rollback_config_image=$current_config_image" \
+    "ui_new_rollback_name=$temporary_name" 'ui_new_rollback_state=prepared' \
+    "ui_temporary_name=$temporary_name" \
+    'ui_commit_intent=no' "ui_settings_sha256=$settings" > "$manifest_file"
   printf 'prepared\n' > "$run_dir/READY"
   chmod 600 "$manifest_file"
+  if [[ "$scenario" == anchor_missing || "$scenario" == rollback_anchor_missing ]]; then
+    rmdir "$fixture/original-anchor"
+    rm -- "$store/$original.name" "$store/$original.running" "$store/$original.image" "$store/$original.config-image"
+  fi
   fi
   app_id="$current"
   expected_image_id="$image_id"
@@ -86,6 +101,11 @@ if [[ "${1:-}" == --case ]]; then
   SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS
   cutover_active=0
   rollback_active=0
+
+  # MSYS/Git Bash cannot lower the file-size limit on this host; the
+  # production controller still applies its bounded diagnostic write, while
+  # the fixture keeps the shell-only case portable for local contract tests.
+  ulimit() { :; }
 
   assert_root_owned_regular() { [[ -f "$1" && ! -L "$1" ]] || fail "bad fixture file $1"; }
   ui_load_run() {
@@ -146,6 +166,8 @@ if [[ "${1:-}" == --case ]]; then
         [[ -n "$id" ]] || return 1
         case "$format" in
           '{{.Name}}') printf '/%s\n' "$(cat "$store/$id.name")" ;;
+          '{{.Image}}') printf 'sha256:%s\n' "$(cat "$store/$id.image")" ;;
+          '{{.Config.Image}}') cat "$store/$id.config-image" ;;
           '{{.State.Running}}') cat "$store/$id.running" ;;
           *) fail "unexpected fixture inspect: $format" ;;
         esac ;;
@@ -167,14 +189,15 @@ if [[ "${1:-}" == --case ]]; then
         [[ "$2" == rm && "$#" == 3 ]] || fail 'fixture forbids force/volume removal'
         id="$3"
         [[ "$(cat "$store/$id.running")" == false ]] || fail 'attempted to remove a running container'
-        if [[ "$scenario" == remove_failed && "$id" == "$current" ]]; then return 1; fi
-        rm -- "$store/$id.name" "$store/$id.running"
-        if [[ "$scenario" == remove_response_lost && "$id" == "$current" ]] || [[ "$scenario" == rollback_remove_response_lost && "$id" == "$replacement" ]]; then return 1; fi ;;
+        if [[ "$scenario" == remove_failed && "$id" == "$replacement" ]]; then return 1; fi
+        rm -- "$store/$id.name" "$store/$id.running" "$store/$id.image" "$store/$id.config-image" "$store/$id.role" 2>/dev/null || true
+        if [[ "$scenario" == remove_response_lost && "$id" == "$replacement" ]] || [[ "$scenario" == rollback_remove_response_lost && "$id" == "$replacement" ]]; then return 1; fi ;;
       logs) printf 'bounded previous application log\n' ;;
       *) fail "unexpected fixture Docker operation: $*" ;;
     esac
   }
   ui_assert_anchor() {
+    [[ "$scenario" != anchor_missing && "$scenario" != rollback_anchor_missing ]] || return 0
     [[ "$(cat "$store/$original.image")" == original-image ]] || fail 'original rollback image drifted'
     if [[ "${1:-}" == restored && "$(cat "$store/$original.name")" == "$app_name" ]]; then return 0; fi
     [[ "$(cat "$store/$original.name")" == "$old_name" && "$(cat "$store/$original.running")" == false ]] || fail 'original rollback identity or state drifted'
@@ -197,6 +220,8 @@ if [[ "${1:-}" == --case ]]; then
     [[ -z "$(inspect_container_id_or_empty "$app_name")" ]] || fail 'candidate name occupied'
     printf '%s\n' "$app_name" > "$store/$replacement.name"
     printf 'false\n' > "$store/$replacement.running"
+    printf '%s\n' candidate-image > "$store/$replacement.image"
+    printf '%s\n' candidate-image:latest > "$store/$replacement.config-image"
     printf 'candidate\n' > "$store/$replacement.role"
     printf 'create candidate %s\n' "$replacement" >> "$fixture/actions"
     [[ "$scenario" != created_without_id ]] || fail 'create response lost before ID persistence'
@@ -233,6 +258,14 @@ if [[ "${1:-}" == --case ]]; then
   fi
   case "$scenario" in
     anchor_drift) printf 'changed-image\n' > "$store/$original.image" ;;
+    remove_failed|remove_response_lost)
+      manifest_set state switching; manifest_set ui_state switching
+      docker_rpc stop --time 1 "$current"; docker_rpc rename "$current" "$temporary_name"
+      manifest_set ui_new_rollback_state stopped
+      create_candidate_container
+      SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK
+      ui_recover_entry "$run_dir"
+      exit ;;
     occupied_temporary)
       printf '%s\n' "$temporary_name" > "$store/$stranger.name"
       printf 'false\n' > "$store/$stranger.running" ;;
@@ -259,12 +292,17 @@ if [[ "${1:-}" == --case ]]; then
       exit ;;
   esac
   ui_switch "$run_dir"
-  if [[ "$scenario" == rollback || "$scenario" == rollback_interrupted || "$scenario" == rollback_marker_interrupted || "$scenario" == rollback_remove_response_lost ]]; then
+  if [[ "$scenario" == rollback || "$scenario" == rollback_interrupted || "$scenario" == rollback_marker_interrupted || "$scenario" == rollback_remove_response_lost || "$scenario" == rollback_anchor_missing || "$scenario" == rollback_already_restored ]]; then
     # Administrator updates made after deployment must survive rollback.
     printf '%s\n' "$(printf '5%.0s' {1..64})" > "$fixture/settings"
     if [[ "$scenario" == rollback_interrupted ]]; then
       manifest_set state rolling_back; manifest_set ui_state rolling_back
       ui_remove_candidate
+    elif [[ "$scenario" == rollback_already_restored ]]; then
+      docker_rpc stop --time 1 "$replacement"
+      docker_rpc container rm "$replacement"
+      docker_rpc rename "$current" "$app_name"
+      docker_rpc start "$current"
     fi
     SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK
     ui_manual_rollback "$run_dir"
@@ -296,12 +334,12 @@ original="$(printf 'b%.0s' {1..64})"
 replacement="$(printf 'c%.0s' {1..64})"
 temporary_name=production-app-ui-prior-20260905010101-42
 case_count=0
-for scenario in success stop_failed rename_failed start_failed created_without_id contract_failed unhealthy restore_unhealthy recovery_state_failed signal remove_failed remove_response_lost commit_marker_failed commit_state_failed commit_state_persistent commit_marker_interrupted settings_drift anchor_drift occupied_temporary recover_interrupted rollback rollback_interrupted rollback_without_id rollback_from_recovered rollback_marker_interrupted rollback_remove_response_lost; do
+for scenario in success stop_failed rename_failed start_failed created_without_id contract_failed unhealthy restore_unhealthy recovery_state_failed signal remove_failed remove_response_lost commit_marker_failed commit_state_failed commit_state_persistent commit_marker_interrupted settings_drift anchor_drift occupied_temporary anchor_missing recover_interrupted rollback rollback_interrupted rollback_without_id rollback_from_recovered rollback_marker_interrupted rollback_remove_response_lost rollback_anchor_missing rollback_already_restored; do
   fixture="$root/$scenario"
   mkdir "$fixture"
   rc=0
   bash "$0" --case "$scenario" "$fixture" > "$fixture/output" 2>&1 || rc=$?
-  case "$scenario" in success|remove_response_lost|recover_interrupted|rollback|rollback_interrupted|rollback_without_id|rollback_from_recovered|rollback_remove_response_lost) [[ "$rc" == 0 ]] || { cat "$fixture/output"; test_fail "$scenario failed ($rc)"; } ;; *) [[ "$rc" != 0 ]] || test_fail "$scenario unexpectedly succeeded" ;; esac
+  case "$scenario" in success|remove_response_lost|anchor_missing|recover_interrupted|rollback|rollback_interrupted|rollback_without_id|rollback_from_recovered|rollback_remove_response_lost|rollback_anchor_missing|rollback_already_restored) [[ "$rc" == 0 ]] || { cat "$fixture/output"; test_fail "$scenario failed ($rc)"; } ;; *) [[ "$rc" != 0 ]] || test_fail "$scenario unexpectedly succeeded" ;; esac
   if [[ "$scenario" == commit_marker_interrupted || "$scenario" == rollback_marker_interrupted ]]; then
     bash "$0" --case "$scenario" "$fixture" resume >> "$fixture/output" 2>&1 || { cat "$fixture/output"; test_fail "$scenario resume failed"; }
   fi
@@ -311,25 +349,39 @@ for scenario in success stop_failed rename_failed start_failed created_without_i
       [[ ! -f "$fixture/run/ROLLED_BACK" ]] || test_fail 'failed recovery state write left a terminal marker'
       grep -Fxq 'state=switching' "$fixture/run/manifest.env" || test_fail 'failed recovery state write was not retryable'
       if grep -Eq 'UI_RECOVERED_CURRENT=|UI_SWITCH_COMPLETED=' "$fixture/output"; then test_fail 'failed recovery state write reported success'; fi ;;
+    remove_failed)
+      [[ "$(cat "$fixture/containers/$current.name")" == "$temporary_name" && "$(cat "$fixture/containers/$current.running")" == false ]] || test_fail 'failed candidate removal mutated the stopped rollback target'
+      [[ "$(cat "$fixture/containers/$replacement.name")" == production-app && "$(cat "$fixture/containers/$replacement.running")" == false ]] || test_fail 'failed candidate removal left an unexpected candidate state'
+      grep -Fxq 'ui_new_rollback_state=stopped' "$fixture/run/manifest.env" || test_fail 'failed candidate removal lost new rollback state' ;;
     commit_state_persistent)
-      [[ ! -f "$fixture/containers/$current.name" && "$(cat "$fixture/containers/$replacement.running")" == true ]] || test_fail 'failed completion metadata lost the healthy replacement'
+      [[ -f "$fixture/containers/$current.name" && "$(cat "$fixture/containers/$current.name")" == "$temporary_name" && "$(cat "$fixture/containers/$current.running")" == false && "$(cat "$fixture/containers/$replacement.running")" == true ]] || test_fail 'failed completion metadata lost the candidate or new rollback target'
       [[ -f "$fixture/run/SWITCHED" ]] || test_fail 'failed completion metadata lost the completed marker'
       grep -Fxq 'state=switching' "$fixture/run/manifest.env" || test_fail 'failed completion metadata was not retryable'
       if grep -Eq 'UI_RECOVERED_CURRENT=|UI_SWITCH_COMPLETED=' "$fixture/output"; then test_fail 'failed completion metadata reported success'; fi ;;
-    success|remove_response_lost|commit_marker_failed|commit_state_failed|commit_marker_interrupted)
-      [[ ! -f "$fixture/containers/$current.name" ]] || test_fail "$scenario retained a new permanent rollback container"
+    success|anchor_missing|commit_state_failed|commit_marker_interrupted)
+      [[ -f "$fixture/containers/$current.name" ]] || test_fail "$scenario discarded the new rollback target"
+      [[ "$(cat "$fixture/containers/$current.name")" == "$temporary_name" && "$(cat "$fixture/containers/$current.running")" == false ]] || test_fail "$scenario did not retain the stopped new rollback target"
       [[ "$(cat "$fixture/containers/$replacement.name")" == production-app && "$(cat "$fixture/containers/$replacement.running")" == true ]] || test_fail "$scenario lost the committed candidate"
       grep -Fxq 'ui_state=switched' "$fixture/run/manifest.env" || test_fail "$scenario failed commit reconciliation" ;;
-    rollback|rollback_interrupted|rollback_without_id|rollback_from_recovered|rollback_marker_interrupted|rollback_remove_response_lost)
-      [[ "$(cat "$fixture/containers/$original.name")" == production-app && "$(cat "$fixture/containers/$original.running")" == true ]] || test_fail 'manual rollback did not restore the fixed original'
-      [[ ! -f "$fixture/containers/$replacement.name" && ! -f "$fixture/containers/$current.name" ]] || test_fail 'manual rollback retained replacement/current'
+    remove_response_lost)
+      [[ "$(cat "$fixture/containers/$current.name")" == production-app && "$(cat "$fixture/containers/$current.running")" == true ]] || test_fail "$scenario did not restore the new rollback target"
+      [[ ! -f "$fixture/containers/$replacement.name" ]] || test_fail "$scenario left a failed candidate"
+      grep -Fxq 'ui_state=recovered_current' "$fixture/run/manifest.env" || test_fail "$scenario failed recovery state" ;;
+    commit_marker_failed)
+      [[ "$(cat "$fixture/containers/$current.name")" == production-app && "$(cat "$fixture/containers/$current.running")" == true ]] || test_fail "$scenario did not restore the new rollback target"
+      [[ ! -f "$fixture/containers/$replacement.name" ]] || test_fail "$scenario left a failed candidate"
+      grep -Fxq 'ui_state=recovered_current' "$fixture/run/manifest.env" || test_fail "$scenario failed recovery state" ;;
+    rollback|rollback_interrupted|rollback_without_id|rollback_from_recovered|rollback_marker_interrupted|rollback_remove_response_lost|rollback_anchor_missing|rollback_already_restored)
+      [[ "$(cat "$fixture/containers/$current.name")" == production-app && "$(cat "$fixture/containers/$current.running")" == true ]] || test_fail 'manual rollback did not restore the new rollback target'
+      [[ ! -f "$fixture/containers/$replacement.name" ]] || test_fail 'manual rollback retained the candidate'
       [[ "$(cat "$fixture/settings")" == "$(printf '5%.0s' {1..64})" ]] || test_fail 'manual rollback overwrote administrator settings'
-      grep -Fxq 'ui_state=rolled_back_to_original' "$fixture/run/manifest.env" || test_fail 'manual rollback state missing' ;;
+      grep -Fxq 'ui_state=rolled_back_to_new' "$fixture/run/manifest.env" || test_fail 'manual rollback state missing'
+      grep -Fxq 'ui_new_rollback_state=restored' "$fixture/run/manifest.env" || test_fail 'new rollback target state missing' ;;
     *)
       [[ "$(cat "$fixture/containers/$current.name")" == production-app && "$(cat "$fixture/containers/$current.running")" == true ]] || { cat "$fixture/output"; test_fail "$scenario did not retain/recover current"; }
       [[ ! -f "$fixture/containers/$replacement.name" ]] || test_fail "$scenario left a failed candidate" ;;
   esac
-  if [[ "$scenario" != rollback* ]]; then
+  if [[ "$scenario" != rollback* && "$scenario" != anchor_missing ]]; then
     [[ "$(cat "$fixture/containers/$original.name")" == original-subnexus && "$(cat "$fixture/containers/$original.running")" == false ]] || test_fail "$scenario mutated the original rollback target"
   fi
   [[ "$(cat "$fixture/original-evidence")" == immutable-original-run ]] || test_fail 'original rollback evidence changed'
@@ -345,6 +397,9 @@ done
 source <(head -n -1 "$controller")
 export PATH="$fixture_path"
 source "$subject"
+[[ "$(ui_normalize_container_id "sha256:$current")" == "$current" ]] || test_fail 'prefixed Docker live ID was not normalized'
+[[ "$(ui_normalize_container_id "$current")" == "$current" ]] || test_fail 'plain Docker live ID was not preserved'
+if (ui_normalize_container_id sha256:short) >/dev/null 2>&1; then test_fail 'malformed Docker live ID was accepted'; fi
 git_repo="$root/source"
 mkdir "$git_repo"
 git -C "$git_repo" init -q
@@ -391,12 +446,9 @@ for forbidden_path in \
   frontend/src/router/index.ts \
   frontend/src/views/HomeView.vue \
   frontend/src/components/common/LocaleSwitcher.vue \
-  frontend/src/components/home/GlassDropletsCanvas.vue \
   frontend/src/components/home/GlassPane.vue \
   frontend/src/components/home/RainGatewayHome.vue \
   frontend/src/components/home/RainGlyph.vue \
-  frontend/src/components/home/RainStreaksCanvas.vue \
-  frontend/src/components/home/RainyBackground.vue \
   frontend/src/components/home/__tests__/RainGatewayHome.spec.ts \
   frontend/public/rain-city-1.jpg \
   frontend/public/rain-city-2.jpg \

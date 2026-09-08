@@ -1,8 +1,8 @@
 # SubNexus 回滚手册
 
-> 当前权威状态：2026-09-07（Asia/Shanghai）。保留二开用户端界面候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已完成切换，线上容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，`running/healthy/restart=0`。run `/srv/subnexus-migration/cutover/20260907045159-1121373` 的 manifest 为 `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`。第 13 节仅为已关闭的旧 Rain 历史记录；唯一现行 rollback 是切换手册第 14 节绑定同一 run 的入口，用于恢复既有旧 SubNexus，不创建新的永久回滚对象。
+> 当前权威状态：2026-09-08（Asia/Shanghai）。第 8 节保留 2026-09-07 发布历史；本轮 Rain + Glass 用户端视觉更新采用新的回滚合同，最终 `switch` 时把切换前 live 以唯一名称保留为 stopped 容器，后续 rollback 只恢复该新目标。候选、run 和命令尚待本轮发布流程生成，以第 9 节为唯一现行交接。
 
-回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。当前只使用切换手册第 14 节绑定本轮 run 的已核验 UI wrapper/run；第 13 节旧 Rain rollback 已关闭，不得单独执行控制器或其他历史 rollback 命令，也不得用手工 `docker stop/start` 绕过 manifest、owner、固定旧回滚对象和依赖身份校验。
+回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只使用切换手册第 15 节最终登记的同一 UI wrapper/run；不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、新回滚目标和依赖身份校验。
 
 本次线上应用数据目录的已审核 owner 是 `1000:1000`、叶目录 mode `0755`。执行 `prepare`、`switch` 或 `rollback` 时，只有在实时 `stat` 与 prepared manifest 一致的前提下，才同时传入以下三项环境变量；不得通过 `chown` 来“修复”不一致：
 
@@ -20,7 +20,7 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 ## 2. 应用异常：快速回滚
 
-适用于隔离演练已证明旧版本兼容新增表/可选字段的情况。当前 run 已离开 `prepared`；switch 进程已退出后，如需恢复固定旧 SubNexus，只能使用切换手册第 14 节同 run rollback。switch 运行中只等待返回，wrapper 会在失败路径自动尝试恢复切换前当前容器，不得并发执行 rollback。回滚必须恢复既有旧 SubNexus，不能把当前线上容器新建为永久回滚对象。
+适用于隔离演练已证明旧版本兼容新增表/可选字段的情况。本轮 switch 进程退出后，如需恢复，只能使用切换手册第 15 节同 run rollback。switch 运行中只等待返回，wrapper 会在失败路径自动尝试恢复切换前 live，不得并发执行 rollback。本轮恢复对象就是 switch 时保留的切换前 live；其完整 ID、`.Image`、`.Config.Image`、唯一名称和状态必须与 prepared manifest 一致。
 
 先用 `docker ps`/`docker inspect` 做只读确认，再由维护者执行本轮已发布的包装器命令。本轮使用既有入口，不修改或 reload Nginx；回滚后再访问健康接口：
 
@@ -80,7 +80,7 @@ docker inspect <候选容器名> --format '{{json .NetworkSettings.Networks}}'
 - PostgreSQL `8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf`、Redis `5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 身份未变且 running/restart=0；18 个受保护设置、runtime contract、备份及 sidecar、文件权限和 fixed anchor 已通过切换后审计。公网桌面/移动端 Rain UI、三图、双 Canvas 及未登录交互均通过，客服按原开关保持关闭。
 - 该 run 不得作为新的 `prepare`/`switch` 输入，且已消费的 switch 禁止重跑。其 rollback 只曾在本轮 retained-UI switch 前的窗口内有效；当前生产已切换，该入口为 `WITHDRAWN/CLOSED after retained-UI switch`，不承担当前生产恢复。此处不复制命令，避免操作入口漂移。
 
-## 8. 保留二开用户端 UI 的现行回滚合同（2026-09-07，已 switched）
+## 8. 保留二开用户端 UI 的历史回滚合同（2026-09-07，已 switched）
 
 本轮只修改用户端显示层，生产 base=`245ecd2630b96a9807df89dc02828bbb436e7624`，候选 commit=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`。唯一 run=`/srv/subnexus-migration/cutover/20260907045159-1121373` 保留 `READY=prepared` 和 `UI_READY=application-refresh-v1` 作为准备 marker，且新增 `SWITCHED=switched`；manifest `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`，`ROLLED_BACK` 不存在。
 
@@ -98,4 +98,13 @@ wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh`
 
 当前线上容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，`running/healthy/restart=0`；切换后服务器审计输出 `POST_SWITCH_AUDIT=passed`，evidence SHA256=`58edc5b2d6e3ca6535ae10741ce4aed9275609f5d5e8dad1c48407372349afb9`。切换后唯一设置变化为管理员 PUT 产生的 `subnexus_invite_activities_config`，其余 17 项保持 prepare 值；清理证据为 `/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt`，SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558`。
 
-switch 进程已退出且 manifest 已离开 `prepared`。如需恢复固定旧 SubNexus，必须通过与 switch 相同的 wrapper/run 执行切换手册第 14 节 rollback：删除本轮候选，恢复固定旧容器，保留管理员在切换后对设置的正常更新，默认不恢复 PostgreSQL/Redis、不修改 Nginx、不切换功能开关。完整单行命令只保存在切换手册第 14 节；第 13 节旧 Rain rollback 已关闭。
+该节只记录当时的生产与回滚事实。其 wrapper/run 在 2026-09-08 新发布开始后不得作为现行恢复入口；历史命令已撤回，不能复制或改写后执行。
+
+## 9. Rain + Glass 用户端视觉更新回滚合同（2026-09-08，准备中）
+
+- `prepare` 必须要求历史旧 SubNexus anchor 存在，并完整核验其 manifest、容器、镜像、名称、停止状态和运行合同。只有校验通过后才生成本轮 run；`prepare` 只记录当前 live，不改变 Docker 状态。
+- prepared manifest 必须固定新目标的 `ui_new_rollback_id`、`ui_new_rollback_image`、`ui_new_rollback_config_image`、`ui_new_rollback_name=production-app-ui-prior-<run-id>` 和 `ui_new_rollback_state=prepared`。任一字段缺失、格式错误或与 live 不一致都必须失败关闭。
+- 最终 `switch` 由维护者执行。wrapper 停止当前 live、按唯一名称重命名、验证其 `stopped` 状态及完整身份后才启动候选；候选健康并提交成功后，该 stopped 容器继续保留为本轮新回滚目标，不得删除、`docker commit` 或转换为另一套回滚方案。
+- 本轮 `rollback` 仅删除经精确身份校验的候选并恢复新目标到生产名称；不恢复历史旧 SubNexus，不默认恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关。新目标缺失，或 ID、`.Image`、`.Config.Image`、名称、runtime contract 任一漂移时，回滚必须停止并保留现场。
+- 历史 anchor、旧容器、旧镜像和历史备份在空间足够时保留。只有本轮 `prepare` 成功后，磁盘证据确认不足并形成精确对象清单、完整身份与 SHA 记录时，才可删除已确认无用的历史数据；历史 anchor 被删除后，本轮 switch/rollback 仍只依赖新目标。不得执行 `docker system prune`、`docker volume prune` 或模糊清理，新目标和本轮 run/备份/审计不得纳入清理。
+- 候选提交、镜像、wrapper SHA、run、备份和最终审计仍待生成；当前没有可执行的本轮 rollback 命令。完成切换前全部门禁后，唯一命令只登记在切换手册第 15 节。

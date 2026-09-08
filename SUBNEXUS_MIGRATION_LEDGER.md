@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 当前权威状态：2026-09-07（Asia/Shanghai）。`245ecd2630b96a9807df89dc02828bbb436e7624` 是本轮发布差异的生产 base；“旧 SubNexus 保留二开用户端界面 + 当前项目功能/API”候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已切换上线。当前生产容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，`running/healthy/restart=0`；切换后审计与公网桌面/移动验收通过，固定旧 SubNexus 回滚对象保持不变。
+> 当前权威状态：2026-09-08（Asia/Shanghai）。2026-09-07 retained-UI 发布已转为历史基线；本轮 Rain + Glass 用户端视觉更新已通过本地审核和完整前端门禁，线上候选、镜像、Gate、备份、run 和切换前审计仍待生成。最终 switch 由维护者执行；本轮将在 switch 时保留切换前 live 作为新的 stopped 回滚目标，现行状态以文末最新台账为准。
 
 ## 状态定义
 
@@ -310,3 +310,22 @@
 | 固定回滚 | 通过且保持不变 | old ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor=`20260905085804-4072165`；本轮未创建新永久回滚对象 |
 | 人工边界 | 已切换，rollback 保留 | switch 已消费且禁止重跑；第 13 节旧 Rain rollback 窗口已关闭。只有需要恢复固定旧 SubNexus、switch 进程已退出且 manifest 已离开 `prepared` 时，才使用第 14 节同 run rollback；不创建新的永久回滚对象，不恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关 |
 | 切换后设置/清理 | 已核验 | 唯一设置变化为管理员 PUT 产生的 `subnexus_invite_activities_config`（`2026-09-07T06:45:51.718553Z`），其余 17 项保持 prepare 值；迁移临时文件/失败审计 partial 共 27 个已精确删除，清理 evidence=`/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt`，SHA=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558` |
+
+## 用户端 Rain + Glass 发布台账（2026-09-08，现行，准备中）
+
+| 项目 | 状态 | 证据/约束 |
+| --- | --- | --- |
+| 变更范围 | 审核通过 | 仅登录后非管理端用户页面的背景和卡片材质；API、后端、数据库迁移、路由、权限、配置、开关、按钮事件和业务状态不变 |
+| 本地门禁 | 通过 | `294/294` 个 Vitest 文件、`2041/2041` 个测试通过；typecheck、lint、build、`git diff --check` 通过；wrapper 最终矩阵须按提交后文件重新记录 |
+| 生产 base | 待线上复核 | 预期为 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；必须由 live image provenance 与完整容器身份现场确认 |
+| 候选提交/tree | 待生成 | 当前改动尚未形成不可变候选；提交、推送和 tree 校验后填写，禁止沿用历史 SHA |
+| 候选镜像/归档 | 待生成 | 隔离构建后填写完整 image ID、归档路径、SHA256 和大小 |
+| UI wrapper/controller | 待固定 | wrapper 提交后填写 Git blob/本地/服务器三方 SHA；原控制器路径和 SHA 也须现场复核 |
+| Docker Gate | 待执行 | 需记录 evidence 路径/SHA，且 `result=passed`、`cleanup_failed=false`、生产身份未改变 |
+| 在线备份/prepare | 待执行 | 必须建立全新 run 和全新 PostgreSQL/catalog/Redis/应用数据备份；`READY=prepared`、`UI_READY=application-refresh-v1` 前不得交付命令 |
+| 历史 anchor 门禁 | 强制 | `prepare` 时旧 SubNexus anchor 必须存在并完整校验；缺失或漂移必须失败关闭 |
+| 本轮新回滚目标 | 待 prepare 固定 | manifest 必须记录切换前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和 `prepared` 状态；prepare 不改变 Docker 状态 |
+| Switch 行为 | 待维护者 | 停止并重命名切换前 live、验证其为 stopped 新回滚目标，再启动候选；候选健康后继续保留该目标 |
+| Rollback 行为 | 已冻结合同 | 只恢复本轮新目标，不恢复历史 SubNexus；新目标任一身份或 runtime 字段漂移时失败关闭，不默认恢复数据库，不修改 Nginx/开关 |
+| 空间与旧数据 | 条件保留 | 空间足够则保留历史 anchor/容器/镜像/备份；不足时只可在 prepare 成功后按完整身份和路径精确删除已确认无用的历史数据并留审计。禁止任何 prune；本轮新目标和新 run 证据不可删除 |
+| 人工边界 | 未到切换 | 代理完成候选、Gate、备份、prepare、probe 和最终审计后停下；只交付绑定同一 wrapper/run 的一整行 switch 与一整行 rollback |

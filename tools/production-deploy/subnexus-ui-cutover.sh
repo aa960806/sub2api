@@ -10,6 +10,7 @@ ui_anchor_validation=0
 ui_expected_settings_hash=''
 
 readonly -a ui_production_source_paths=(
+  'frontend/src/components/channels/AvailableChannelsTable.vue'
   'frontend/src/components/common/AnnouncementBell.vue'
   'frontend/src/components/common/AnnouncementPopup.vue'
   'frontend/src/components/common/BaseDialog.vue'
@@ -17,11 +18,26 @@ readonly -a ui_production_source_paths=(
   'frontend/src/components/common/ConfirmDialog.vue'
   'frontend/src/components/common/CustomerSupportButton.vue'
   'frontend/src/components/common/CustomerSupportModal.vue'
+  'frontend/src/components/common/DataTable.vue'
+  'frontend/src/components/common/Pagination.vue'
+  'frontend/src/components/home/GlassDropletsCanvas.vue'
+  'frontend/src/components/home/RainStreaksCanvas.vue'
+  'frontend/src/components/home/RainyBackground.vue'
   'frontend/src/components/layout/AppHeader.vue'
   'frontend/src/components/layout/AppLayout.vue'
+  'frontend/src/components/payment/SubscriptionPlanCard.vue'
   'frontend/src/components/payment/AmountInput.vue'
+  'frontend/src/components/user/dashboard/UserDashboardQuickActions.vue'
+  'frontend/src/components/user/dashboard/UserDashboardRecentUsage.vue'
+  'frontend/src/components/user/dashboard/UserDashboardStats.vue'
   'frontend/src/components/user/dashboard/UserDashboardCheckIn.vue'
   'frontend/src/components/user/monitor/ChannelMonitorV3Card.vue'
+  'frontend/src/components/user/monitor/MonitorCard.vue'
+  'frontend/src/components/user/monitor/MonitorCardGrid.vue'
+  'frontend/src/components/user/monitor/MonitorHero.vue'
+  'frontend/src/components/user/monitor/MonitorMetricPair.vue'
+  'frontend/src/components/user/profile/ProfileIdentityBindingsSection.vue'
+  'frontend/src/components/user/profile/ProfileInfoCard.vue'
   'frontend/src/i18n/locales/en/activityCenter.ts'
   'frontend/src/i18n/locales/en/common.ts'
   'frontend/src/i18n/locales/en/inviteActivities.ts'
@@ -33,17 +49,24 @@ readonly -a ui_production_source_paths=(
   'frontend/src/i18n/locales/zh/leaderboard.ts'
   'frontend/src/i18n/locales/zh/misc.ts'
   'frontend/src/styles/subnexus-legacy-surface.css'
+  'frontend/src/styles/user-glass-surface.css'
   'frontend/src/utils/bodyScrollLock.ts'
   'frontend/src/views/user/ActivityCenterView.vue'
   'frontend/src/views/user/AffiliateView.vue'
   'frontend/src/views/user/BattlePassView.vue'
+  'frontend/src/views/user/BatchImageGuideView.vue'
+  'frontend/src/views/user/ChannelStatusV2View.vue'
   'frontend/src/views/user/ChannelStatusV3View.vue'
   'frontend/src/views/user/InviteLotteryView.vue'
   'frontend/src/views/user/InviteMilestoneView.vue'
   'frontend/src/views/user/InvoicesView.vue'
   'frontend/src/views/user/LeaderboardView.vue'
+  'frontend/src/views/user/KeysView.vue'
   'frontend/src/views/user/PaymentView.vue'
+  'frontend/src/views/user/PaymentQRCodeView.vue'
   'frontend/src/views/user/RechargeWheelView.vue'
+  'frontend/src/views/user/SubscriptionsView.vue'
+  'frontend/src/views/user/UsageView.vue'
 )
 
 readonly -a ui_evidence_source_paths=(
@@ -51,6 +74,7 @@ readonly -a ui_evidence_source_paths=(
   'frontend/src/components/common/__tests__/CustomerSupportModal.spec.ts'
   'frontend/src/components/common/__tests__/ScopedDarkModeStyles.spec.ts'
   'frontend/src/components/layout/__tests__/SubnexusLegacySurface.spec.ts'
+  'frontend/src/components/layout/__tests__/UserGlassSurface.spec.ts'
   'frontend/src/components/payment/__tests__/AmountInput.spec.ts'
   'frontend/src/utils/__tests__/bodyScrollLock.spec.ts'
   'frontend/src/views/user/__tests__/InviteActivitiesViews.spec.ts'
@@ -63,6 +87,7 @@ readonly -a ui_evidence_source_paths=(
   'SUBNEXUS_MIGRATION_PLAN.md'
   'SUBNEXUS_PROJECT_CONTEXT.md'
   'SUBNEXUS_ROLLBACK_RUNBOOK.md'
+  'SUBNEXUS_USER_GLASS_SURFACE_PLAN.md'
   'tools/production-deploy/subnexus-ui-cutover.sh'
   'tools/production-deploy/subnexus-ui-cutover.test.sh'
 )
@@ -136,7 +161,7 @@ ui_install_overrides() {
     if [[ "${cutover_active:-0}" == 1 && "${rollback_active:-0}" == 0 && "${BASHPID:-$$}" == "$$" ]]; then
       rollback_active=1
       printf 'UI switch failed (rc=%s); restoring the temporary current container.\n' "$rc" >&2
-      ( trap - ERR INT TERM; ui_recover_current ) || printf 'Recovery needs attention; use the UI recover or original-target rollback command.\n' >&2
+      ( trap - ERR INT TERM; ui_recover_current ) || printf 'Recovery needs attention; use the UI recover or new-target rollback command.\n' >&2
       rollback_active=0
     fi
   }
@@ -244,15 +269,104 @@ ui_assert_anchor() (
   ui_anchor_context "$anchor" "$old_id" "$old_image" "$old_name" "$anchor_hash" "${1:-stopped}"
 )
 
-ui_restore_anchor() (
-  local anchor old_id old_image old_name anchor_hash
-  anchor="$(manifest_value ui_anchor_run)"; old_id="$(manifest_value ui_rollback_id)"
-  old_image="$(manifest_value ui_rollback_image)"; old_name="$(manifest_value ui_rollback_name)"
+# The historical fixed rollback run is captured during prepare so it can be
+# audited and retained when space permits.  The newly retained old-live
+# container is the rollback target for this UI run, so a later, explicitly
+# audited cleanup may remove the historical run without disabling this run's
+# rollback path.  If the historical run still exists, validate it fully.
+ui_assert_anchor_if_present() {
+  local anchor anchor_state anchor_hash
+  anchor="$(manifest_value ui_anchor_run)"
+  anchor_state="$(manifest_value ui_anchor_state)"
   anchor_hash="$(manifest_value ui_anchor_manifest_sha256)"
-  ui_anchor_context "$anchor" "$old_id" "$old_image" "$old_name" "$anchor_hash" restored
-  restore_preserved_container || fail 'original rollback target did not recover health'
-  [[ "$(hash_file "$manifest_file")" == "$anchor_hash" ]] || fail 'original rollback evidence changed during recovery'
-)
+  [[ -n "$anchor" ]] || fail 'historical rollback anchor is missing from the UI manifest'
+  if [[ -e "$anchor" || -L "$anchor" ]]; then
+    [[ "$anchor_state" == present && "$anchor_hash" =~ ^[0-9a-f]{64}$ ]] || fail 'historical rollback anchor presence does not match its manifest state'
+    ui_assert_anchor "${1:-stopped}"
+  else
+    [[ "$anchor_state" == present && "$anchor_hash" =~ ^[0-9a-f]{64}$ ]] || fail 'historical rollback anchor was not captured as present during prepare'
+    log 'Historical rollback anchor is absent; using the retained new UI rollback target.'
+  fi
+}
+
+ui_validate_optional_anchor_path() {
+  local anchor="$1" normalized
+  normalized="$(realpath -m -P -- "$anchor")" || fail 'cannot normalize historical rollback anchor path'
+  if path_equal_or_under "$normalized" "$default_evidence_root" ||
+     path_equal_or_under "$normalized" "$alternate_evidence_root"; then
+    :
+  else
+    fail 'historical rollback anchor path is outside the approved evidence roots'
+  fi
+  [[ "$normalized" != / && "$normalized" != "${default_evidence_root}" && "$normalized" != "${alternate_evidence_root}" ]] ||
+    fail 'historical rollback anchor path is invalid'
+}
+
+ui_normalize_container_id() {
+  local id="${1#sha256:}"
+  valid_sha64 "$id" || fail 'Docker returned a malformed live container ID'
+  printf '%s' "$id"
+}
+
+ui_validate_new_rollback_fields() {
+  local new_id new_image new_config_image new_name expected_name candidate_ref
+  new_id="$(manifest_value ui_new_rollback_id)"
+  new_image="$(manifest_value ui_new_rollback_image)"
+  new_config_image="$(manifest_value ui_new_rollback_config_image)"
+  new_name="$(manifest_value ui_new_rollback_name)"
+  expected_name="$(manifest_value ui_temporary_name)"
+  valid_sha64 "$new_id" || fail 'new rollback container ID is malformed'
+  [[ "$new_image" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'new rollback image ID is malformed'
+  [[ -n "$new_config_image" && "${#new_config_image}" -le 512 && "$new_config_image" != *[[:space:]]* ]] || fail 'new rollback configured image reference is invalid'
+  valid_container_ref "$new_name" || fail 'new rollback container name is invalid'
+  [[ "$new_name" == "$expected_name" ]] || fail 'new rollback name does not match the prepared temporary name'
+  [[ "$new_id" == "$(manifest_value live_app_id)" ]] || fail 'new rollback ID does not match the prepared live application'
+  [[ "$new_image" == "$(manifest_value live_app_image_id)" ]] || fail 'new rollback image does not match the prepared live image'
+  [[ "$new_id" != "$(manifest_value ui_rollback_id)" ]] || fail 'new rollback target must differ from the historical rollback target'
+  candidate_ref="$(manifest_value candidate_container_id)"
+  [[ -z "$candidate_ref" || "$new_id" != "$candidate_ref" ]] || fail 'new rollback target must differ from the candidate container'
+  case "$(manifest_value ui_new_rollback_state)" in
+    prepared|stopped|restored) ;;
+    missing) fail 'new rollback target is marked missing; refusing to continue' ;;
+    *) fail 'new rollback target state is unsupported' ;;
+  esac
+}
+
+ui_assert_new_rollback_contract() {
+  local expected_id expected_image expected_config_image expected_name observed actual_name actual_image actual_config_image running mode="${1:-any}"
+  ui_validate_new_rollback_fields
+  expected_id="$(manifest_value ui_new_rollback_id)"
+  expected_image="$(manifest_value ui_new_rollback_image)"
+  expected_config_image="$(manifest_value ui_new_rollback_config_image)"
+  expected_name="$(manifest_value ui_new_rollback_name)"
+  observed="$(inspect_container_id_or_empty "$expected_id")" || fail 'cannot inspect new rollback container'
+  [[ "$observed" == "$expected_id" ]] || fail 'new rollback container identity is unavailable'
+  actual_name="$(docker_rpc inspect --format '{{.Name}}' "$expected_id")" || fail 'cannot inspect new rollback container name'
+  actual_name="${actual_name#/}"
+  actual_image="$(docker_rpc inspect --format '{{.Image}}' "$expected_id")" || fail 'cannot inspect new rollback container image'
+  [[ "$actual_image" == "$expected_image" ]] || fail 'new rollback container image changed'
+  actual_config_image="$(docker_rpc inspect --format '{{.Config.Image}}' "$expected_id")" || fail 'cannot inspect new rollback configured image'
+  [[ "$actual_config_image" == "$expected_config_image" ]] || fail 'new rollback configured image changed'
+  case "$mode" in
+    prepared)
+      [[ "$actual_name" == "$app_name" ]] || fail 'prepared live container has an unexpected name'
+      running="$(docker_rpc inspect --format '{{.State.Running}}' "$expected_id")" || fail 'cannot inspect prepared live state'
+      [[ "$running" == true ]] || fail 'prepared live container is not running' ;;
+    stopped)
+      [[ "$actual_name" == "$expected_name" ]] || fail 'new rollback container has an unexpected stopped name'
+      running="$(docker_rpc inspect --format '{{.State.Running}}' "$expected_id")" || fail 'cannot inspect new rollback state'
+      [[ "$running" == false ]] || fail 'new rollback container is still running' ;;
+    restored)
+      [[ "$actual_name" == "$app_name" ]] || fail 'restored new rollback container has an unexpected name'
+      running="$(docker_rpc inspect --format '{{.State.Running}}' "$expected_id")" || fail 'cannot inspect restored rollback state'
+      [[ "$running" == true ]] || fail 'restored new rollback container is not running' ;;
+    any)
+      [[ "$actual_name" == "$app_name" || "$actual_name" == "$expected_name" ]] || fail 'new rollback container has an unexpected name' ;;
+    *) fail 'new rollback contract mode is invalid' ;;
+  esac
+  preserved_name="$expected_name"
+  assert_preserved_container_contract
+}
 
 ui_prepare() {
   [[ "$#" == 13 ]] || { ui_usage; return 2; }
@@ -264,28 +378,42 @@ ui_prepare() {
   validate_self_sha "$wrapper_sha"
   require_commands
   init_docker
-  local live_id live_image anchor_hash
-  live_id="$(docker_rpc inspect --format '{{.Id}}' "$live")"
+  local live_id live_image live_config_image anchor_hash
+  live_id="$(ui_normalize_container_id "$(docker_rpc inspect --format '{{.Id}}' "$live")")"
   live_image="$(docker_rpc inspect --format '{{.Image}}' "$live")"
+  live_config_image="$(docker_rpc inspect --format '{{.Config.Image}}' "$live")"
   [[ "$live_id" != "$old_id" ]] || fail 'live and original rollback containers must differ'
   ui_assert_base_image "$base" "$live_image"
   ui_assert_source_delta "$source" "$base" "$target"
+  ui_validate_optional_anchor_path "$anchor"
+  [[ -e "$anchor" || -L "$anchor" ]] || fail 'historical rollback anchor must exist during prepare'
   ( ui_anchor_context "$anchor" "$old_id" "$old_image" "$old_name" '' stopped )
   anchor_hash="$(hash_file "$anchor/manifest.env")"
   prepare_run "$source" "$target" "$wrapper_sha" "$image_id" "$archive" "$archive_sha" "$gate" "$live" "$public"
   [[ "$app_id" == "$live_id" && "$app_image_id" == "$live_image" ]] || fail 'live identity changed during UI prepare'
+  local new_name
+  new_name="$app_name-ui-prior-$(manifest_value run_id)"
+  valid_container_ref "$new_name" || fail 'generated new rollback name is invalid'
+  [[ -z "$(inspect_container_id_or_empty "$new_name")" ]] || fail 'new rollback name is already occupied'
   manifest_set ui_flow application-refresh-v1
   manifest_set ui_base_sha "$base"
   manifest_set ui_controller_sha256 "$ui_controller_sha"
   manifest_set ui_anchor_run "$anchor"
   manifest_set ui_anchor_manifest_sha256 "$anchor_hash"
+  manifest_set ui_anchor_state present
   manifest_set ui_rollback_id "$old_id"
   manifest_set ui_rollback_image "$old_image"
   manifest_set ui_rollback_name "$old_name"
-  manifest_set ui_temporary_name "$app_name-ui-prior-$(manifest_value run_id)"
+  manifest_set ui_new_rollback_id "$live_id"
+  manifest_set ui_new_rollback_image "$live_image"
+  manifest_set ui_new_rollback_config_image "$live_config_image"
+  manifest_set ui_new_rollback_name "$new_name"
+  manifest_set ui_new_rollback_state prepared
+  manifest_set ui_temporary_name "$new_name"
   manifest_set ui_commit_intent no
   manifest_set ui_state prepared
   ui_assert_anchor
+  ui_assert_new_rollback_contract prepared
   ui_expected_settings_hash="$(ui_settings_hash)"
   valid_sha64 "$ui_expected_settings_hash" || fail 'cannot capture complete settings hash'
   manifest_set ui_settings_sha256 "$ui_expected_settings_hash"
@@ -293,11 +421,11 @@ ui_prepare() {
   printf 'application-refresh-v1\n' > "$run_dir/UI_READY"
   chmod 600 "$run_dir/UI_READY"
   log "UI_PREPARED_RUN=$run_dir"
-  log 'UI prepare did not create a rollback container or image. Final switch remains manual.'
+  log 'UI prepare captured the current live container as the new rollback target; Docker state is unchanged and final switch remains manual.'
 }
 
 ui_load_run() {
-  local path="$1" scope="$2" expected
+  local path="$1" scope="$2" expected anchor_state
   # The prepared run manifest is authored by this wrapper. Anchor validation
   # switches to the original controller contract inside ui_anchor_context.
   SUBNEXUS_APPROVED_CUTOVER_SCRIPT_SHA256="${SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256:-}"
@@ -306,11 +434,15 @@ ui_load_run() {
   assert_root_owned_regular "$run_dir/UI_READY" 'UI readiness marker'
   [[ "$(read_one_line "$run_dir/UI_READY")" == application-refresh-v1 ]] || fail 'UI readiness marker is invalid'
   expected="$app_name-ui-prior-$(manifest_value run_id)"
-  [[ "$(manifest_value ui_temporary_name)" == "$expected" && "$(manifest_value ui_rollback_id)" != "$app_id" ]] || fail 'UI recovery identities are inconsistent'
+  [[ "$(manifest_value ui_temporary_name)" == "$expected" && "$(manifest_value ui_new_rollback_name)" == "$expected" && "$(manifest_value ui_rollback_id)" != "$app_id" ]] || fail 'UI recovery identities are inconsistent'
   valid_container_ref "$expected" || fail 'UI temporary name is invalid'
+  ui_validate_optional_anchor_path "$(manifest_value ui_anchor_run)"
+  anchor_state="$(manifest_value ui_anchor_state)"
+  [[ "$anchor_state" == present && "$(manifest_value ui_anchor_manifest_sha256)" =~ ^[0-9a-f]{64}$ ]] || fail 'historical rollback anchor was not captured as present during prepare'
+  ui_validate_new_rollback_fields
   valid_sha40 "$(manifest_value ui_base_sha)" || fail 'UI base commit is invalid'
   valid_sha64 "$(manifest_value ui_settings_sha256)" || fail 'UI settings hash is invalid'
-  case "$(manifest_value ui_state)" in prepared|switching|committing|switched|recovered_current|rolling_back|rolled_back_to_original) ;; *) fail 'unsupported UI state' ;; esac
+  case "$(manifest_value ui_state)" in prepared|switching|committing|switched|recovered_current|rolling_back|rolled_back_to_new|rolled_back_to_original) ;; *) fail 'unsupported UI state' ;; esac
   acquire_lock "$evidence_lock_root"
   init_docker
   assert_daemon_still_matches_prepare
@@ -326,6 +458,7 @@ ui_stop_and_remove() {
   [[ -n "$actual" ]] || return 0
   [[ "$actual" == "$id" && "$(docker_rpc inspect --format '{{.Name}}' "$id")" == "/$name" ]] || fail 'container removal identity or name changed'
   [[ "$id" != "$(manifest_value ui_rollback_id)" ]] || fail 'refusing removal of the original rollback target'
+  [[ "$id" != "$(manifest_value ui_new_rollback_id)" ]] || fail 'refusing removal of the new rollback target'
   assert_daemon_still_matches_prepare
   if [[ "$(docker_rpc inspect --format '{{.State.Running}}' "$id")" == true ]]; then
     docker_rpc stop --time "$stop_timeout_seconds" "$id" >/dev/null || fail 'container did not stop'
@@ -343,7 +476,7 @@ ui_stop_and_remove() {
 }
 
 ui_remove_candidate() {
-  local known observed file_id old_id current_id
+  local known observed file_id old_id current_id new_id
   known="$(manifest_value candidate_container_id)"
   if [[ -e "$run_dir/candidate-container-id" || -L "$run_dir/candidate-container-id" ]]; then
     assert_root_owned_regular "$run_dir/candidate-container-id" 'candidate identity'
@@ -360,8 +493,8 @@ ui_remove_candidate() {
     observed="$(inspect_container_id_or_empty "$app_name")" || fail 'cannot inspect production name before candidate removal'
   fi
   [[ -n "$observed" ]] || return 0
-  old_id="$(manifest_value ui_rollback_id)"; current_id="$(manifest_value live_app_id)"
-  [[ "$observed" != "$old_id" && "$observed" != "$current_id" ]] || return 0
+  old_id="$(manifest_value ui_rollback_id)"; current_id="$(manifest_value live_app_id)"; new_id="$(manifest_value ui_new_rollback_id)"
+  [[ "$observed" != "$old_id" && "$observed" != "$current_id" && "$observed" != "$new_id" ]] || return 0
   [[ -z "$known" || "$known" == "$observed" ]] || fail 'candidate ID changed; refusing name-based removal'
   candidate_id="$observed"
   assert_candidate_container_identity "$candidate_id"
@@ -369,6 +502,9 @@ ui_remove_candidate() {
 }
 
 ui_finish_commit() {
+  preserved_name="$(manifest_value ui_new_rollback_name)"
+  ui_assert_new_rollback_contract stopped
+  manifest_set ui_new_rollback_state stopped
   write_run_marker SWITCHED switched || fail 'cannot persist UI switch marker'
   manifest_set state switched || fail 'cannot persist UI switch state'
   manifest_set ui_state switched || fail 'cannot persist UI completion state'
@@ -377,27 +513,35 @@ ui_finish_commit() {
 }
 
 ui_recover_current() {
-  local current temp
+  local current temp marker
   current="$(inspect_container_id_or_empty "$(manifest_value live_app_id)")" || fail 'cannot inspect temporary current during recovery'
-  temp="$(manifest_value ui_temporary_name)"
-  if [[ -z "$current" ]]; then
-    # A successful Docker rm followed by a lost response/failed metadata write
-    # is committed. Never remove its healthy replacement to seek a deleted ID.
-    [[ "$(manifest_value ui_commit_intent)" == yes ]] || fail 'temporary current is missing before commit; use original-target rollback'
+  temp="$(manifest_value ui_new_rollback_name)"
+  preserved_name="$temp"
+  marker="$run_dir/SWITCHED"
+  # A marker may have been installed before the final manifest write.  If the
+  # candidate is healthy and the retained old container is still stopped, the
+  # switch is already committed and should be reconciled in place.
+  if [[ -e "$marker" && "$(manifest_value ui_state)" == committing ]]; then
     candidate_id="$(manifest_value candidate_container_id)"
     assert_candidate_container_identity "$candidate_id"
-    wait_for_candidate_health || fail 'committed UI candidate needs original-target rollback'
+    wait_for_candidate_health || fail 'committed UI candidate needs manual rollback'
     validate_candidate_runtime
     ui_finish_commit
     return 0
   fi
+  if [[ -z "$current" ]]; then
+    # A successful Docker rm followed by a lost response/failed metadata write
+    # is committed. Never remove its healthy replacement to seek a deleted ID.
+    [[ "$(manifest_value ui_commit_intent)" == yes ]] || fail 'new rollback target is missing before commit'
+    fail 'new rollback target disappeared; candidate was left untouched for manual recovery'
+  fi
   assert_daemon_still_matches_prepare
   assert_dependencies_still_match
-  ui_assert_anchor
+  ui_assert_anchor_if_present
   manifest_set state rolling_back || fail 'cannot persist temporary recovery intent'
   ui_remove_candidate
-  preserved_name="$temp"
   restore_preserved_container || fail 'temporary current did not recover health'
+  manifest_set ui_new_rollback_state restored
   write_run_marker ROLLED_BACK rolled_back || fail 'cannot persist temporary recovery marker'
   manifest_set state rolled_back || fail 'cannot persist temporary recovery state'
   manifest_set ui_state recovered_current || fail 'cannot persist temporary recovery completion'
@@ -416,10 +560,10 @@ ui_switch() {
   ui_assert_base_image "$(manifest_value ui_base_sha)" "$(manifest_value live_app_image_id)"
   source_root="$(manifest_value source_root)"
   ui_assert_source_delta "$source_root" "$(manifest_value ui_base_sha)" "$target_sha"
-  ui_assert_anchor
+  ui_assert_anchor_if_present
   ui_assert_settings_unchanged
   [[ "$(docker_rpc image inspect --format '{{.Id}}' "sha256:$expected_image_id")" == "sha256:$expected_image_id" ]] || fail 'UI candidate image is unavailable'
-  local temp="$(manifest_value ui_temporary_name)" observed
+  local temp="$(manifest_value ui_new_rollback_name)" observed
   observed="$(inspect_container_id_or_empty "$temp")" || fail 'cannot inspect temporary current name'
   [[ -z "$observed" ]] || fail 'temporary current name is occupied'
   manifest_set state switching
@@ -433,6 +577,7 @@ ui_switch() {
   [[ "$(docker_rpc inspect --format '{{.State.Running}}' "$app_id")" == false ]] || fail 'current application remains running'
   docker_rpc rename "$app_id" "$temp" || fail 'cannot stage the current application for failure recovery'
   manifest_set preserved_container "$temp"
+  manifest_set ui_new_rollback_state stopped
   create_candidate_container
   assert_candidate_container_identity "$candidate_id"
   assert_candidate_runtime_contract
@@ -440,17 +585,17 @@ ui_switch() {
   docker_rpc start "$candidate_id" >/dev/null || fail 'UI candidate did not start'
   wait_for_candidate_health || fail 'UI candidate failed health stability checks'
   validate_candidate_runtime
-  ui_assert_anchor
+  ui_assert_anchor_if_present
   assert_dependencies_still_match
   preserved_name="$temp"
   assert_preserved_container_contract
-  # Retain bounded diagnostic output before deleting the previous container's
-  # writable layer. Application data and file logs remain on their bind mount.
+  # Retain bounded diagnostic output while keeping the previous container as
+  # the new stopped rollback target. Application data and file logs remain on
+  # their bind mount.
   ( ulimit -f 32768; docker_rpc logs --tail 5000 "$app_id" > "$run_dir/previous-container.log" 2>&1 ) || fail 'cannot retain previous container diagnostic output'
   chmod 600 "$run_dir/previous-container.log"
   manifest_set ui_state committing
   manifest_set ui_commit_intent yes
-  ui_stop_and_remove "$app_id" "$temp"
   ui_finish_commit
   trap - ERR INT TERM
 }
@@ -459,55 +604,64 @@ ui_manual_rollback() {
   [[ "${SUBNEXUS_CUTOVER_CONFIRM:-}" == I_UNDERSTAND_APPLICATION_ROLLBACK ]] || fail 'UI rollback requires the application-rollback confirmation'
   ui_load_run "$1" rollback
   [[ "$(manifest_value state)" != prepared ]] || fail 'UI rollback is not applicable before switch'
-  ui_assert_anchor restored
   ui_expected_settings_hash="$(ui_settings_hash)"
-  local observed old_id current_id temp current_name
+  local observed old_id current_id new_id temp current_name new_state
   old_id="$(manifest_value ui_rollback_id)"; current_id="$(manifest_value live_app_id)"
-  temp="$(manifest_value ui_temporary_name)"
-  observed="$(inspect_container_id_or_empty "$app_name")" || fail 'cannot inspect production name before original rollback'
-  if [[ -n "$observed" && "$observed" != "$old_id" && "$observed" != "$current_id" ]]; then
+  new_id="$(manifest_value ui_new_rollback_id)"
+  temp="$(manifest_value ui_new_rollback_name)"
+  new_state="$(manifest_value ui_state)"
+  if [[ "$new_state" == rolled_back_to_new ]]; then
+    ui_assert_anchor_if_present
+    ui_assert_new_rollback_contract restored
+    ui_assert_settings_unchanged
+    log "UI_ROLLBACK_NEW_ALREADY_COMPLETED=$new_id"
+    return 0
+  fi
+  ui_assert_anchor_if_present
+  observed="$(inspect_container_id_or_empty "$app_name")" || fail 'cannot inspect production name before new-target rollback'
+  if [[ "$observed" == "$new_id" ]]; then
+    ui_assert_new_rollback_contract restored
+    manifest_set state rolling_back
+    manifest_set ui_state rolling_back
+    manifest_set ui_new_rollback_state restored
+    ui_assert_settings_unchanged
+    write_run_marker ROLLED_BACK rolled_back
+    manifest_set state rolled_back
+    manifest_set ui_state rolled_back_to_new
+    log "UI_ROLLBACK_NEW_COMPLETED=$new_id"
+    return 0
+  fi
+  if [[ -n "$observed" && "$observed" != "$old_id" && "$observed" != "$current_id" && "$observed" != "$new_id" ]]; then
     candidate_id="$observed"
     assert_candidate_container_identity "$observed"
   fi
+  ui_assert_new_rollback_contract stopped
   manifest_set state rolling_back
   manifest_set ui_state rolling_back
   ui_remove_candidate
-  observed="$(inspect_container_id_or_empty "$app_name")" || fail 'cannot inspect production name after candidate removal'
-  if [[ "$observed" == "$current_id" ]]; then
-    observed="$(inspect_container_id_or_empty "$temp")" || fail 'cannot inspect temporary name before original rollback'
-    [[ -z "$observed" ]] || fail 'temporary name is occupied before original rollback'
-    preserved_name="$temp"
-    assert_preserved_container_contract
-    docker_rpc stop --time "$stop_timeout_seconds" "$current_id" >/dev/null || fail 'cannot stop current before original rollback'
-    [[ "$(docker_rpc inspect --format '{{.State.Running}}' "$current_id")" == false ]] || fail 'current is still running before original rollback'
-    docker_rpc rename "$current_id" "$temp" || fail 'cannot stage current before original rollback'
+  observed="$(inspect_container_id_or_empty "$new_id")" || fail 'cannot inspect new rollback target before rollback'
+  [[ "$observed" == "$new_id" ]] || fail 'new rollback target is unavailable; historical anchor remains audit-only'
+  preserved_name="$temp"
+  assert_preserved_container_contract
+  current_name="$(docker_rpc inspect --format '{{.Name}}' "$new_id")" || fail 'cannot inspect new rollback target name'
+  [[ "$current_name" == "/$temp" || "$current_name" == "/$app_name" ]] || fail 'new rollback target has an unexpected name before rollback'
+  if [[ "$(docker_rpc inspect --format '{{.State.Running}}' "$new_id")" == true ]]; then
+    docker_rpc stop --time "$stop_timeout_seconds" "$new_id" >/dev/null || fail 'cannot stop new rollback target before rollback'
   fi
-  observed="$(inspect_container_id_or_empty "$current_id")" || fail 'cannot inspect temporary current before original rollback'
-  if [[ -n "$observed" ]]; then
-    [[ "$(docker_rpc inspect --format '{{.Name}}' "$current_id")" == "/$temp" ]] || fail 'temporary current has an unexpected identity before original rollback'
-    if [[ "$(docker_rpc inspect --format '{{.State.Running}}' "$current_id")" == true ]]; then
-      docker_rpc stop --time "$stop_timeout_seconds" "$current_id" >/dev/null || fail 'cannot stop temporary current before original rollback'
-    fi
-    [[ "$(docker_rpc inspect --format '{{.State.Running}}' "$current_id")" == false ]] || fail 'temporary current still owns the production port'
-  fi
-  ui_restore_anchor
+  restore_preserved_container || fail 'new rollback target did not recover health'
+  manifest_set ui_new_rollback_state restored
+  ui_assert_new_rollback_contract restored
   ui_assert_settings_unchanged
-  observed="$(inspect_container_id_or_empty "$current_id")" || fail 'cannot inspect temporary current after original rollback'
-  if [[ -n "$observed" ]]; then
-    current_name="$(docker_rpc inspect --format '{{.Name}}' "$current_id")"
-    [[ "$current_name" == "/$temp" ]] || fail 'temporary current has an unexpected name after original rollback'
-    ui_stop_and_remove "$current_id" "$temp"
-  fi
   write_run_marker ROLLED_BACK rolled_back
   manifest_set state rolled_back
-  manifest_set ui_state rolled_back_to_original
-  log "UI_ROLLBACK_ORIGINAL_COMPLETED=$old_id"
+  manifest_set ui_state rolled_back_to_new
+  log "UI_ROLLBACK_NEW_COMPLETED=$new_id"
 }
 
 ui_recover_entry() {
   [[ "${SUBNEXUS_CUTOVER_CONFIRM:-}" == I_UNDERSTAND_APPLICATION_ROLLBACK ]] || fail 'UI recovery requires the application-rollback confirmation'
   ui_load_run "$1" rollback
-  case "$(manifest_value ui_state)" in switching|committing|recovered_current) ;; *) fail 'temporary-current recovery is not applicable in this state' ;; esac
+  case "$(manifest_value ui_state)" in switching|committing|rolling_back|recovered_current) ;; *) fail 'temporary-current recovery is not applicable in this state' ;; esac
   ui_expected_settings_hash="$(ui_settings_hash)"
   ui_recover_current
 }

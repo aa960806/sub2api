@@ -8,10 +8,14 @@ type GlassTheme = 'cool-slate' | 'deep-night' | 'cyan-mist'
 interface RainyBackgroundProps {
   /** Enables the rain and condensation animation layers. */
   enabled?: boolean
+  /** Keeps a static rain frame visible while motion is reduced or paused. */
+  animated?: boolean
   /** Selects the image from the target page's rotating city set. */
   imageIndex?: number
   mouseX?: number
   mouseY?: number
+  /** Controls the teleported droplet layer relative to host content. */
+  dropletsZIndex?: number
   theme?: GlassTheme
   /** Allows the host page to provide a different, configured image set. */
   images?: string[]
@@ -19,9 +23,11 @@ interface RainyBackgroundProps {
 
 const props = withDefaults(defineProps<RainyBackgroundProps>(), {
   enabled: true,
+  animated: true,
   imageIndex: 0,
   mouseX: 0,
   mouseY: 0,
+  dropletsZIndex: 30,
   theme: 'deep-night' as GlassTheme,
   images: () => [
     // The embedded Go frontend reserves /images/* for the API image
@@ -122,11 +128,13 @@ const imageStyle = {
       class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_48%,rgba(3,7,16,0.34)_100%)]"
     />
 
-    <RainStreaksCanvas :enabled="props.enabled" :intensity="0.85" :wind-speed="2.8" />
+    <RainStreaksCanvas :enabled="props.enabled" :animated="props.animated" :intensity="0.85" :wind-speed="2.8" />
     <GlassDropletsCanvas
       :enabled="props.enabled"
+      :animated="props.animated"
       :mouse-x="props.mouseX"
       :mouse-y="props.mouseY"
+      :z-index="props.dropletsZIndex"
     />
   </div>
 </template>

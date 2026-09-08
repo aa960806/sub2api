@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 interface RainStreaksCanvasProps {
   enabled: boolean;
+  animated?: boolean;
   intensity?: number;
   windSpeed?: number;
 }
@@ -22,6 +23,7 @@ interface RainStreak {
 }
 
 const props = withDefaults(defineProps<RainStreaksCanvasProps>(), {
+  animated: true,
   intensity: 0.6,
   windSpeed: 3.5,
 });
@@ -37,6 +39,9 @@ function startAnimation() {
   // effect there so component tests remain quiet while browsers use the
   // target animation unchanged.
   if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return;
+
+  // Avoid retaining an animation loop while decorative motion is disabled.
+  if (!props.enabled) return;
 
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -65,7 +70,9 @@ function startAnimation() {
     height = canvas.height = window.innerHeight;
   };
 
-  window.addEventListener('resize', handleResize);
+  if (props.animated) {
+    window.addEventListener('resize', handleResize);
+  }
 
   // Keep enough drops on screen for a cinematic curtain, while reserving a
   // smaller near-camera layer for the thick, luminous streaks.
@@ -169,7 +176,9 @@ function startAnimation() {
       ctx.globalCompositeOperation = 'source-over';
     }
 
-    animId = requestFrame(render);
+    if (props.animated) {
+      animId = requestFrame(render);
+    }
   };
 
   render();
@@ -180,7 +189,7 @@ function startAnimation() {
 }
 
 onMounted(startAnimation);
-watch(() => [props.enabled, props.intensity, props.windSpeed], startAnimation);
+watch(() => [props.enabled, props.animated, props.intensity, props.windSpeed], startAnimation);
 onBeforeUnmount(() => {
   disposeAnimation?.();
   disposeAnimation = undefined;

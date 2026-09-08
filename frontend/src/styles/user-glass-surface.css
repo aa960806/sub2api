@@ -1,0 +1,238 @@
+/* User-facing rain/glass material. Every rule is scoped to AppLayout's user surface. */
+.user-glass-surface {
+  --user-rain-card-bg: rgba(4, 8, 19, 0.42);
+  --user-rain-card-border: rgba(255, 255, 255, 0.26);
+  --user-rain-card-shadow: 0 24px 70px -12px rgba(1, 4, 12, 0.62),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 -1px 2px 0 rgba(0, 0, 0, 0.3);
+  --user-rain-header-bg: rgba(4, 8, 19, 0.52);
+  --user-rain-sidebar-bg: rgba(4, 8, 19, 0.62);
+  --user-rain-muted-bg: rgba(255, 255, 255, 0.08);
+  --user-rain-muted-hover-bg: rgba(255, 255, 255, 0.16);
+  --user-rain-sticky-col-bg: rgb(10 18 33);
+  --user-rain-sticky-col-hover-bg: rgb(19 30 50);
+  --user-rain-sticky-col-selected-bg: rgb(20 55 54);
+  --user-rain-sticky-header-bg: rgb(12 22 39);
+  --user-rain-sticky-header-hover-bg: rgb(22 34 54);
+  --user-rain-wash: linear-gradient(
+    to bottom,
+    rgba(3, 7, 18, 0.12),
+    rgba(6, 14, 29, 0.1),
+    rgba(2, 5, 14, 0.16)
+  );
+  /* Keep teleported droplets and navigation layers in the document stacking context. */
+  position: relative;
+  background-color: transparent !important;
+}
+
+html:not(.dark) .user-glass-surface {
+  --user-rain-card-bg: rgba(255, 255, 255, 0.68);
+  --user-rain-card-border: rgba(255, 255, 255, 0.7);
+  --user-rain-card-shadow: 0 24px 70px -12px rgba(15, 23, 42, 0.24),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.32),
+    inset 0 -1px 2px 0 rgba(15, 23, 42, 0.1);
+  --user-rain-header-bg: rgba(255, 255, 255, 0.62);
+  --user-rain-sidebar-bg: rgba(255, 255, 255, 0.7);
+  --user-rain-muted-bg: rgba(255, 255, 255, 0.48);
+  --user-rain-muted-hover-bg: rgba(255, 255, 255, 0.72);
+  --user-rain-sticky-col-bg: rgb(255 255 255);
+  --user-rain-sticky-col-hover-bg: rgb(249 250 251);
+  --user-rain-sticky-col-selected-bg: rgb(240 253 250);
+  --user-rain-sticky-header-bg: rgb(249 250 251);
+  --user-rain-sticky-header-hover-bg: rgb(241 245 249);
+  --user-rain-wash: linear-gradient(
+    to bottom,
+    rgba(248, 251, 253, 0.66),
+    rgba(236, 244, 250, 0.52),
+    rgba(224, 236, 246, 0.58)
+  );
+}
+
+.user-glass-surface .user-surface-wash {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--user-rain-wash);
+}
+
+.user-glass-surface > .user-surface-content {
+  position: relative;
+}
+
+/* Keep the main content and its existing dialogs above the decorative droplets. */
+.user-glass-surface > .user-surface-content > main {
+  position: relative;
+  z-index: 10;
+}
+
+.user-glass-surface .sidebar,
+.user-glass-surface header.glass {
+  background-color: var(--user-rain-sidebar-bg);
+  border-color: var(--user-rain-card-border);
+  box-shadow: var(--user-rain-card-shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+}
+
+.user-glass-surface header.glass {
+  background-color: var(--user-rain-header-bg);
+}
+
+.user-glass-surface main .card,
+.user-glass-surface main .glass-card,
+.user-glass-surface main .card-glass,
+.user-glass-surface main .stat-card {
+  border-color: var(--user-rain-card-border);
+  box-shadow: var(--user-rain-card-shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+}
+
+/* Keep explicit semantic color cards (success, warning, payment, etc.) intact. */
+.user-glass-surface main .card:not([class*='bg-primary-']):not([class*='bg-emerald-']):not([class*='bg-red-']):not([class*='bg-gradient']):not([class*='bg-amber-']):not([class*='bg-blue-']):not([class*='bg-cyan-']):not([class*='bg-purple-']):not([class*='bg-pink-']):not([class*='bg-rose-']),
+.user-glass-surface main .glass-card:not([class*='bg-primary-']):not([class*='bg-emerald-']):not([class*='bg-red-']):not([class*='bg-gradient']):not([class*='bg-amber-']):not([class*='bg-blue-']):not([class*='bg-cyan-']):not([class*='bg-purple-']):not([class*='bg-pink-']):not([class*='bg-rose-']),
+.user-glass-surface main .card-glass:not([class*='bg-primary-']):not([class*='bg-emerald-']):not([class*='bg-red-']):not([class*='bg-gradient']):not([class*='bg-amber-']):not([class*='bg-blue-']):not([class*='bg-cyan-']):not([class*='bg-purple-']):not([class*='bg-pink-']):not([class*='bg-rose-']),
+.user-glass-surface main .stat-card:not([class*='bg-primary-']):not([class*='bg-emerald-']):not([class*='bg-red-']):not([class*='bg-gradient']):not([class*='bg-amber-']):not([class*='bg-blue-']):not([class*='bg-cyan-']):not([class*='bg-purple-']):not([class*='bg-pink-']):not([class*='bg-rose-']) {
+  background-color: var(--user-rain-card-bg);
+}
+
+/* Neutral containers that do not use the shared card primitive. */
+.user-glass-surface main .user-glass-panel,
+.user-glass-surface main .user-glass-card {
+  background-color: var(--user-rain-card-bg) !important;
+  border-color: var(--user-rain-card-border);
+  box-shadow: var(--user-rain-card-shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+}
+
+.user-glass-surface main .user-glass-inset {
+  border-color: var(--user-rain-card-border);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  backdrop-filter: blur(10px) saturate(125%);
+}
+
+.user-glass-surface main .user-glass-inset:not(:hover) {
+  background-color: var(--user-rain-muted-bg);
+}
+
+/* Inset surfaces without an explicit hover utility still need a hover fill. */
+.user-glass-surface main .user-glass-inset:hover:not([class*='hover:bg-']):not([class*='dark:hover:bg-']) {
+  background-color: var(--user-rain-muted-hover-bg);
+}
+
+.user-glass-surface main .user-glass-control,
+.user-glass-surface main .user-glass-pagination {
+  background-color: var(--user-rain-muted-bg);
+  border-color: var(--user-rain-card-border);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  backdrop-filter: blur(10px) saturate(125%);
+}
+
+.user-glass-surface main .user-glass-pagination {
+  box-shadow: var(--user-rain-card-shadow);
+}
+
+/* DataTable owns its mobile cards and table-body material. */
+.user-glass-surface main .user-glass-table > .rounded-lg.border:not([class*='bg-primary-']),
+.user-glass-surface main .user-glass-table .table-body {
+  background-color: var(--user-rain-card-bg) !important;
+}
+
+/* Sticky cells need an opaque fill so scrolled content cannot show through. */
+.user-glass-surface main .user-glass-table .sticky-col {
+  background-color: var(--user-rain-sticky-col-bg) !important;
+}
+
+.user-glass-surface main .user-glass-table .table-header,
+.user-glass-surface main .user-glass-table .sticky-header-cell {
+  background-color: var(--user-rain-sticky-header-bg) !important;
+}
+
+.user-glass-surface main .user-glass-table tbody tr:hover .sticky-col {
+  background-color: var(--user-rain-sticky-col-hover-bg) !important;
+}
+
+.user-glass-surface main .user-glass-table tbody tr[class*='bg-primary-'] .sticky-col,
+.user-glass-surface main .user-glass-table tbody tr[class*='bg-primary-']:hover .sticky-col {
+  background-color: var(--user-rain-sticky-col-selected-bg) !important;
+}
+
+.user-glass-surface main .user-glass-table .sticky-header-cell:hover {
+  background-color: var(--user-rain-sticky-header-hover-bg) !important;
+}
+
+.user-glass-surface main .table-container,
+.user-glass-surface main .table-scroll-container {
+  border-color: var(--user-rain-card-border);
+  box-shadow: var(--user-rain-card-shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+}
+
+.user-glass-surface main .table-page-layout:not(.mobile-mode) .table-scroll-container {
+  background-color: var(--user-rain-card-bg);
+}
+
+.user-glass-surface main .table-scroll-container :is(.table-header, thead) {
+  background-color: var(--user-rain-sticky-header-bg);
+}
+
+.user-glass-surface main .table-scroll-container :is(.table-body, tbody) {
+  background-color: transparent;
+}
+
+.user-glass-surface main .table-page-layout.mobile-mode .table-scroll-container {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.user-glass-surface main .tabs,
+.user-glass-surface main .user-glass-muted {
+  background-color: var(--user-rain-muted-bg);
+  border-color: var(--user-rain-card-border);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+  backdrop-filter: blur(10px) saturate(125%);
+}
+
+.user-glass-surface .dropdown {
+  background-color: var(--user-rain-card-bg);
+  border-color: var(--user-rain-card-border);
+  box-shadow: var(--user-rain-card-shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+}
+
+.user-glass-surface .user-glass-tooltip {
+  background-color: var(--user-rain-card-bg) !important;
+  border-color: var(--user-rain-card-border);
+  box-shadow: var(--user-rain-card-shadow);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .user-glass-surface .sidebar,
+  .user-glass-surface header.glass,
+  .user-glass-surface main .card,
+  .user-glass-surface main .glass-card,
+  .user-glass-surface main .card-glass,
+  .user-glass-surface main .stat-card,
+  .user-glass-surface main .user-glass-panel,
+  .user-glass-surface main .user-glass-card,
+  .user-glass-surface main .user-glass-inset {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .user-glass-surface .user-glass-tooltip {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

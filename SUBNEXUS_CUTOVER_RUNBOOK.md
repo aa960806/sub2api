@@ -1,10 +1,10 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态：2026-09-07（Asia/Shanghai）。保留二开用户端界面候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已完成切换。当前线上容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`，`running/healthy/restart=0`；run `/srv/subnexus-migration/cutover/20260907045159-1121373` 的 manifest 已为 `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`，并有 `SWITCHED=switched`、无 `ROLLED_BACK`。第 13 节旧 Rain rollback 窗口已关闭并撤回；唯一保留的可执行回滚是第 14 节绑定本轮 run 的 rollback，须在 switch 进程已退出、manifest 已离开 `prepared` 且确认需要恢复固定旧 SubNexus 时执行。
+> 当前权威状态：2026-09-08（Asia/Shanghai）。2026-09-07 保留二开用户端界面发布事实完整保留在第 14 节；本轮“用户端雨景背景 + 毛玻璃卡片”仅修改显示层，本地审核和完整前端门禁已通过，线上新候选提交、镜像、Gate、备份与 `prepare` 值仍待本轮流程生成。第 15 节是唯一现行发布交接；在其具体值全部核验前，不得使用任何历史 `switch`/`rollback` 命令。
 
-本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧回滚对象和 stopped probe 均核验完成之后。本轮新 UI 的 `switch` 已由维护者手动完成；当前只保留与同一 run 绑定的 rollback。构建或 Gate 通过本身不代表可以切换。
+本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、历史 anchor、新回滚目标身份和 never-started probe 均核验完成之后。本轮最终 `switch` 仍由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
 
-最新授权允许代理完成提交推送、隔离构建、上传安装、候选 Gate、全新备份、无停机 `prepare`、never-started probe、最终审计、范围明确的无用垃圾清理和切换后文档收口；本轮 `switch` 已由维护者完成。历史失败、已回滚或已成功切换的 run 均不得作为新的 `prepare`/`switch` 输入；第 13 节旧 Rain rollback 窗口已关闭，唯一现行 rollback 为第 14 节同 run 入口。
+最新授权允许代理完成提交推送、隔离构建、上传安装、候选 Gate、全新备份、无停机 `prepare`、never-started probe、最终审计和范围明确的无用垃圾清理，并停在最终 `switch` 前。历史失败、已回滚或已成功切换的 run 均不得作为新的 `prepare`/`switch` 输入；最终两条单行命令必须绑定第 15 节本轮新 run。
 
 ## 1. 发布前硬门禁
 
@@ -277,7 +277,7 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 本节保留上一版 Rain UI 的发布事实和固定对象供审计。其 rollback 曾只在本轮 retained-UI switch 前的状态窗口内有效；当前生产已切换为 retained-UI candidate，该窗口已关闭，旧命令已撤回（`WITHDRAWN/CLOSED after retained-UI switch`）。不得从本节或 Git 历史复制执行。
 
-## 14. 保留二开用户端界面切换结果与现行回滚入口（2026-09-07，已 switched）
+## 14. 保留二开用户端界面切换结果（2026-09-07，历史，已 switched）
 
 | 固定项 | 当前值 |
 | --- | --- |
@@ -301,10 +301,36 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 | 切换清理 | 旧 live `86104829d490733244c9426a59e82e7a12afa3c590de2fc03f2ccb13344aebbd`、temporary name、gate/probe 容器及目录已按精确身份清理；失败审计 partial 与迁移上传副本共 27 个临时文件已删除，清理证据 `/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt`，SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558` |
 | 固定旧回滚对象 | ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`；anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e` |
 
-切换已经由维护者完成，switch 命令已消费并从当前交接中撤回，禁止重跑。当前 manifest 已离开 `prepared`；若需要恢复固定旧 SubNexus，只能在 switch 进程已退出并确认恢复条件后执行下方同 run rollback。该 rollback 不创建新的永久回滚对象，不恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关。
+该轮 switch 已消费并禁止重跑。其 rollback 命令在第 15 节新发布准备开始后退出现行交接，下面正文仅作为当时发布记录保留，不得用于本轮操作。
 
-下列 rollback 命令在新 run 仍为 `prepared` 时会被 wrapper 主动拒绝。不得在 switch 进程运行中并发执行；先等待原 switch 进程退出并让 wrapper 完成成功提交或失败自动恢复，再重新读取 manifest。只有进程已经退出、manifest 已离开 `prepared` 且仍需恢复固定旧 SubNexus 时才执行此命令。命令绑定同一个 wrapper/run；默认不恢复 PostgreSQL/Redis，也不修改 Nginx 或功能开关。
+`WITHDRAWN/CLOSED for 2026-09-08 Rain + Glass cutover`：下列命令是 2026-09-07 的历史文本，不再授权执行。
 
 ```bash
 sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=dd320d0982d357704d88bd702805cca69c36304ea6f5db523a572b10bdbdf49a SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260907045159-1121373
 ```
+
+## 15. 用户端 Rain + Glass 发布交接（2026-09-08，准备中）
+
+本轮只统一登录后用户端的雨景背景和毛玻璃卡片材质，现有 API、请求参数、路由、权限、认证、配置、功能开关、按钮事件和业务处理保持不变。2026-09-07 第 14 节继续作为历史事实保留，不得把其中的脚本或 run 作为本轮输入。
+
+| 固定项 | 本轮状态 |
+| --- | --- |
+| 生产 base | `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；最终仍须由线上 live image provenance 实时确认 |
+| 候选提交/tree | 待本轮 UI、wrapper 和文档提交完成后填写；必须已推送并与隔离构建 source/tree 完全一致 |
+| 候选镜像/归档 | 待隔离构建生成并填写完整 image ID、归档路径、归档 SHA256 和大小 |
+| UI wrapper | 待提交后填写固定服务器路径、Git blob SHA256 和安装后 SHA256；三者必须一致 |
+| 原控制器 | 沿用已审核控制器时仍须实时核对固定路径和 SHA256，不得从历史章节直接假定 |
+| Docker Gate | 待服务器候选 Gate 通过后填写 evidence 路径/SHA256；必须 `result=passed`、`cleanup_failed=false`，且生产身份前后不变 |
+| 在线备份/prepare | 待生成全新 run；必须包含本轮 PostgreSQL、catalog、Redis、应用数据归档、全部 sidecar、设置快照和 runtime contract，不得复用第 14 节备份或 run |
+| Never-started probe/最终审计 | 待新 run `READY=prepared` 后执行；probe 必须从未启动并按完整 ID 删除，最终证据必须确认无候选/probe 残留和 live/依赖/settings 不变 |
+| 人工边界 | 代理完成上述全部前置工作并停在 `state=prepared/ui_state=prepared`；维护者只执行最终给出的本轮单行 `switch`，需要恢复时只执行同 wrapper/run 的单行 `rollback` |
+
+新的回滚合同如下：
+
+1. `prepare` 前历史 SubNexus anchor `/srv/subnexus-migration/cutover/20260905085804-4072165` 必须存在，并对其 manifest、旧容器完整 ID、image、名称、停止状态、依赖和运行合同做完整校验；缺失或漂移必须在备份或 Docker 变更前失败关闭。
+2. `prepare` 不停止、重命名或创建容器，只把当时 live 固定为本轮新回滚目标，并在 manifest 记录 `ui_new_rollback_id`、`ui_new_rollback_image`、`ui_new_rollback_config_image`、唯一 `ui_new_rollback_name=production-app-ui-prior-<run-id>` 和 `ui_new_rollback_state=prepared`。
+3. 维护者执行 `switch` 时，wrapper 才停止当前 live、按上述唯一名称重命名并验证其完整 ID、`.Image`、`.Config.Image`、名称、runtime contract 和 `stopped` 状态；随后创建并启动候选。候选健康后保留该 stopped 容器，不得删除或提交为镜像。
+4. 本轮 `rollback` 删除经身份校验的候选并恢复上述新目标；历史 SubNexus anchor 只承担 `prepare` 时的连续性审计，不再是本轮恢复对象。新目标缺失或任一身份字段漂移时必须失败关闭。
+5. 空间充足时保留历史 anchor、旧容器、旧镜像和历史备份。只有本轮 `prepare` 已成功、空间证据明确不足、删除清单逐项绑定完整 ID/路径/SHA 并保存 root-only 审计记录时，才允许精确删除已确认无用的历史对象；若删除历史 anchor，必须同时保证本轮 `switch`/`rollback` 只依赖新目标。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理，本轮新回滚目标及新 run 证据不得删除。
+
+当前尚未生成可执行命令。只有候选 SHA、镜像、脚本 SHA、run、备份、probe 和最终审计全部产生并复核后，才在本节写入两条绑定同一 wrapper/run 的完整单行命令；在此之前任何历史命令或自行替换占位值的命令都无效。

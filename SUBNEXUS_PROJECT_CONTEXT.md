@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态：2026-09-07（Asia/Shanghai）。`F:\Sub2Api\SubNexus` 保留二开用户端界面已迁入本项目，功能/API 继续使用当前实现。候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已切换上线；当前生产容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`，`running/healthy/restart=0`。run `/srv/subnexus-migration/cutover/20260907045159-1121373` 的 manifest 为 `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`；切换后审计和公网验收通过。第 13 节旧 Rain rollback 窗口已关闭，当前唯一恢复入口为第 14 节同 run rollback；固定旧 SubNexus 回滚对象继续保留，本轮未创建新的永久回滚对象。以本文文末最新记录为准。
+> 当前权威状态：2026-09-08（Asia/Shanghai）。`F:\Sub2Api\SubNexus` 保留二开用户端界面和 `F:\Rain` 首页已迁入，本轮继续统一登录后用户端的雨景背景与毛玻璃卡片，所有功能/API 仍使用当前项目实现。本地审核与完整前端门禁已通过；线上候选、镜像、Gate、全新备份、prepare 和新回滚目标尚待生成。2026-09-07 生产事实保留为历史，以本文文末最新记录为准。
 
 ## 项目身份
 
@@ -252,3 +252,13 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 切换后服务器审计工具 `/srv/subnexus-migration/tools/audit-retained-ui-switched-d5652bda-20260907.sh` 的 SHA256=`d5652bda85a82e5eaa20db5f5b80a86c691bcdbbb10f58d199636f0ff7f6766d`，正式 evidence `/srv/subnexus-migration/diagnostics/retained-ui-switched-f6f6dafe1fb2-20260907045159-1121373.evidence` 的 SHA256=`58edc5b2d6e3ca6535ae10741ce4aed9275609f5d5e8dad1c48407372349afb9`，结果为 `POST_SWITCH_AUDIT=passed`。PostgreSQL=`8178576aed6f7b1cb94201832e5797907ea4d7698dbfe7b6f862cbc5a3b4f5bf`、Redis=`5c7adf42247c67ba90b09248056071a57c2a4e7e0465f922d4ed799ef092533e` 身份未变，均 `running/restart=0`。公网 `https://yydsapi.uno` 桌面/移动 Playwright 验收通过，无页面错误、请求失败或横向溢出，Rain 图片、双 Canvas、配置驱动品牌和现有导航/登录/语言/主题行为正常。
 
 切换后设置审计只发现 `subnexus_invite_activities_config` 变化；Nginx 记录管理员 `PUT /api/v1/admin/invite-activities/config` 成功，数据库 `updated_at=2026-09-07T06:45:51.718553Z`，未回写或恢复，其他 17 项保护设置保持 prepare 值。清理证据 `/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt` 的 SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558`；失败审计 partial、迁移上传副本等 27 个临时文件已精确删除，正式证据、备份、应用数据和固定回滚对象保留。第 13 节旧 Rain rollback 已关闭；需要恢复时只使用切换手册第 14 节同 run rollback。
+
+## 当前发布任务（2026-09-08，Rain + Glass 用户端视觉）
+
+本轮工作树把首页同源雨景和毛玻璃材质扩展到 `/dashboard`、`/keys`、`/usage`、`/monitor`、`/subscriptions`、`/purchase`、`/orders` 等所有 `AppLayout` 用户端页面。管理端、认证/公开页和外部支付页隔离；现有数据、API、路由、权限、配置、功能开关、按钮和业务逻辑不变。水滴层级、既有 hover、sticky 表头/列可读性和订单表结构问题均已修复，本地验证为 Vitest `294/294` 文件、`2041/2041` 测试、typecheck、lint、build 和 `git diff --check` 通过。
+
+发布仍处于本地到线上前置阶段。不可变 candidate SHA/tree、镜像 ID、归档 SHA、wrapper SHA、Docker Gate、全新备份、prepare run、probe 和最终审计值必须由实际流程生成后追加，不能从 2026-09-07 历史记录复制。最终 `switch` 由维护者手动执行，代理必须停在 `state=prepared/ui_state=prepared`。
+
+本轮回滚模型已变更：`prepare` 先要求历史旧 SubNexus anchor 存在并完整校验，然后仅把当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和状态固化到新 manifest，Docker 状态保持不变。最终 switch 时才停止和重命名该 live，并把它作为 stopped 新回滚目标保留；本轮 rollback 只恢复该目标，不恢复更早的旧 SubNexus。目标缺失或 ID/image/configured image/name/runtime contract 漂移时必须失败关闭。
+
+历史 anchor、容器、镜像和备份在空间足够时保留。只有新 run 已成功 prepare、容量证据确认不足，并保存完整 ID/路径/SHA 的精确清理审计后，才可删除已确认无用的历史数据；不允许 `docker system prune`、`docker volume prune` 或模糊清理，本轮新回滚目标与新 run 证据不可删除。最终只接受切换手册第 15 节中绑定同一 wrapper/run 的两条单行命令。

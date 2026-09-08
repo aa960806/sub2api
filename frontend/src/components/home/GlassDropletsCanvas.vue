@@ -37,13 +37,17 @@ interface ImpactEvent {
 
 interface GlassDropletsCanvasProps {
   enabled: boolean;
+  animated?: boolean;
   mouseX?: number;
   mouseY?: number;
+  zIndex?: number;
 }
 
 const props = withDefaults(defineProps<GlassDropletsCanvasProps>(), {
+  animated: true,
   mouseX: 0,
   mouseY: 0,
+  zIndex: 30,
 });
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -55,6 +59,10 @@ function startAnimation() {
   disposeAnimation = undefined;
 
   if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return;
+
+  // Decorative motion should not retain a frame loop or global click handler
+  // when the host has disabled animation.
+  if (!props.enabled) return;
 
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -131,7 +139,9 @@ function startAnimation() {
     initDroplets();
   };
 
-  window.addEventListener('resize', handleResize);
+  if (props.animated) {
+    window.addEventListener('resize', handleResize);
+  }
   initDroplets();
 
   let nextImpactAt = performance.now() + 700 + Math.random() * 1000;
@@ -159,7 +169,9 @@ function startAnimation() {
     });
   };
 
-  window.addEventListener('click', handleCanvasClick);
+  if (props.animated) {
+    window.addEventListener('click', handleCanvasClick);
+  }
 
   // Draw one realistic water droplet with refraction highlight and soft meniscus.
   function drawDroplet(
@@ -447,7 +459,9 @@ function startAnimation() {
       drawDroplet(ctx, droplet.x + pX, droplet.y + pY, droplet.radius, droplet.opacity, droplet.isSliding ? 1.45 : 1);
     }
 
-    animId = requestFrame(render);
+    if (props.animated) {
+      animId = requestFrame(render);
+    }
   };
 
   render();
@@ -459,7 +473,7 @@ function startAnimation() {
 }
 
 onMounted(startAnimation);
-watch(() => props.enabled, startAnimation);
+watch(() => [props.enabled, props.animated], startAnimation);
 watch([() => props.mouseX, () => props.mouseY], () => {
   mouseRef.current = { x: props.mouseX, y: props.mouseY };
 });
@@ -473,8 +487,8 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <canvas
       ref="canvasRef"
-      class="pointer-events-none fixed inset-0 z-[30] h-full w-full mix-blend-screen"
-      :style="{ opacity: props.enabled ? 0.92 : 0, transition: 'opacity 0.8s ease' }"
+      class="pointer-events-none fixed inset-0 h-full w-full mix-blend-screen"
+      :style="{ zIndex: props.zIndex, opacity: props.enabled ? 0.92 : 0, transition: 'opacity 0.8s ease' }"
     />
   </Teleport>
 </template>

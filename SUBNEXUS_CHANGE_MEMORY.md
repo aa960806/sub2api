@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-07 Asia/Shanghai）：`F:\Sub2Api\SubNexus` 保留二开用户端界面已迁入当前项目，功能、API、路由、权限、配置和开关继续使用当前实现。候选提交 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已推送并切换上线；当前生产容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`，`running/healthy/restart=0`。run `/srv/subnexus-migration/cutover/20260907045159-1121373` 的 manifest 为 `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`；切换后审计和公网验收通过。第 13 节旧 Rain rollback 窗口已关闭，当前只保留第 14 节同 run rollback。固定旧 SubNexus 回滚对象不变，本轮未创建新的永久回滚对象。当前状态取信于文末最新记录。
+> 当前权威状态（2026-09-08 Asia/Shanghai）：2026-09-07 retained-UI 发布事实保留为历史；本轮 Rain + Glass 用户端视觉更新已通过审核和完整本地前端门禁，线上发布前置尚在进行。候选提交、镜像、Gate、全新备份、prepare run 和最终审计必须按实际结果在文末追加。最终 switch 由维护者执行；本轮将在 switch 时保留切换前 live 为新的 stopped 回滚目标，rollback 只恢复该目标。当前状态取信于文末最新记录和切换手册第 15 节。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1490,3 +1490,34 @@
 - 切换后精确清理了失败审计 partial、一次性迁移上传/诊断副本等 27 个临时文件；清理 evidence=`/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt`，root:root/0600，SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558`。正式 evidence、备份、应用数据、固定回滚对象和必要发布制品均保留，未使用 prune。
 - 本轮 switch 已消费并从现行交接撤回，禁止重跑；第 13 节旧 Rain rollback 状态窗口已关闭并撤回。当前唯一可执行恢复入口是切换手册第 14 节绑定 wrapper `dd320d09...` 与同一 run `20260907045159-1121373` 的 rollback。该命令只在 switch 进程已退出、manifest 已离开 `prepared` 且确需恢复固定旧 SubNexus 时使用；默认不恢复 PostgreSQL/Redis，不修改 Nginx/功能开关，也不创建新的永久回滚对象。
 - 本轮 UI 上线不代表 F01-F13 在功能开关开启后的业务验收已经完成；这些业务验收状态保持不变。线上操作仅包括维护者手动 switch、代理的只读复核/审计与上述精确临时文件清理；未执行 rollback、数据库/Redis 恢复、Nginx 修改或功能开关变更。
+
+## 2026-09-07（Asia/Shanghai）— 用户端 Rain + Glass 背景与卡片材质本地实施完成
+
+- 已按 `SUBNEXUS_USER_GLASS_SURFACE_PLAN.md` 完成用户端视觉层实施。`AppLayout.vue` 根据 `route.meta.requiresAuth === true && route.meta.requiresAdmin !== true` 仅为登录用户端挂载现有 `RainyBackground`，并保留管理端、认证页、公开页和支付回调页的原背景路径；页面内容层、侧栏、顶部栏、卡片、表格、分页和下拉菜单通过 `.user-glass-surface` 作用域统一背景透明度、边框、阴影、模糊和层级。
+- 直接绕过公共 `.card` 的用户端面板已补充 `user-glass-panel`、`user-glass-inset`、`user-glass-control`、`user-glass-pagination` 和 `user-glass-table` 标记，覆盖 `/dashboard`、`/keys`、`/usage`、`/monitor`（V1/V2/V3）、`/subscriptions`、`/purchase`、`/orders`、`/invoices`、`/profile`、`/available-channels`、`/batch-image` 以及现有用户活动/奖励页面。语义色活动区、按钮、输入框、徽章、进度条、代码块和弹窗内部专用材质保持原样。
+- 业务合同未改变：没有修改 API、请求参数、路由定义或守卫、权限判断、登录状态、配置读取、功能开关、按钮事件、数据写入、依赖锁文件、后端或生产配置。Teleport 到 `body` 的 BaseDialog/Select 内容保持公共实现，避免把用户端材质泄漏到管理端；`/payment/result` 和外部支付 popup 仍不挂载用户端雨景。
+- 共享雨景组件新增可选水滴层级，并在用户端背景层使用 `z-index: 0`；动画在 `prefers-reduced-motion` 或页面不可见时释放循环/监听器。该变化只影响装饰性显示和资源占用，不改变业务交互。
+- 新增源码契约测试 `frontend/src/components/layout/__tests__/UserGlassSurface.spec.ts`，确认用户端路由判定、CSS 作用域隔离和 tooltip opt-in。最终本地验证：`pnpm test:run` 为 `294` 个测试文件、`2037` 个测试全部通过；`pnpm typecheck`、`pnpm lint:check`、`pnpm build`、`git diff --check` 均通过。Vite 构建输出到既有 `backend/internal/web/dist`，仅保留既有动态导入、chunk 大小和 Browserslist 警告。
+- 已在本地 Vite `http://127.0.0.1:3100/` 对用户端桌面/移动视口及明暗主题做视觉冒烟：雨景在内容后方，导航和控件可点击，玻璃卡片/表格层级正常，横向滚动和原有错误提示路径未被改变。当前工作树改动尚未提交；本轮未执行服务器操作、线上部署、switch 或 rollback，也未创建新的回滚对象，后续仍沿用既有旧 SubNexus 回滚目标。
+
+## 2026-09-07（Asia/Shanghai）— 用户端玻璃层审核问题修复完成
+
+- 针对审核发现的层级问题，用户端 `RainyBackground` 的 Teleport 水滴 canvas 固定为 `z-index: 9`，位于页面洗色层（`z-index: 1`）之上、主内容（`z-index: 10`）及其内部对话框之下；`.user-glass-surface` 已移除 `isolation: isolate` 和根节点 z-index，避免 body 层 canvas 被整页 stacking context 压到雨景后方。
+- `user-glass-inset` 只在非悬停状态提供默认材质，带有现有 `hover:bg-*` 或 `dark:hover:bg-*` 的快捷操作按钮和最近用量行继续使用原有悬停底色；DataTable sticky 表头与固定列改用明暗主题不透明填充并保留 hover/选中行状态；订单页恢复原始 `OrderTable` 结构，移除额外 `overflow-hidden` 包裹。
+- 新增/更新源码契约覆盖上述四项回归。修复后 `pnpm test:run` 通过 `294` 个测试文件、`2041` 个测试，`pnpm typecheck`、`pnpm lint:check`、`pnpm build` 和 `git diff --check` 均通过。仅完成本地验证，未执行部署、线上切换、回滚或新回滚对象创建。
+
+## 2026-09-07（Asia/Shanghai）— 用户端玻璃层运行时复核与减少动态兜底
+
+- 运行时复核确认层级为 `wash z1 < Teleport 水滴 z9 < main z10`，顶栏 `z30`、侧栏 `z40` 及主内容内部既有弹层层级保持有效；水滴和雨丝 canvas 均为 `pointer-events:none`，不拦截页面操作。
+- 为兼容 `prefers-reduced-motion` 或页面不可见状态，`RainyBackground` 新增 `animated` 通道：用户端仍显示一帧静态雨丝/水滴，动画关闭时不注册 RAF、resize 或点击监听；普通首页默认行为不变。该修正解决浏览器减少动态偏好下 canvas `opacity:0` 导致的视觉缺失。
+- 使用本地 Vite `http://127.0.0.1:3100/` 做桌面 `1440x1000`、移动 `390x844`、深浅主题验收；雨图加载完成，两层 canvas 非空，滚动宽度等于视口宽度，用户菜单、移动侧栏和 `/keys` 导航可用。QA 截图保存在 `F:\MySub2\.playwright-qa\user-surface-desktop-dark.png`、`user-surface-desktop-light.png`、`user-surface-mobile-dark.png`；mock-only 的数据形状错误已排除，生产代码无 pageerror/console error。
+- 最新验证：`pnpm test:run` 为 `294/294` 测试文件、`2041/2041` 测试通过；`pnpm run typecheck`、`pnpm run lint:check`、`pnpm run build`、`git diff --check` 均通过。当前工作树仍未提交；本轮未访问线上、未部署、未执行 switch/rollback、未创建新的回滚对象，继续沿用既有旧 SubNexus 回滚目标。
+
+## 2026-09-08（Asia/Shanghai）— Rain + Glass 线上发布合同更新
+
+- 维护者已批准视觉审核并授权代理完成提交推送、隔离构建、上传安装、候选 Gate、全新在线备份、无停机 prepare、never-started probe、容量处理和最终切换前审计；最终 switch 由维护者手动执行。交接必须给出绑定本轮同一 wrapper/run 的一整行 switch 和一整行 rollback。
+- 本轮发布范围仍仅为用户端背景和卡片材质。复跑完整前端验证为 `294/294` 个测试文件、`2041/2041` 个测试通过，typecheck、lint、production build 与 `git diff --check` 通过；构建只有既有的动态导入、chunk 大小和 Browserslist 警告。候选提交/tree、image、archive、Gate、备份、run 和审计值尚未生成，当前记录不填入推测值。
+- `tools/production-deploy/subnexus-ui-cutover.sh` 的发布合同改为“切换时保留当前 live”：prepare 仍要求历史旧 SubNexus anchor 存在并完整核验，只把当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和 `prepared` 状态写入 manifest，不改变 Docker 状态。最终 switch 停止并重命名该 live，确认其为 stopped 后再启动候选；候选健康后继续保留该 stopped 容器作为本轮新回滚目标。
+- 本轮 rollback 只恢复新回滚目标，不再恢复更早的历史 SubNexus。新目标缺失，或 ID、`.Image`、`.Config.Image`、名称、runtime contract 任一漂移时必须失败关闭；不采用预创建 stopped anchor、`docker commit` 或额外回滚镜像。
+- 历史 anchor、旧容器、旧镜像和历史备份在空间足够时保留。只有新 run 已成功 prepare、磁盘证据确认不足、待删对象的完整身份/路径/SHA 与无引用状态逐项确认并保存 root-only 清理记录后，才可精确删除已确认无用的历史数据。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理；本轮新回滚目标、run、备份和最终审计不得删除。
+- 2026-09-07 第 14 节发布记录保持历史事实；其 switch 已消费，旧 rollback 在本轮新发布交接中撤回。当前唯一现行交接为切换手册第 15 节，具体命令需等全部前置证据完成后生成。
