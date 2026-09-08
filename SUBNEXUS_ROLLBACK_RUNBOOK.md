@@ -36,7 +36,7 @@ curl -fsS --max-time 8 https://<公网健康域名>/health
 
 ### 早期历史回滚命令已撤回
 
-早期脚本、SHA 和失败/已覆盖 run 仅作审计事实保留，不得作为新的 `prepare`/`switch` 输入；失败或已覆盖 run 也不是 rollback 入口。切换手册第 10/11/12 节及第 13 节的 switch/rollback 命令正文已撤回，状态标记为 `WITHDRAWN/CLOSED after retained-UI switch`。当前唯一可执行入口是切换手册第 14 节同 run rollback，由维护者手动执行，默认不恢复 PostgreSQL/Redis。
+早期脚本、SHA 和失败/已覆盖 run 仅作审计事实保留，不得作为新的 `prepare`/`switch` 输入；失败或已覆盖 run 也不是 rollback 入口。切换手册第 10/11/12/13/14 节的 switch/rollback 命令均已撤回。当前尚无可执行入口；只有本轮全部前置门禁完成后，切换手册第 15 节登记的同一 wrapper/run `switch` 与 `rollback` 才有效，且默认不恢复 PostgreSQL/Redis。
 
 ## 3. 应用无法启动
 
@@ -106,5 +106,5 @@ wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh`
 - prepared manifest 必须固定新目标的 `ui_new_rollback_id`、`ui_new_rollback_image`、`ui_new_rollback_config_image`、`ui_new_rollback_name=production-app-ui-prior-<run-id>` 和 `ui_new_rollback_state=prepared`。任一字段缺失、格式错误或与 live 不一致都必须失败关闭。
 - 最终 `switch` 由维护者执行。wrapper 停止当前 live、按唯一名称重命名、验证其 `stopped` 状态及完整身份后才启动候选；候选健康并提交成功后，该 stopped 容器继续保留为本轮新回滚目标，不得删除、`docker commit` 或转换为另一套回滚方案。
 - 本轮 `rollback` 仅删除经精确身份校验的候选并恢复新目标到生产名称；不恢复历史旧 SubNexus，不默认恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关。新目标缺失，或 ID、`.Image`、`.Config.Image`、名称、runtime contract 任一漂移时，回滚必须停止并保留现场。
-- 历史 anchor、旧容器、旧镜像和历史备份在空间足够时保留。只有本轮 `prepare` 成功后，磁盘证据确认不足并形成精确对象清单、完整身份与 SHA 记录时，才可删除已确认无用的历史数据；历史 anchor 被删除后，本轮 switch/rollback 仍只依赖新目标。不得执行 `docker system prune`、`docker volume prune` 或模糊清理，新目标和本轮 run/备份/审计不得纳入清理。
-- 候选提交、镜像、wrapper SHA、run、备份和最终审计仍待生成；当前没有可执行的本轮 rollback 命令。完成切换前全部门禁后，唯一命令只登记在切换手册第 15 节。
+- 历史 anchor 不是本轮恢复对象，但现行 wrapper 仍要求它及其容器/镜像在整个 switch/rollback 窗口保持完整，任何无证据缺失都会失败关闭。空间足够时继续保留全部历史数据；空间不足时，只能在形成精确对象清单、完整身份与 SHA 记录后删除其他已确认无用的历史 run 备份或无引用垃圾。不得执行 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、新目标和本轮 run/备份/审计不得纳入清理。
+- 候选 commit/tree 将由紧随本次发布提交的只读记账提交固定；UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`。镜像、run、备份和最终审计仍待生成；当前没有可执行的本轮 rollback 命令。完成切换前全部门禁后，唯一命令只登记在切换手册第 15 节。

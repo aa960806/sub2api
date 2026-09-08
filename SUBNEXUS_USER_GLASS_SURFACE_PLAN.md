@@ -79,7 +79,7 @@
 - 不修改依赖锁文件、后端、数据库、路由守卫或生产配置。
 - 上游更新前先同步上游分支，再在本分支解决布局文件的局部冲突；完成 typecheck、构建和用户端冒烟后再合并。
 - 本批发布必须建立新的生产回滚目标。`prepare` 先完整核验历史旧 SubNexus anchor，并只把当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一目标名称和运行状态写入 manifest，不改变 Docker 状态；维护者执行最终 `switch` 时，wrapper 停止并把该 live 重命名为 `production-app-ui-prior-<run-id>`，以 stopped 容器形式保留，随后才创建并启动候选。
-- 本轮 `rollback` 只恢复上述新保留的切换前 live，不再恢复更早的历史 SubNexus。历史 anchor 和旧备份在空间足够时保留；只有新 run 已成功 `prepare`、空间证据确认不足、删除对象身份逐项核实并保存清理审计时，才允许精确删除历史 anchor/旧对象。不得使用 `docker system prune`、`docker volume prune` 或模糊匹配清理，本轮新的回滚目标不得纳入任何清理。
+- 本轮 `rollback` 只恢复上述新保留的切换前 live，不再恢复更早的历史 SubNexus。现行 wrapper 仍把历史 anchor 作为贯穿 switch/rollback 窗口的连续性门禁，因此该 anchor 及其容器/镜像不得删除；空间不足时只能在逐项核实身份并保存清理审计后，精确删除其他已失效 run 备份或无引用垃圾。不得使用 `docker system prune`、`docker volume prune` 或模糊匹配清理，本轮新的回滚目标不得纳入任何清理。
 
 ## 7. 验收标准
 
@@ -93,4 +93,4 @@
 - 用户端背景、作用域玻璃材质和绕过公共类的语义标记已实施；管理端、认证页、公开页和外部支付流程继续隔离。
 - 审核发现的四项问题已修复：Teleport 水滴层级可见；快捷操作和最近用量 hover 保留；DataTable sticky 表头/列使用不透明主题底色；订单表移除额外裁切包裹并恢复原结构。
 - 桌面/移动与明暗主题视觉冒烟通过；Vitest `294/294` 文件、`2041/2041` 测试、typecheck、lint、production build 和 `git diff --check` 通过。
-- 线上发布前置仍在进行，候选提交、镜像、Gate、备份、prepare run 和最终审计按实际结果回填到切换手册第 15 节及迁移台账；最终 switch 由维护者手动执行。
+- 线上发布前置仍在进行；包含回滚状态机复核的发布提交完成后，由紧随的只读记账提交固定候选 commit/tree。镜像、Gate、备份、prepare run 和最终审计按实际结果回填到切换手册第 15 节及迁移台账，最终 switch 由维护者手动执行。

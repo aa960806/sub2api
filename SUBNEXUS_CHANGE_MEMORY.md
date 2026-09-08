@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-08 Asia/Shanghai）：2026-09-07 retained-UI 发布事实保留为历史；本轮 Rain + Glass 用户端视觉更新已通过审核和完整本地前端门禁，线上发布前置尚在进行。候选提交、镜像、Gate、全新备份、prepare run 和最终审计必须按实际结果在文末追加。最终 switch 由维护者执行；本轮将在 switch 时保留切换前 live 为新的 stopped 回滚目标，rollback 只恢复该目标。当前状态取信于文末最新记录和切换手册第 15 节。
+> 当前权威状态（2026-09-08 Asia/Shanghai）：2026-09-07 retained-UI 发布事实保留为历史；本轮 Rain + Glass 用户端视觉更新已通过审核、完整本地前端门禁和回滚状态机复核，候选 commit/tree 将由紧随本次发布提交的只读记账提交固定，线上发布前置尚在进行。镜像、Gate、全新备份、prepare run 和最终审计必须按实际结果在文末追加。最终 switch 由维护者执行；本轮将在 switch 时保留切换前 live 为新的 stopped 回滚目标，rollback 只恢复该目标。当前状态取信于文末最新记录和切换手册第 15 节。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1516,8 +1516,8 @@
 ## 2026-09-08（Asia/Shanghai）— Rain + Glass 线上发布合同更新
 
 - 维护者已批准视觉审核并授权代理完成提交推送、隔离构建、上传安装、候选 Gate、全新在线备份、无停机 prepare、never-started probe、容量处理和最终切换前审计；最终 switch 由维护者手动执行。交接必须给出绑定本轮同一 wrapper/run 的一整行 switch 和一整行 rollback。
-- 本轮发布范围仍仅为用户端背景和卡片材质。复跑完整前端验证为 `294/294` 个测试文件、`2041/2041` 个测试通过，typecheck、lint、production build 与 `git diff --check` 通过；构建只有既有的动态导入、chunk 大小和 Browserslist 警告。候选提交/tree、image、archive、Gate、备份、run 和审计值尚未生成，当前记录不填入推测值。
+- 本轮发布范围仍仅为用户端背景和卡片材质。复跑完整前端验证为 `294/294` 个测试文件、`2041/2041` 个测试通过，typecheck、lint、production build 与 `git diff --check` 通过；构建只有既有的动态导入、chunk 大小和 Browserslist 警告。UI wrapper 32 个故障/恢复/source-contract 场景已在 Git Bash 与 WSL/Linux 通过，build/gate/UI wrapper SHA256 分别为 `cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3`、`7aed2fbd5a5024b670cb544def5f85f70ee3830a2a720d9abd5e670c0c640ff7`、`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，wrapper test SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`。候选 commit/tree 将由紧随本次发布提交的只读记账提交固定；image、archive、Gate、备份、run 和审计值尚未生成，当前记录不填入推测值。
 - `tools/production-deploy/subnexus-ui-cutover.sh` 的发布合同改为“切换时保留当前 live”：prepare 仍要求历史旧 SubNexus anchor 存在并完整核验，只把当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和 `prepared` 状态写入 manifest，不改变 Docker 状态。最终 switch 停止并重命名该 live，确认其为 stopped 后再启动候选；候选健康后继续保留该 stopped 容器作为本轮新回滚目标。
 - 本轮 rollback 只恢复新回滚目标，不再恢复更早的历史 SubNexus。新目标缺失，或 ID、`.Image`、`.Config.Image`、名称、runtime contract 任一漂移时必须失败关闭；不采用预创建 stopped anchor、`docker commit` 或额外回滚镜像。
-- 历史 anchor、旧容器、旧镜像和历史备份在空间足够时保留。只有新 run 已成功 prepare、磁盘证据确认不足、待删对象的完整身份/路径/SHA 与无引用状态逐项确认并保存 root-only 清理记录后，才可精确删除已确认无用的历史数据。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理；本轮新回滚目标、run、备份和最终审计不得删除。
+- 历史 anchor 不再是本轮实际恢复对象，但现行 wrapper 仍要求其容器/镜像与证据贯穿 switch、失败恢复和 rollback 窗口保持完整，缺失时失败关闭。空间足够时保留其他历史数据；磁盘证据确认不足时，只能在待删对象的完整身份/路径/SHA 与无引用状态逐项确认并保存 root-only 清理记录后，精确删除其他失效 run 备份或垃圾。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理；历史 anchor、本轮新回滚目标、run、备份和最终审计不得删除。
 - 2026-09-07 第 14 节发布记录保持历史事实；其 switch 已消费，旧 rollback 在本轮新发布交接中撤回。当前唯一现行交接为切换手册第 15 节，具体命令需等全部前置证据完成后生成。

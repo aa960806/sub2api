@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v2.7（2026-09-08，Rain + Glass 用户端视觉更新待线上 prepare）
-> 当前权威状态：2026-09-07 候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 的上线事实保留为历史，本轮以其为预期生产 base，只统一登录后用户端的雨景背景和毛玻璃卡片材质，业务合同保持不变。本地 UI 审核及完整前端验证已通过；本轮候选提交、镜像、Gate、全新备份、run 和最终审计仍待生成。历史 run 不得作为新的 `prepare`/`switch` 输入；现行发布与回滚合同见文末 2026-09-08 章节及切换手册第 15 节。
+> 当前权威状态：2026-09-07 候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 的上线事实保留为历史，本轮以其为预期生产 base，只统一登录后用户端的雨景背景和毛玻璃卡片材质，业务合同保持不变。本地 UI 审核、完整前端验证与回滚状态机复核已通过；本轮候选代码将在本次发布提交后由紧随的只读记账提交固定完整 SHA/tree，线上镜像、Gate、全新备份、run 和最终审计仍待生成。历史 run 不得作为新的 `prepare`/`switch` 输入；现行发布与回滚合同见文末 2026-09-08 章节及切换手册第 15 节。
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -273,7 +273,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 1. 只读 `preflight`：从 live app inspect 派生数据库容器、网络、端口、挂载和 health；数据库会话启用 `BEGIN READ ONLY` 与 `default_transaction_read_only=on`；不执行迁移、构建、重启或切流。
 2. 迁移 `apply`：只接受审核后的完整 40 位 release SHA；旧应用继续服务；先生成并验证 PostgreSQL custom-format 备份，再使用 advisory lock、语句超时、文件 checksum 和逐迁移事务执行。
 3. 部署 `cutover`：构建使用审核后的 release ref；保存旧容器/镜像/运行元数据；候选健康、鉴权 smoke、非 root、`NoNewPrivs`、restart count 失败时自动回滚。
-4. 手工回滚：本轮 manifest 已离开 `prepared` 且 switch 进程已退出；第 13 节旧 Rain rollback 窗口已关闭，当前仅在确需恢复固定旧 SubNexus 时使用第 14 节同 run `rollback`。switch 进程运行中只等待其返回，不并发执行任何 rollback，wrapper 会在失败路径自动尝试恢复切换前当前容器。不得使用旧占位脚本或把带有 `exit` 的长逻辑直接粘贴进交互式 SSH。
+4. 手工回滚：本轮 manifest 已离开 `prepared` 且 switch 进程已退出后，只能使用切换手册第 15 节同一 wrapper/run 的 `rollback` 恢复切换时保留的 live 新目标。第 13/14 节历史 rollback 均已关闭；switch 进程运行中只等待其返回，不并发执行任何 rollback，wrapper 会在失败路径自动尝试恢复切换前当前容器。不得使用旧占位脚本或把带有 `exit` 的长逻辑直接粘贴进交互式 SSH。
 5. 所有脚本都必须打印非敏感选择结果（SHA、容器名、网络、端口、备份路径）供人工复核，但绝不输出 `.env`、JWT/TOTP、数据库密码、API Key、Cookie 或私钥。
 
 代码迁移分支在本地完成全部批次并经维护者验收后才推送；从已验收的迁移分支固定独立、不可变的 release ref，再按同一个完整 SHA 执行生产预检和切换。`main` 保持不直接修改，除非维护者另行批准合并。
@@ -333,9 +333,9 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 1. 在 `feature/subnexus-migration` 同步 `upstream/main`，复核上游新增功能和迁移文件，`main` 保持不直接修改。
 2. 依次完成 Batch 1 → Batch 2 → Batch 3 → Batch 4，所有功能独立且默认关闭；明确排除每日消耗转盘、红包雨、运行日历和 Media Studio/Creative Workshop。
 3. 完成 Batch 5 的后端、前端、隔离 PostgreSQL/Redis、候选主机、旧版本回滚矩阵和 Docker runtime gate，向维护者提交本地验收报告；旧线上 `prepare` 证据仅作历史记录，不能替代新 run。
-4. 历史失败及已切换 run 均不得作为新的 `prepare`/`switch` 输入。上一轮 UI run `/srv/subnexus-migration/cutover/20260906134705-774592` 已完成 switch；当前生产应用 healthy，固定旧 SubNexus 仍单独保留供 rollback。第 13 节旧 Rain rollback 窗口已因后续 retained-UI switch 关闭；当前恢复只使用本轮第 14 节同 run rollback。数据库未恢复，磁盘余量和备份保留策略继续有效。
+4. 历史失败及已切换 run 均不得作为新的 `prepare`/`switch` 输入。上一轮 UI run `/srv/subnexus-migration/cutover/20260906134705-774592` 和 retained-UI run `/srv/subnexus-migration/cutover/20260907045159-1121373` 均已完成 switch；其第 13/14 节 rollback 入口现已关闭。完成本轮门禁后，当前恢复只使用第 15 节同一新 run rollback；历史固定旧 SubNexus 仅承担 prepare 连续性审计，数据库未恢复，磁盘余量和备份保留策略继续有效。
 
-线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；上一轮 run `/srv/subnexus-migration/cutover/20260906134705-774592` 保留 `READY=prepared`、`UI_READY=application-refresh-v1` 的准备标记，并新增 `SWITCHED=switched`。切换后备份/sidecar、Gate、runtime/settings、应用数据身份、固定 anchor 及公网首页均已复核。该 run 的 switch 命令已经消费且不得作为新切换输入；其第 13 节 rollback 窗口已因后续 retained-UI switch 关闭，当前恢复只使用本轮第 14 节同 run rollback。
+线上 PostgreSQL `schema_migrations`/`atlas_schema_revisions`、Redis/存储拓扑和前序备份证据已经取得；上一轮 run `/srv/subnexus-migration/cutover/20260906134705-774592` 保留 `READY=prepared`、`UI_READY=application-refresh-v1` 和 `SWITCHED=switched` 历史证据。其 switch 已消费，第 13 节 rollback 已因后续 retained-UI switch 关闭；retained-UI 第 14 节 rollback 也已随本轮发布开始撤回。历史证据不得作为新切换输入，当前入口只能在本轮全新 prepare 后登记于第 15 节。
 
 ## 2026-09-05 v0.2.1 发布前历史快照（已被本轮状态覆盖）
 
@@ -386,14 +386,14 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 10. 严格最终审计脚本 SHA256=`5239d9c17d03f7bd6dce24daed7e2c1d8216d9e98b854cafec4a364fec13f7f6`、evidence SHA256=`9dc1293e6ab16af8b1f805b30e39eba5ecfa55e2b07015ae251a308b70c234ea` 为切换前 `FINAL_PRE_SWITCH_AUDIT=passed` 历史证据；切换后审计脚本 SHA256=`d5652bda85a82e5eaa20db5f5b80a86c691bcdbbb10f58d199636f0ff7f6766d`、evidence SHA256=`58edc5b2d6e3ca6535ae10741ce4aed9275609f5d5e8dad1c48407372349afb9`，结果为 `POST_SWITCH_AUDIT=passed`。rollback 恢复固定旧 SubNexus，不恢复 PostgreSQL/Redis，不修改 Nginx/开关，也不创建新的永久回滚对象。
 11. 维护者已完成 switch：`UI_SWITCH_COMPLETED=/srv/subnexus-migration/cutover/20260907045159-1121373`，`SWITCHED=switched`，无 `ROLLED_BACK`；切换后 manifest `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`。当前候选 ID=`232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`、image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`，`running/healthy/restart=0`；旧 live、temporary、gate/probe 资源已清理。切换后唯一设置变化为管理员 PUT 写入的 `subnexus_invite_activities_config`，未回写或恢复。
 12. 公网 `https://yydsapi.uno` 桌面 `1440x1000` 与移动 `390x844` 验收通过；三张 Rain 图片和双 Canvas 正常，无页面错误、请求失败或横向溢出；配置驱动的站点名、Logo、副标题、语言、主题、文档、模型广场、登录入口和客服开关行为均符合现有实现。清理证据 `/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt`，SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558`。
-13. 当前唯一人工恢复入口是切换手册第 14 节绑定同一 run 的 rollback；switch 已消费，禁止重跑。该命令只在 switch 进程已退出、manifest 已离开 `prepared` 且确需恢复固定旧 SubNexus 时使用；不创建新的永久回滚对象。
+13. 该轮当时的人工恢复入口曾是切换手册第 14 节同 run rollback；现已随 2026-09-08 新发布开始而撤回。其 switch 已消费并禁止重跑，历史命令不得再作为当前恢复入口。
 
 ## 15. 用户端 Rain + Glass 线上更新计划（2026-09-08，现行）
 
 1. 发布范围仅为 `AppLayout` 下登录后非管理端用户页面的同源雨景背景和毛玻璃容器材质，以及为层级、hover、sticky 表格可读性和订单结构恢复所需的视觉修正。API、后端、数据库迁移、路由、权限、配置、功能开关、请求参数、按钮事件和业务状态不变。
-2. 本地审核后的基线为 `294/294` 个 Vitest 文件、`2041/2041` 个测试通过，typecheck、只读 lint、生产 build 与 `git diff --check` 通过；UI wrapper 的故障/恢复矩阵必须在最终提交后重新通过。候选提交/tree、镜像、归档和脚本 SHA 只能在实际生成后登记，当前不得伪造或沿用旧值。
+2. 本地审核后的基线为 `294/294` 个 Vitest 文件、`2041/2041` 个测试通过，typecheck、只读 lint、生产 build 与 `git diff --check` 通过；UI wrapper 32 个故障/恢复/source-contract 场景已在 Git Bash 和 WSL/Linux 通过。候选 commit/tree 将由紧随本次发布提交的只读记账提交固定；build/gate/UI wrapper SHA256 分别为 `cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3`、`7aed2fbd5a5024b670cb544def5f85f70ee3830a2a720d9abd5e670c0c640ff7`、`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，wrapper test SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`；镜像和归档仍只能在实际生成后登记。
 3. 发布顺序固定为：提交并推送不可变候选；隔离构建；上传固定制品；服务器 Docker candidate Gate；线上只读生产身份/容量核验；全新备份和无停机 `prepare`；never-started probe；最终切换前审计；维护者手动 `switch`。代理停在最后一步之前。
-4. `prepare` 必须先确认历史 SubNexus anchor 存在且完整，通过后只将当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一目标名和 `running` 状态写入 manifest，不停止、重命名或创建容器。
+4. `prepare` 必须先确认历史 SubNexus anchor 存在且完整，通过后只将当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一目标名和 `ui_new_rollback_state=prepared` 写入 manifest，不停止、重命名或创建容器。
 5. `switch` 停止并把切换前 live 重命名为 `production-app-ui-prior-<run-id>`，将其作为本轮 stopped 回滚目标保留，再创建并启动候选。候选健康后不得清理该目标；`rollback` 只恢复该目标，不再恢复更早的历史 SubNexus。
-6. 历史 anchor、旧容器、旧镜像和历史备份在空间足够时继续保留。空间不足时，仅可在新 run 已成功 `prepare` 后，根据完整 ID/路径/SHA 和未被引用证据精确删除已确认无用的历史数据并保存审计；不得宽泛 prune，也不得删除本轮新回滚目标、run、备份或审计证据。
+6. 历史 anchor 不是本轮恢复对象，但现行 wrapper 仍要求它及其容器/镜像贯穿 switch/rollback 窗口保持完整。空间足够时继续保留全部历史数据；空间不足时，仅可根据完整 ID/路径/SHA 和未被引用证据精确删除其他已确认无用的历史 run 备份或垃圾并保存审计；不得宽泛 prune，也不得删除历史 anchor、本轮新回滚目标、run、备份或审计证据。
 7. 最终交接必须明确列出候选 SHA/tree、image ID、归档 SHA、wrapper/controller SHA、Gate evidence、run/manifest、备份、probe、最终审计，以及新回滚目标五项身份。只交付绑定同一 wrapper/run 的一整行 `switch` 和一整行 `rollback` 命令。

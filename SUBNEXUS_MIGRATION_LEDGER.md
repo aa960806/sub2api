@@ -41,7 +41,7 @@
 | 编号 | 门禁 | 状态 | 证据/备注 |
 | --- | --- | --- | --- |
 | B0-5 | 线上容器/数据库/Redis 只读状态 | 通过 | 固定脚本与 SHA256 校验通过；证据 `/srv/subnexus-migration/preflight/20260903072817/evidence.txt`，无迁移或部署 |
-| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 最终 prepare 通过 | 当前 run `/srv/subnexus-migration/cutover/20260907045159-1121373` 的 PostgreSQL/Redis/应用归档及设置快照、manifest、sidecar SHA256 全部通过；上一版 `20260906134705-774592` 与其他历史 run 的备份不得作为新的 `prepare`/`switch` 输入 |
+| B0-6 | 线上 PostgreSQL、Redis 与应用数据备份 | 本轮待执行 | 上一轮 run `/srv/subnexus-migration/cutover/20260907045159-1121373` 的 PostgreSQL/Redis/应用归档及设置快照、manifest、sidecar SHA256 当时全部通过，但现仅作历史证据；本轮必须生成全新备份与 run，任何历史 run 均不得作为新的 `prepare`/`switch` 输入 |
 | B0-7 | 生产备份隔离恢复、候选迁移和旧版本回归 | 通过（Docker 候选 gate 通过；待维护者人工验收） | PostgreSQL 18.4 恢复、Redis 8.8.0 RDB 隔离加载、真实克隆 migration/adoption、关闭态候选启动、旧版 0.1.135 回归及 Docker 候选 runtime gate 均通过；当前服务器复核的 gate 证据 `20260904T110814Z-be48efa2-3133-4c27-bc9f-a7cbf1d221c9`，evidence SHA=`1871ed998b92157e30c90daf3c0957570390a67df2fddc273164fe173712de61`，`result=passed`、`cleanup_failed=false`、迁移数 290、重启前后一致；`cutover_allowed=false`、`manual_review_required=true`，不得据此自动切换 |
 
 ## 上一版人工交接历史快照（2026-09-06 23:25 Asia/Shanghai）
@@ -316,16 +316,16 @@
 | 项目 | 状态 | 证据/约束 |
 | --- | --- | --- |
 | 变更范围 | 审核通过 | 仅登录后非管理端用户页面的背景和卡片材质；API、后端、数据库迁移、路由、权限、配置、开关、按钮事件和业务状态不变 |
-| 本地门禁 | 通过 | `294/294` 个 Vitest 文件、`2041/2041` 个测试通过；typecheck、lint、build、`git diff --check` 通过；wrapper 最终矩阵须按提交后文件重新记录 |
+| 本地门禁 | 通过 | `294/294` 个 Vitest 文件、`2041/2041` 个测试通过；typecheck、lint、build、`git diff --check` 通过；UI wrapper 32 个故障/恢复/source-contract 场景在 Git Bash 与 WSL/Linux 通过 |
 | 生产 base | 待线上复核 | 预期为 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；必须由 live image provenance 与完整容器身份现场确认 |
-| 候选提交/tree | 待生成 | 当前改动尚未形成不可变候选；提交、推送和 tree 校验后填写，禁止沿用历史 SHA |
+| 候选提交/tree | 固定中 | 本次发布提交包含 UI、回滚状态机、测试与一致性文档；完整 commit/tree 在该提交形成后由紧随的只读记账提交固定，base `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 必须为其祖先，后续记账提交不得替代镜像构建 SHA |
 | 候选镜像/归档 | 待生成 | 隔离构建后填写完整 image ID、归档路径、SHA256 和大小 |
-| UI wrapper/controller | 待固定 | wrapper 提交后填写 Git blob/本地/服务器三方 SHA；原控制器路径和 SHA 也须现场复核 |
+| UI wrapper/controller | 本地已固定，服务器待核验 | target Git blob/本地 UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`；原控制器预期 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，服务器路径、owner/mode 与 SHA 仍须现场复核 |
 | Docker Gate | 待执行 | 需记录 evidence 路径/SHA，且 `result=passed`、`cleanup_failed=false`、生产身份未改变 |
 | 在线备份/prepare | 待执行 | 必须建立全新 run 和全新 PostgreSQL/catalog/Redis/应用数据备份；`READY=prepared`、`UI_READY=application-refresh-v1` 前不得交付命令 |
 | 历史 anchor 门禁 | 强制 | `prepare` 时旧 SubNexus anchor 必须存在并完整校验；缺失或漂移必须失败关闭 |
 | 本轮新回滚目标 | 待 prepare 固定 | manifest 必须记录切换前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和 `prepared` 状态；prepare 不改变 Docker 状态 |
 | Switch 行为 | 待维护者 | 停止并重命名切换前 live、验证其为 stopped 新回滚目标，再启动候选；候选健康后继续保留该目标 |
 | Rollback 行为 | 已冻结合同 | 只恢复本轮新目标，不恢复历史 SubNexus；新目标任一身份或 runtime 字段漂移时失败关闭，不默认恢复数据库，不修改 Nginx/开关 |
-| 空间与旧数据 | 条件保留 | 空间足够则保留历史 anchor/容器/镜像/备份；不足时只可在 prepare 成功后按完整身份和路径精确删除已确认无用的历史数据并留审计。禁止任何 prune；本轮新目标和新 run 证据不可删除 |
+| 空间与旧数据 | 条件保留 | 历史 anchor 不是本轮恢复对象，但现行 wrapper 要求其容器/镜像与证据贯穿 switch/rollback 窗口保持完整；空间足够则保留其他历史数据，不足时只可按完整身份和路径精确删除其他已失效 run 备份或无引用垃圾并留审计。禁止任何 prune；历史 anchor、本轮新目标和新 run 证据不可删除 |
 | 人工边界 | 未到切换 | 代理完成候选、Gate、备份、prepare、probe 和最终审计后停下；只交付绑定同一 wrapper/run 的一整行 switch 与一整行 rollback |

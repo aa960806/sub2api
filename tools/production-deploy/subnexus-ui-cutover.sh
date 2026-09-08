@@ -269,24 +269,19 @@ ui_assert_anchor() (
   ui_anchor_context "$anchor" "$old_id" "$old_image" "$old_name" "$anchor_hash" "${1:-stopped}"
 )
 
-# The historical fixed rollback run is captured during prepare so it can be
-# audited and retained when space permits.  The newly retained old-live
-# container is the rollback target for this UI run, so a later, explicitly
-# audited cleanup may remove the historical run without disabling this run's
-# rollback path.  If the historical run still exists, validate it fully.
+# The historical fixed rollback run is captured during prepare and remains a
+# continuity gate for this run. Missing evidence must fail closed; deleting an
+# anchor requires a separately reviewed retirement state machine, which this
+# wrapper intentionally does not infer from path absence.
 ui_assert_anchor_if_present() {
   local anchor anchor_state anchor_hash
   anchor="$(manifest_value ui_anchor_run)"
   anchor_state="$(manifest_value ui_anchor_state)"
   anchor_hash="$(manifest_value ui_anchor_manifest_sha256)"
   [[ -n "$anchor" ]] || fail 'historical rollback anchor is missing from the UI manifest'
-  if [[ -e "$anchor" || -L "$anchor" ]]; then
-    [[ "$anchor_state" == present && "$anchor_hash" =~ ^[0-9a-f]{64}$ ]] || fail 'historical rollback anchor presence does not match its manifest state'
-    ui_assert_anchor "${1:-stopped}"
-  else
-    [[ "$anchor_state" == present && "$anchor_hash" =~ ^[0-9a-f]{64}$ ]] || fail 'historical rollback anchor was not captured as present during prepare'
-    log 'Historical rollback anchor is absent; using the retained new UI rollback target.'
-  fi
+  [[ "$anchor_state" == present && "$anchor_hash" =~ ^[0-9a-f]{64}$ ]] || fail 'historical rollback anchor presence does not match its manifest state'
+  [[ -e "$anchor" || -L "$anchor" ]] || fail 'historical rollback anchor is absent without an approved retirement contract'
+  ui_assert_anchor "${1:-stopped}"
 }
 
 ui_validate_optional_anchor_path() {
@@ -612,6 +607,9 @@ ui_manual_rollback() {
   new_state="$(manifest_value ui_state)"
   if [[ "$new_state" == rolled_back_to_new ]]; then
     ui_assert_anchor_if_present
+    ui_assert_new_rollback_contract any
+    preserved_name="$temp"
+    restore_preserved_container || fail 'new rollback target did not recover health'
     ui_assert_new_rollback_contract restored
     ui_assert_settings_unchanged
     log "UI_ROLLBACK_NEW_ALREADY_COMPLETED=$new_id"
@@ -620,10 +618,13 @@ ui_manual_rollback() {
   ui_assert_anchor_if_present
   observed="$(inspect_container_id_or_empty "$app_name")" || fail 'cannot inspect production name before new-target rollback'
   if [[ "$observed" == "$new_id" ]]; then
-    ui_assert_new_rollback_contract restored
+    ui_assert_new_rollback_contract any
     manifest_set state rolling_back
     manifest_set ui_state rolling_back
+    preserved_name="$temp"
+    restore_preserved_container || fail 'new rollback target did not recover health'
     manifest_set ui_new_rollback_state restored
+    ui_assert_new_rollback_contract restored
     ui_assert_settings_unchanged
     write_run_marker ROLLED_BACK rolled_back
     manifest_set state rolled_back

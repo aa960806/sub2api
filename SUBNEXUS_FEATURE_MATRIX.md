@@ -109,7 +109,7 @@
 - `2026-09-06T15:19:27Z` 启动的切换后只读审计最终输出 `POST_SWITCH_AUDIT=passed` 且退出码为 `0`；PostgreSQL/Redis 身份、全部备份/sidecar、runtime、18 键设置、应用数据身份和固定 anchor 均通过。
 - 公网 `https://yydsapi.uno` 的 Playwright `1440x1000`/`390x844` 验收通过：无页面错误或溢出，三张图片与两层 Canvas 正常；文档、模型广场、登录、语言、主题以及配置驱动的站名/Logo/副标题正常。客服因既有开关为 `false` 不显示，符合原功能合同；JSON 报告 SHA256=`9851d28cc2645f79e4325b744fb1c8f80cc25cefae1f338c97eef7ac3d687855`。
 - 此次只切换首页 UI，未改变 F01-F13 表格中的业务验收结论，也未新建回滚对象或执行 rollback。固定旧 SubNexus `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee` / image `sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd` / anchor `20260905085804-4072165` 仍为唯一回滚目标，exited/restart=0。
-- 该轮 run 不得作为新的 `prepare`/`switch` 输入，已消费的 switch 禁止重跑；其第 13 节 rollback 窗口已因后续 retained-UI switch 关闭，命令状态为 `WITHDRAWN/CLOSED after retained-UI switch`。当前生产恢复只使用本轮 retained-UI run 的同 run rollback。
+- 该轮 run 不得作为新的 `prepare`/`switch` 输入，已消费的 switch 禁止重跑；其第 13 节 rollback 窗口已因后续 retained-UI switch 关闭，命令状态为 `WITHDRAWN/CLOSED after retained-UI switch`。retained-UI 第 14 节 rollback 也已随 2026-09-08 Rain + Glass 发布开始撤回；完成新门禁后只使用第 15 节同一新 run rollback。
 
 ## 2026-09-07 保留功能用户端 UI 对齐状态
 

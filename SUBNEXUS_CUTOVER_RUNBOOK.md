@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态：2026-09-08（Asia/Shanghai）。2026-09-07 保留二开用户端界面发布事实完整保留在第 14 节；本轮“用户端雨景背景 + 毛玻璃卡片”仅修改显示层，本地审核和完整前端门禁已通过，线上新候选提交、镜像、Gate、备份与 `prepare` 值仍待本轮流程生成。第 15 节是唯一现行发布交接；在其具体值全部核验前，不得使用任何历史 `switch`/`rollback` 命令。
+> 当前权威状态：2026-09-08（Asia/Shanghai）。2026-09-07 保留二开用户端界面发布事实完整保留在第 14 节；本轮“用户端雨景背景 + 毛玻璃卡片”仅修改显示层，本地审核和完整前端门禁已通过，候选代码提交及发布脚本哈希已固定，线上镜像、Gate、备份与 `prepare` 值仍待本轮流程生成。第 15 节是唯一现行发布交接；在其具体值全部核验前，不得使用任何历史 `switch`/`rollback` 命令。
 
 本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、历史 anchor、新回滚目标身份和 never-started probe 均核验完成之后。本轮最终 `switch` 仍由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
 
@@ -146,7 +146,7 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 2. 先访问候选本地端口 `/health`、登录、用户/API Key、余额、订阅、订单、用量、模型列表和管理端只读接口。
 3. 检查容器 UID、`NoNewPrivs`、重启次数、日志中的 migration/SQL/panic 错误。本轮继续使用既有入口，不修改 Nginx/Cloudflare 配置或端口。
 4. 切流后执行公网健康、登录、网关只读请求和支付回调模拟；观察至少一个完整任务/结算周期。
-5. 功能开关启用属于另一次业务发布，本轮 UI 发布不启用额外功能。任一异常保留日志和数据现场，按本轮固定旧对象回滚流程处理，禁止直接删除新表。
+5. 功能开关启用属于另一次业务发布，本轮 UI 发布不启用额外功能。任一异常保留日志和数据现场，只按第 15 节同一 wrapper/run 恢复切换时保留的 live 新回滚目标，禁止直接删除新表。
 
 ## 6. 数据核对
 
@@ -316,9 +316,9 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 | 固定项 | 本轮状态 |
 | --- | --- |
 | 生产 base | `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；最终仍须由线上 live image provenance 实时确认 |
-| 候选提交/tree | 待本轮 UI、wrapper 和文档提交完成后填写；必须已推送并与隔离构建 source/tree 完全一致 |
+| 候选提交/tree | 本次发布提交包含 UI、回滚状态机、测试与一致性文档；完整 commit/tree 在该提交形成后由紧随的只读记账提交固定，base=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`，后续记账提交不得替代镜像构建 SHA |
 | 候选镜像/归档 | 待隔离构建生成并填写完整 image ID、归档路径、归档 SHA256 和大小 |
-| UI wrapper | 待提交后填写固定服务器路径、Git blob SHA256 和安装后 SHA256；三者必须一致 |
+| UI wrapper | target Git blob/本地 SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`；测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`；服务器唯一路径与安装后 SHA 待上传时填写 |
 | 原控制器 | 沿用已审核控制器时仍须实时核对固定路径和 SHA256，不得从历史章节直接假定 |
 | Docker Gate | 待服务器候选 Gate 通过后填写 evidence 路径/SHA256；必须 `result=passed`、`cleanup_failed=false`，且生产身份前后不变 |
 | 在线备份/prepare | 待生成全新 run；必须包含本轮 PostgreSQL、catalog、Redis、应用数据归档、全部 sidecar、设置快照和 runtime contract，不得复用第 14 节备份或 run |
@@ -330,7 +330,7 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 1. `prepare` 前历史 SubNexus anchor `/srv/subnexus-migration/cutover/20260905085804-4072165` 必须存在，并对其 manifest、旧容器完整 ID、image、名称、停止状态、依赖和运行合同做完整校验；缺失或漂移必须在备份或 Docker 变更前失败关闭。
 2. `prepare` 不停止、重命名或创建容器，只把当时 live 固定为本轮新回滚目标，并在 manifest 记录 `ui_new_rollback_id`、`ui_new_rollback_image`、`ui_new_rollback_config_image`、唯一 `ui_new_rollback_name=production-app-ui-prior-<run-id>` 和 `ui_new_rollback_state=prepared`。
 3. 维护者执行 `switch` 时，wrapper 才停止当前 live、按上述唯一名称重命名并验证其完整 ID、`.Image`、`.Config.Image`、名称、runtime contract 和 `stopped` 状态；随后创建并启动候选。候选健康后保留该 stopped 容器，不得删除或提交为镜像。
-4. 本轮 `rollback` 删除经身份校验的候选并恢复上述新目标；历史 SubNexus anchor 只承担 `prepare` 时的连续性审计，不再是本轮恢复对象。新目标缺失或任一身份字段漂移时必须失败关闭。
-5. 空间充足时保留历史 anchor、旧容器、旧镜像和历史备份。只有本轮 `prepare` 已成功、空间证据明确不足、删除清单逐项绑定完整 ID/路径/SHA 并保存 root-only 审计记录时，才允许精确删除已确认无用的历史对象；若删除历史 anchor，必须同时保证本轮 `switch`/`rollback` 只依赖新目标。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理，本轮新回滚目标及新 run 证据不得删除。
+4. 本轮 `rollback` 删除经身份校验的候选并恢复上述新目标；历史 SubNexus anchor 不再是本轮恢复对象，但现行 wrapper 仍在 switch、失败恢复和 rollback 中把它作为连续性门禁。anchor 或其容器/镜像缺失，以及新目标任一身份字段漂移时，都必须失败关闭。
+5. 空间充足时保留全部历史数据。空间不足时，只能在删除清单逐项绑定完整 ID/路径/SHA 并保存 root-only 审计记录后，精确删除其他已失效 run 备份、上传残留或无引用垃圾；历史 anchor 及其容器/镜像必须贯穿本轮 switch/rollback 窗口保留。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理，历史 anchor、本轮新回滚目标及新 run 证据不得删除。
 
 当前尚未生成可执行命令。只有候选 SHA、镜像、脚本 SHA、run、备份、probe 和最终审计全部产生并复核后，才在本节写入两条绑定同一 wrapper/run 的完整单行命令；在此之前任何历史命令或自行替换占位值的命令都无效。
