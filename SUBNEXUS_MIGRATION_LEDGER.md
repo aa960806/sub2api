@@ -318,7 +318,7 @@
 | 变更范围 | 审核通过 | 仅登录后非管理端用户页面的背景和卡片材质；API、后端、数据库迁移、路由、权限、配置、开关、按钮事件和业务状态不变 |
 | 本地门禁 | 通过 | `294/294` 个 Vitest 文件、`2041/2041` 个测试通过；typecheck、lint、build、`git diff --check` 通过；UI wrapper 32 个故障/恢复/source-contract 场景在 Git Bash 与 WSL/Linux 通过 |
 | 生产 base | 待线上复核 | 预期为 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；必须由 live image provenance 与完整容器身份现场确认 |
-| 候选提交/tree | 固定中 | 本次发布提交包含 UI、回滚状态机、测试与一致性文档；完整 commit/tree 在该提交形成后由紧随的只读记账提交固定，base `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 必须为其祖先，后续记账提交不得替代镜像构建 SHA |
+| 候选提交/tree | 已固定并推送 | commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b`；base=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 已验证为其祖先，后续记账提交不得替代镜像构建 SHA |
 | 候选镜像/归档 | 待生成 | 隔离构建后填写完整 image ID、归档路径、SHA256 和大小 |
 | UI wrapper/controller | 本地已固定，服务器待核验 | target Git blob/本地 UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`；原控制器预期 SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`，服务器路径、owner/mode 与 SHA 仍须现场复核 |
 | Docker Gate | 待执行 | 需记录 evidence 路径/SHA，且 `result=passed`、`cleanup_failed=false`、生产身份未改变 |

@@ -12,7 +12,7 @@
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新上游基线：`upstream/main=ab99d56e9626e6cd731592dae8553c9758a0efa2`（版本 `0.2.1`，发布标签 `v0.2.1=578785ee7fb35030b094b69624efe25670a36f5f`）
-- 当前迁移分支：`feature/subnexus-migration`；预期生产应用基线为 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`。本轮 Rain + Glass 发布提交包含 UI、回滚状态机、测试与一致性文档，完整 commit/tree 在提交形成后由紧随的只读记账提交固定；生产基线仍须线上实时复核，`main` 未修改。
+- 当前迁移分支：`feature/subnexus-migration`；预期生产应用基线为 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`。本轮 Rain + Glass 不可变候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已推送；生产基线仍须线上实时复核，`main` 未修改。
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
@@ -26,7 +26,7 @@
 | 生产数据库访问 | 第二次候选启动约 35 秒并于 `2026-09-05 01:17:03 UTC` 应用 `9001`-`9013`；13 条 checksum 与候选 SQL 全部一致。自动回滚未恢复数据库，旧应用已在迁移后同库上恢复健康；未手工执行迁移或恢复 PostgreSQL/Redis |
 | 生产部署/切换 | 最后已验证的生产容器为 `232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，`running/healthy/restart=0`；历史 run `/srv/subnexus-migration/cutover/20260907045159-1121373` 已 switched，但第 14 节 rollback 随本轮发布开始已撤回。线上身份须实时复核；当前没有可执行入口，完成本轮全部门禁后仅使用第 15 节同一 wrapper/run 的 switch/rollback |
 | 生产开关 | 本轮未开启功能、修改首页配置、执行数据库/Redis 恢复或修改 Nginx；切换后唯一配置变化为管理员 PUT 写入的 `subnexus_invite_activities_config`，当前 18 项受保护设置 SHA256=`eddb4a4333c07c1cea357f12e2adb0bede963f6f0806f6757895c8d3f0f092d4`，其余 17 项保持 prepare 值；客服继续按原配置 `customer_support_enabled=false` 不显示 |
-| 工作区 | 本轮发布提交包含 UI、回滚状态机、测试与一致性文档；完整 commit/tree 将由紧随的只读记账提交固定。镜像、Gate、全新备份、prepare run 和最终审计尚待生成，后续记账提交不替代镜像构建 SHA |
+| 工作区 | 不可变候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已推送。镜像、Gate、全新备份、prepare run 和最终审计尚待生成，后续记账提交不替代镜像构建 SHA |
 | 当前磁盘 | 切换后只读审计读数为 `55796555776` bytes、74%；迁移临时文件和失败审计 partial 已按精确清单清理，未使用 prune，固定回滚对象与必要证据均保留 |
 | 本地测试产物 | 生产备份位于 `F:\MySub2\production-backups`；PostgreSQL 18.4 隔离集群位于 `F:\MySub2\.production-restore-20260903T073714Z` 并仅监听 `127.0.0.1:56418`，当前用于 Release Gate；均未纳入 Git且不属于生产资产 |
 
@@ -257,7 +257,7 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 
 本轮工作树把首页同源雨景和毛玻璃材质扩展到 `/dashboard`、`/keys`、`/usage`、`/monitor`、`/subscriptions`、`/purchase`、`/orders` 等所有 `AppLayout` 用户端页面。管理端、认证/公开页和外部支付页隔离；现有数据、API、路由、权限、配置、功能开关、按钮和业务逻辑不变。水滴层级、既有 hover、sticky 表头/列可读性和订单表结构问题均已修复，本地验证为 Vitest `294/294` 文件、`2041/2041` 测试、typecheck、lint、build 和 `git diff --check` 通过。
 
-发布仍处于本地到线上前置阶段。不可变 candidate commit/tree 将由紧随本次发布提交的只读记账提交固定，UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`。镜像 ID、归档 SHA、Docker Gate、全新备份、prepare run、probe 和最终审计值必须由实际流程生成后追加，不能从 2026-09-07 历史记录复制。后续仅记账的文档提交不得替代该镜像构建 SHA；最终 `switch` 由维护者手动执行，代理必须停在 `state=prepared/ui_state=prepared`。
+发布仍处于本地到线上前置阶段。不可变 candidate commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已固定并推送，UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`。镜像 ID、归档 SHA、Docker Gate、全新备份、prepare run、probe 和最终审计值必须由实际流程生成后追加，不能从 2026-09-07 历史记录复制。后续仅记账的文档提交不得替代该镜像构建 SHA；最终 `switch` 由维护者手动执行，代理必须停在 `state=prepared/ui_state=prepared`。
 
 本轮回滚模型已变更：`prepare` 先要求历史旧 SubNexus anchor 存在并完整校验，然后仅把当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和状态固化到新 manifest，Docker 状态保持不变。最终 switch 时才停止和重命名该 live，并把它作为 stopped 新回滚目标保留；本轮 rollback 只恢复该目标，不恢复更早的旧 SubNexus。目标缺失或 ID/image/configured image/name/runtime contract 漂移时必须失败关闭。
 

@@ -316,7 +316,7 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 | 固定项 | 本轮状态 |
 | --- | --- |
 | 生产 base | `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；最终仍须由线上 live image provenance 实时确认 |
-| 候选提交/tree | 本次发布提交包含 UI、回滚状态机、测试与一致性文档；完整 commit/tree 在该提交形成后由紧随的只读记账提交固定，base=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`，后续记账提交不得替代镜像构建 SHA |
+| 候选提交/tree | commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b`，已推送；base=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`，后续记账提交不得替代镜像构建 SHA |
 | 候选镜像/归档 | 待隔离构建生成并填写完整 image ID、归档路径、归档 SHA256 和大小 |
 | UI wrapper | target Git blob/本地 SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`；测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`；服务器唯一路径与安装后 SHA 待上传时填写 |
 | 原控制器 | 沿用已审核控制器时仍须实时核对固定路径和 SHA256，不得从历史章节直接假定 |

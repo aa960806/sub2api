@@ -1,7 +1,7 @@
 # SubNexus 二开功能迁移规划
 
 > 版本：v2.7（2026-09-08，Rain + Glass 用户端视觉更新待线上 prepare）
-> 当前权威状态：2026-09-07 候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 的上线事实保留为历史，本轮以其为预期生产 base，只统一登录后用户端的雨景背景和毛玻璃卡片材质，业务合同保持不变。本地 UI 审核、完整前端验证与回滚状态机复核已通过；本轮候选代码将在本次发布提交后由紧随的只读记账提交固定完整 SHA/tree，线上镜像、Gate、全新备份、run 和最终审计仍待生成。历史 run 不得作为新的 `prepare`/`switch` 输入；现行发布与回滚合同见文末 2026-09-08 章节及切换手册第 15 节。
+> 当前权威状态：2026-09-07 候选 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18` 的上线事实保留为历史，本轮以其为预期生产 base，只统一登录后用户端的雨景背景和毛玻璃卡片材质，业务合同保持不变。本地 UI 审核、完整前端验证与回滚状态机复核已通过；本轮不可变候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已推送，线上镜像、Gate、全新备份、run 和最终审计仍待生成。历史 run 不得作为新的 `prepare`/`switch` 输入；现行发布与回滚合同见文末 2026-09-08 章节及切换手册第 15 节。
 > 目标分支：`feature/subnexus-migration`
 > 目标仓库：`F:\MySub2\sub2api`
 
@@ -391,7 +391,7 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 ## 15. 用户端 Rain + Glass 线上更新计划（2026-09-08，现行）
 
 1. 发布范围仅为 `AppLayout` 下登录后非管理端用户页面的同源雨景背景和毛玻璃容器材质，以及为层级、hover、sticky 表格可读性和订单结构恢复所需的视觉修正。API、后端、数据库迁移、路由、权限、配置、功能开关、请求参数、按钮事件和业务状态不变。
-2. 本地审核后的基线为 `294/294` 个 Vitest 文件、`2041/2041` 个测试通过，typecheck、只读 lint、生产 build 与 `git diff --check` 通过；UI wrapper 32 个故障/恢复/source-contract 场景已在 Git Bash 和 WSL/Linux 通过。候选 commit/tree 将由紧随本次发布提交的只读记账提交固定；build/gate/UI wrapper SHA256 分别为 `cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3`、`7aed2fbd5a5024b670cb544def5f85f70ee3830a2a720d9abd5e670c0c640ff7`、`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，wrapper test SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`；镜像和归档仍只能在实际生成后登记。
+2. 本地审核后的基线为 `294/294` 个 Vitest 文件、`2041/2041` 个测试通过，typecheck、只读 lint、生产 build 与 `git diff --check` 通过；UI wrapper 32 个故障/恢复/source-contract 场景已在 Git Bash 和 WSL/Linux 通过。候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已固定并推送；build/gate/UI wrapper SHA256 分别为 `cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3`、`7aed2fbd5a5024b670cb544def5f85f70ee3830a2a720d9abd5e670c0c640ff7`、`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，wrapper test SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`；镜像和归档仍只能在实际生成后登记。
 3. 发布顺序固定为：提交并推送不可变候选；隔离构建；上传固定制品；服务器 Docker candidate Gate；线上只读生产身份/容量核验；全新备份和无停机 `prepare`；never-started probe；最终切换前审计；维护者手动 `switch`。代理停在最后一步之前。
 4. `prepare` 必须先确认历史 SubNexus anchor 存在且完整，通过后只将当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一目标名和 `ui_new_rollback_state=prepared` 写入 manifest，不停止、重命名或创建容器。
 5. `switch` 停止并把切换前 live 重命名为 `production-app-ui-prior-<run-id>`，将其作为本轮 stopped 回滚目标保留，再创建并启动候选。候选健康后不得清理该目标；`rollback` 只恢复该目标，不再恢复更早的历史 SubNexus。
