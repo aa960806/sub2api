@@ -369,3 +369,8 @@
 | 隔离不可变镜像/归档 | 待执行 | 直接使用 socket `unix:///var/run/subnexus-docker-96.sock`；不得复用历史候选或执行 prune |
 | 线上候选 Gate、备份、prepare、probe、最终审计 | 待执行 | 仅允许非停机、只读/备份/创建候选资源；实时确认 live/PG/Redis 身份不变 |
 | 手动切换 | 未开始 | 仅当同一 run 达到 `READY=prepared`、`FINAL_PRE_SWITCH_AUDIT=passed`、`ui_commit_intent=no` 后由维护者执行；当前没有有效切换命令 |
+
+
+## 2026-09-09 23:00 发布前更新
+
+实际线上为 bf5aae07... / b9de08a4...；本次应用候选为 890828afe... / image 44e8dcf0...。构建、服务器候选 Gate、全新生产快照已完成；生产备份完整下载/隔离 new-old-new Gate、正式 prepare/probe 和最终审计尚待完成，目前不可切换。以 SUBNEXUS_CHANGE_MEMORY.md 同时间条目为权威详细证据；本轮新一级回滚目标必须是切换前实际 live，历史旧 SubNexus 仅保留为二级资料。
