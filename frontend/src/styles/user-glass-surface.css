@@ -254,6 +254,19 @@ html:not(.dark) .user-glass-surface {
   backdrop-filter: none;
 }
 
+/* Lower blur must not expose page text behind a lightweight popup. */
+.user-glass-performance-balanced.user-glass-surface .dropdown,
+.user-glass-performance-balanced.user-glass-surface .user-glass-tooltip {
+  background-color: rgb(10 18 33) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html:not(.dark) .user-glass-performance-balanced.user-glass-surface .dropdown,
+html:not(.dark) .user-glass-performance-balanced.user-glass-surface .user-glass-tooltip {
+  background-color: white !important;
+}
+
 /* Compatibility removes the shared primitives' original blur as well as Rain's overrides. */
 .user-glass-performance-compat :is(.glass, .glass-card, .card-glass, .card, .stat-card, .sidebar, .dropdown, [class*='backdrop-blur']) {
   -webkit-backdrop-filter: none !important;
