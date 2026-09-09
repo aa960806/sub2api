@@ -109,6 +109,15 @@ html:not(.dark) .user-glass-surface {
   backdrop-filter: blur(14px) saturate(135%);
 }
 
+/* Backdrop blur traps inline menus in their card's stacking context. */
+.user-glass-surface main .user-glass-menu-host {
+  position: relative;
+}
+
+.user-glass-surface main .user-glass-menu-host:has(.date-picker-dropdown, .user-glass-menu) {
+  z-index: 20;
+}
+
 .user-glass-surface main .user-glass-inset {
   border-color: var(--user-rain-card-border);
   -webkit-backdrop-filter: blur(10px) saturate(125%);
@@ -215,6 +224,28 @@ html:not(.dark) .user-glass-surface {
   box-shadow: var(--user-rain-card-shadow);
   -webkit-backdrop-filter: blur(14px) saturate(135%);
   backdrop-filter: blur(14px) saturate(135%);
+}
+
+@media (max-width: 639px) {
+  /* Anchor narrow-screen date menus to the card, not the offset trigger. */
+  .user-glass-surface main .user-glass-menu-host .date-picker-container {
+    position: static;
+  }
+
+  .user-glass-surface main .user-glass-menu-host .date-picker-dropdown {
+    left: 1rem;
+    right: 1rem;
+    min-width: 0;
+  }
+
+  .user-glass-surface main .user-glass-menu-host .date-picker-custom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .user-glass-surface main .user-glass-menu-host .date-picker-separator {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {

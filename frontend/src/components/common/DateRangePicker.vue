@@ -1,5 +1,5 @@
 <template>
-  <div class="relative" ref="containerRef">
+  <div class="date-picker-container relative" ref="containerRef">
     <button
       type="button"
       @click="toggle"

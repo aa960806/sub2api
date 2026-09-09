@@ -2,11 +2,11 @@
   <section v-if="featureEnabled && !hidden" class="card p-5" data-testid="dashboard-checkin">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div class="min-w-0">
-        <p class="text-sm font-medium text-gray-500 dark:text-dark-400">{{ t('checkin.title') }}</p>
+        <p class="text-sm font-medium text-gray-500 dark:text-dark-400">{{ t('common.checkin.title') }}</p>
         <div class="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 class="text-xl font-bold text-gray-900 dark:text-white">{{ statusText }}</h2>
           <span v-if="status?.enabled" class="text-xs text-gray-500 dark:text-dark-400">
-            {{ t('checkin.continuous', { count: continuousStreak }) }}
+            {{ t('common.checkin.continuous', { count: continuousStreak }) }}
           </span>
         </div>
       </div>
@@ -30,8 +30,8 @@
         :title="dayButtonTitle(day)"
         @click="claim"
       >
-        <span class="text-[11px] font-medium">{{ t('checkin.day', { day }) }}</span>
-        <span v-if="day === milestoneDays" class="absolute right-1.5 top-1.5 rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">{{ t('checkin.milestone') }}</span>
+        <span class="text-[11px] font-medium">{{ t('common.checkin.day', { day }) }}</span>
+        <span v-if="day === milestoneDays" class="absolute right-1.5 top-1.5 rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">{{ t('common.checkin.milestoneBadge') }}</span>
         <span class="relative flex h-8 w-8 items-center justify-center rounded-full" :class="dayIconClass(day)">
           <Icon v-if="isClaimableDay(day) && claiming" name="refresh" size="sm" class="animate-spin" />
           <Icon v-else-if="day === milestoneDays" name="gift" size="sm" :stroke-width="2.3" />
@@ -42,17 +42,17 @@
             <Icon name="check" size="xs" :stroke-width="3" aria-hidden="true" />
           </span>
         </span>
-        <span class="max-w-full truncate text-[10px] font-semibold">{{ day === milestoneDays ? t('checkin.milestone') : t('checkin.daily') }}</span>
+        <span class="max-w-full truncate text-[10px] font-semibold">{{ day === milestoneDays ? t('common.checkin.milestone') : t('common.checkin.daily') }}</span>
       </button>
     </div>
 
     <div v-if="frozenAmount > 0" class="mt-4 flex items-center gap-2 rounded-md bg-indigo-50 px-3 py-2 text-xs text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
       <Icon name="gift" size="sm" aria-hidden="true" />
-      <span>{{ t('checkin.frozen', { amount: formatMoney(frozenAmount) }) }}</span>
+      <span>{{ t('common.checkin.frozen', { amount: formatMoney(frozenAmount) }) }}</span>
     </div>
 
     <button v-if="limitReached" type="button" class="btn btn-primary mt-4 w-full" @click="goRecharge">
-      {{ t('checkin.recharge') }}
+      {{ t('common.checkin.recharge') }}
     </button>
   </section>
 </template>
@@ -88,9 +88,9 @@ const completedDays = computed(() => Math.min(milestoneDays.value, Math.max(0, N
 
 const statusText = computed(() => {
   if (loading.value) return t('common.loading')
-  if (!status.value?.enabled) return t('checkin.disabled')
-  if (status.value.checked_in && status.value.today_frozen) return t('checkin.frozenToday')
-  return status.value.checked_in ? t('checkin.claimed') : t('checkin.pending')
+  if (!status.value?.enabled) return t('common.checkin.disabled')
+  if (status.value.checked_in && status.value.today_frozen) return t('common.checkin.frozenToday')
+  return status.value.checked_in ? t('common.checkin.claimed') : t('common.checkin.pending')
 })
 
 function isCompletedDay(day: number): boolean {
@@ -121,13 +121,13 @@ function dayIconClass(day: number): string {
 
 function dayButtonTitle(day: number): string {
   if (day === milestoneDays.value) {
-    if (isCompletedDay(day)) return t('checkin.milestoneDone', { day })
-    if (isClaimableDay(day)) return t('checkin.claimMilestone', { day })
-    return t('checkin.futureMilestone', { day })
+    if (isCompletedDay(day)) return t('common.checkin.milestoneDone', { day })
+    if (isClaimableDay(day)) return t('common.checkin.claimMilestone', { day })
+    return t('common.checkin.futureMilestone', { day })
   }
-  if (isCompletedDay(day)) return t('checkin.dayDone', { day })
-  if (isClaimableDay(day)) return t('checkin.claimDay', { day })
-  return t('checkin.futureDay', { day })
+  if (isCompletedDay(day)) return t('common.checkin.dayDone', { day })
+  if (isClaimableDay(day)) return t('common.checkin.claimDay', { day })
+  return t('common.checkin.futureDay', { day })
 }
 
 async function loadStatus(): Promise<void> {
@@ -160,9 +160,9 @@ async function claim(): Promise<void> {
   try {
     status.value = await claimCheckIn()
     await authStore.refreshUser()
-    appStore.showSuccess(status.value.today_frozen ? t('checkin.claimedFrozen') : t('checkin.claimedAmount', { amount: formatMoney(status.value.amount || 0) }))
+    appStore.showSuccess(status.value.today_frozen ? t('common.checkin.claimedFrozen') : t('common.checkin.claimedAmount', { amount: formatMoney(status.value.amount || 0) }))
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : t('checkin.claimFailed')
+    const message = error instanceof Error ? error.message : t('common.checkin.claimFailed')
     appStore.showError(message)
     loadedForEnabledState.value = false
     await loadStatus()

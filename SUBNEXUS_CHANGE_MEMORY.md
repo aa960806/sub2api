@@ -1521,3 +1521,15 @@
 - 本轮 rollback 只恢复新回滚目标，不再恢复更早的历史 SubNexus。新目标缺失，或 ID、`.Image`、`.Config.Image`、名称、runtime contract 任一漂移时必须失败关闭；不采用预创建 stopped anchor、`docker commit` 或额外回滚镜像。
 - 历史 anchor 不再是本轮实际恢复对象，但现行 wrapper 仍要求其容器/镜像与证据贯穿 switch、失败恢复和 rollback 窗口保持完整，缺失时失败关闭。空间足够时保留其他历史数据；磁盘证据确认不足时，只能在待删对象的完整身份/路径/SHA 与无引用状态逐项确认并保存 root-only 清理记录后，精确删除其他失效 run 备份或垃圾。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理；历史 anchor、本轮新回滚目标、run、备份和最终审计不得删除。
 - 2026-09-07 第 14 节发布记录保持历史事实；其 switch 已消费，旧 rollback 在本轮新发布交接中撤回。当前唯一现行交接为切换手册第 15 节，具体命令需等全部前置证据完成后生成。
+
+## 2026-09-09（Asia/Shanghai）- 用户端下拉层级与签到显示本地修复
+
+- 维护者反馈 Rain + Glass 上线后 `/usage` 日期下拉被后续图表覆盖，签到显示 `checkin.title` 等裸翻译键。本轮仅处理显示问题，没有进行服务器操作或再次发布。
+- 层级根因是卡片的 `backdrop-filter` 建立独立层叠上下文。`UsageView` 两张筛选卡片和 `UserDashboardCharts` 日期卡片增加 `user-glass-menu-host`，独立用户 CSS 通过 `:has(.date-picker-dropdown, .user-glass-menu)` 在菜单打开时提升整张卡片到局部 `z-index:20`；关闭后恢复默认层级。已有 `Select`、Keys 分组菜单等 Teleport 实现不变。
+- 运行时同时发现手机日期菜单固定最小宽度 320px 会越过右侧屏幕。`DateRangePicker` 根节点仅增加 `date-picker-container`，用户 CSS 在 639px 以下让菜单锚定卡片并左右保留 1rem，自定义日期输入纵向排列。规则仍同时要求 `.user-glass-surface` 与显式菜单容器，管理端和其他日期组件使用处不受影响。
+- 签到改为正确的 `common.checkin.*` 翻译路径；对照 `F:\Sub2Api\SubNexus\frontend\src\components\user\dashboard\UserDashboardCheckIn.vue`，恢复普通日“每日签到”、角标“礼盒”、底部“连续礼盒”，英文语义对应。礼盒角标使用独立 `milestoneBadge` 翻译，签到排列和角标位置保持原版。接口、开关、权限、签到条件、金额、冻结处理、充值路由和所有请求/业务事件不变。
+- 新增真实 vue-i18n 组件回归测试，覆盖中文文案、天数及金额插值、成功后状态、英文切换、冻结状态。完整 `pnpm test:run -- --reporter=dot` 为 `295/295` 文件、`2044/2044` 测试通过；类型检查、`pnpm run lint:check`、`pnpm run build`、`git diff --check` 通过。构建保留既有 Browserslist、混合导入、chunk 大小等警告，没有新增依赖或修改锁文件。
+- 本地 Playwright 使用最终生产构建与浏览器内模拟接口，覆盖 1440x1000、768x1024、390x844、320x740 的深浅主题。下拉矩阵 32 个命中测试通过；日期预设、自定义日期请求参数、ESC/外部点击关闭与关闭后的层级恢复通过；签到中英文显示及礼盒角标和天数矩形不相交通过。另 32 个 Keys 列菜单、密钥弹窗、顶栏用户菜单和真实管理路由 `/admin/checkin` 隔离检查通过，浏览器无页面错误。没有使用生产账号或向生产发送业务请求。
+- 本地复验工具：`F:\MySub2\.playwright-qa\user-dropdown-qa.cjs`；报告/截图：`F:\MySub2\.playwright-qa\user-dropdown-20260909\report.json`、`aux-report.json` 及同目录 PNG。生产构建预览运行于 `http://127.0.0.1:3101/`，开发前端运行于 `http://127.0.0.1:3100/`；测试模拟数据只存在于自动化浏览器内，手动使用服务仍需本地业务后端。
+- 当前修复保留在未提交工作树，尚未更新线上；未创建或删除回滚对象，未执行 switch/rollback。后续发布仍须完成独立前置检查并由维护者手动执行最终切换。
+- 维护者随后确认签到只需修改文案；已撤销礼盒格顶部留白和角标位置调整，签到排列恢复原版横向布局，其他下拉层级修复保持不变。
