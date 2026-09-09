@@ -242,6 +242,11 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 					return fmt.Errorf("validate existing migration %s contract: %w", name, err)
 				}
 			}
+			if name == groupModelAllowlistLegacyCompatMigration {
+				if err := validateGroupModelAllowlistLegacyCompatContract(ctx, lockConn); err != nil {
+					return fmt.Errorf("validate existing migration %s contract: %w", name, err)
+				}
+			}
 			continue // 迁移已应用且校验和匹配，跳过
 		}
 
@@ -341,6 +346,12 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		}
 		if name == subnexusActivityCenterMigration {
 			if err := validateSubNexusActivityCenterContract(ctx, tx); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("validate migration %s contract: %w", name, err)
+			}
+		}
+		if name == groupModelAllowlistLegacyCompatMigration {
+			if err := validateGroupModelAllowlistLegacyCompatContract(ctx, tx); err != nil {
 				_ = tx.Rollback()
 				return fmt.Errorf("validate migration %s contract: %w", name, err)
 			}

@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 当前权威状态：2026-09-09（Asia/Shanghai）。本次用户端下拉层级与签到文案修复的发布沿用固定旧 SubNexus 回滚目标，不新增永久回滚容器或镜像；最终 switch 仍由维护者执行。2026-09-08 新回滚对象合同及准备快照保留为历史，现行合同以文末最新台账和切换手册第 15.2 节为准，新的线上发布证据须单独生成核验。
+> 当前权威状态：2026-09-09（Asia/Shanghai）。本次用户端视觉性能、下拉层级与签到文案修复必须把切换前 live 保留为 stopped 一级回滚目标；历史旧 SubNexus 只作连续性 anchor，最终 switch 仍由维护者执行。`bf5aae07...` 的镜像、Gate、wrapper、prepare、probe、审计和命令已撤回，现行合同以文末最新台账和切换手册第 15.2 节为准，新的线上发布证据须全部重新生成核验。
 
 ## 状态定义
 
@@ -14,7 +14,7 @@
 | 旧仓库 | `F:\Sub2Api\SubNexus` |
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
-| 最新上游基线 SHA | `ab99d56e9626e6cd731592dae8553c9758a0efa2`（版本 `0.2.1`；tag `578785ee7fb35030b094b69624efe25670a36f5f`） |
+| 最新本地上游基线 SHA | `98d86915becae9fe9491a91ffc6defd5235c8d2b`（版本 `0.2.4`；合并提交 `c76c04dd170c6eb4d34f864150c8e03536f38c24`，未发布） |
 | 2026-09-07 历史发布状态 | v0.2.1、`F:\Rain` 首页源码直接迁移及保留二开用户端 UI 候选均已在线 switched；当时 run=`20260907045159-1121373`，production commit=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；F01-F13 仍待功能开关开启后的逐项业务验收 |
 | 2026-09-07 历史应用候选 SHA | `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`，tree=`7b0ee6db2dc96fd97106ca175640b3a15e8ec233`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`；已推送并固定 |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
@@ -329,19 +329,43 @@
 | 本轮新回滚目标 | 待 prepare 固定 | manifest 必须记录切换前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和 `prepared` 状态；prepare 不改变 Docker 状态 |
 | Switch 行为 | 待维护者 | 停止并重命名切换前 live、验证其为 stopped 新回滚目标，再启动候选；候选健康后继续保留该目标 |
 | Rollback 行为 | 已冻结合同 | 只恢复本轮新目标，不恢复历史 SubNexus；新目标任一身份或 runtime 字段漂移时失败关闭，不默认恢复数据库，不修改 Nginx/开关 |
-| 空间与旧数据 | 条件保留 | 历史 anchor 不是本轮恢复对象，但现行 wrapper 要求其容器/镜像与证据贯穿 switch/rollback 窗口保持完整；空间足够则保留其他历史数据，不足时只可按完整身份和路径精确删除其他已失效 run 备份或无引用垃圾并留审计。禁止任何 prune；历史 anchor、本轮新目标和新 run 证据不可删除 |
+| 空间与旧数据 | 条件保留 | 该历史草案曾要求 anchor 贯穿 switch/rollback 窗口；现行合同已纠正为只在 prepare/switch 提交前门禁，切换开始后的恢复不依赖它。空间足够则保留其他历史数据，不足时只可按完整身份和路径精确删除其他已失效 run 备份或无引用垃圾并留审计。禁止任何 prune；历史 anchor、本轮新目标和新 run 证据不可删除 |
 | 人工边界 | 未到切换 | 代理完成候选、Gate、备份、prepare、probe 和最终审计后停下；只交付绑定同一 wrapper/run 的一整行 switch 与一整行 rollback |
 
 ## 用户端 UI 修复发布合同台账（2026-09-09，现行）
 
 | 项目 | 状态 | 证据/约束 |
 | --- | --- | --- |
-| 变更范围 | 本地修复已验证 | 用户端下拉层级、窄屏日期菜单与签到翻译文案；现有 API、请求参数、权限、配置、开关、路由、按钮事件和业务状态不变；签到布局按维护者最新要求保持原版 |
-| 当前发布身份 | 待本次线上证据 | 应用完整 commit/tree、live base provenance、image ID、归档 SHA/大小、wrapper/controller 安装路径及 SHA、Gate、备份、run、probe 和最终审计须本次重新固定，不复用历史值 |
-| 固定最终回滚 | 旧 SubNexus，不新增 | ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165` |
-| Anchor 连续性 | 必须实时核验 | anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`；manifest SHA=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`；旧容器/镜像/名称、状态、依赖和 runtime 任一缺失或漂移时失败关闭 |
-| Prepare 合同 | 不创建新回滚对象 | 全新 run、数据库/catalog/Redis/应用数据备份仍必须生成；manifest 使用 `ui_anchor_*`、`ui_rollback_id/image/name`、`ui_temporary_name`，不写 `ui_new_rollback_*`；不停止或重命名 live，不创建回滚容器/镜像 |
-| Switch 与过程恢复 | 最后一步人工执行 | 暂存 live 仅用于提交前失败恢复；候选健康且合同验证完成后保留诊断日志，再按完整 ID 删除临时前版本容器，不建立新永久目标，不执行 `docker commit` |
-| 正式 rollback | 固定恢复旧 SubNexus | 通过本次同 wrapper/run 恢复固定 anchor；与提交前暂存 live 的过程恢复区分，不默认恢复 PostgreSQL/Redis，不修改 Nginx、设置或功能开关 |
-| 历史对象与空间 | 条件保留 | 已有历史对象不自动删除、不替代固定目标；清理须按完整 ID/路径/SHA 和引用关系逐项确认、留 root-only 审计，禁止 prune/通配符删除；固定旧 SubNexus、anchor、本次有效 run/备份/审计不可删除 |
+| 变更范围 | 本地修复已验证 | 用户端视觉性能分级、下拉层级、窄屏日期菜单与签到翻译文案；现有 API、请求参数、权限、配置、开关、路由、按钮事件和业务状态不变 |
+| 旧发布身份 | 已作废，禁止切换 | `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 对应 image/archive/Gate/wrapper/observer/handoff/prepared runs 的回滚目标错误，不能复用；必须从修复后的不可变提交重新构建和取证 |
+| 当前发布身份 | 待本次线上证据 | 新 commit/tree、live base provenance、image ID、归档 SHA/大小、wrapper/controller 安装路径及 SHA、Gate、备份、run、probe 和最终审计须本次重新固定 |
+| 本轮一级回滚 | 切换前实际 live | prepare 实时固定完整 ID、`.Image`、`.Config.Image`、唯一暂存名称、状态和 runtime；任何字段漂移均失败关闭，成功 switch 后继续保留 stopped 容器 |
+| Anchor 连续性 | 仅 prepare/switch 提交前核验 | 历史 anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165` 及旧容器继续保留，作为切换前连续性门禁而不是本轮正常恢复对象；switch 开始后缺失/漂移不得阻断 previous-live 恢复 |
+| Prepare 合同 | 无停机只读绑定 | 全新 run、数据库/catalog/Redis/应用数据备份仍必须生成；manifest 写 `ui_new_rollback_*`；不停止、重命名、重启或创建 live/回滚容器 |
+| Switch 与过程恢复 | 最后一步人工执行 | 停止并唯一重命名 live，校验 stopped 合同后启动候选；候选成功后不删除切换前 live；ERR/HUP/INT/TERM 失败路径不依赖历史 anchor，直接恢复它 |
+| UI 回滚身份证明门禁 | 本地通过 | `ui_manual_rollback` 与自动恢复均按 manifest 绑定的候选完整 ID确认候选已不存在；候选被改名、身份元数据不完整或仍存在时失败关闭。仅在 `switching/rolling_back/recovered_current`、`commit_intent=no` 且候选三项元数据和 ID 文件全空时，放行“候选从未创建”；Git Bash 完整矩阵为 `56` 个故障/恢复场景，退出码 `0` |
+| 正式 rollback | 恢复切换前 live | 通过本次同 wrapper/run 精确删除候选并恢复切换前版本；manual recover/rollback 不以历史 anchor 完整性为前提，不恢复历史旧 SubNexus，不默认恢复 PostgreSQL/Redis，不修改 Nginx、设置或功能开关 |
+| 历史对象与空间 | 条件保留 | 清理须按完整 ID/路径/SHA 和引用关系逐项确认并留 root-only 审计；禁止 prune/通配符删除；历史 anchor、本轮一级回滚目标、有效 run/备份/审计不可删除 |
 | 人工边界 | 尚非可执行交接 | 全部前置证据核验完成后停在本次 `state=prepared/ui_state=prepared`，仅给维护者一整行 switch 和同 wrapper/run 的一整行 rollback；历史 run/命令禁止复用 |
+
+## v0.2.4 本地对齐台账（2026-09-09）
+
+| 项目 | 状态 | 证据/约束 |
+| --- | --- | --- |
+| 上游合并 | 本地完成 | `c76c04dd170c6eb4d34f864150c8e03536f38c24`，父提交 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 与上游 `98d86915becae9fe9491a91ffc6defd5235c8d2b`；main 未改、未推送 |
+| 二开与 UI | 保留 | F01-F13、首页源码、性能模式、下拉层级、签到文案及 `9001`-`9013` 保留；监控公共设置/后台开关合并遗漏已修复并回归 |
+| 前端 | 通过 | 完整 311 文件/2174 测试；修复后定向 3 文件/45 测试（新增2项）；typecheck、lint、build 与 pnpm 9 frozen lockfile 验证通过 |
+| 后端 | 本地通过 | 默认及 unit 包验证，受影响包单独复跑；go vet、embed 构建、Wire/Ent 无生成漂移。首次缺 sh 和生成期间并行读取问题均经正确环境/串行复跑解决 |
+| 部署脚本工作区 | 独立保留 | UI wrapper 当前 `56` 个故障恢复场景与源码合同通过，未纳入本次代码合并提交；并非本轮线上候选证据 |
+| 数据库/回滚 Gate | 尚未执行 | 新增上游 `235`-`237` 原样保留；`235/236` 列重命名要求重新验证旧版同库回滚兼容性，不能复用旧 UI-only prepare 或命令 |
+
+## 2026-09-09 当前执行状态（本地门禁完成，发布前）
+
+| 阶段 | 状态 | 证据/下一门槛 |
+| --- | --- | --- |
+| 本地代码与分支 | 进行中 | `feature/subnexus-migration`，HEAD=`c76c04dd170c6eb4d34f864150c8e03536f38c24`；最终安全修订尚未提交；`main` 与 `F:\Sub2Api\SubNexus` 未改 |
+| 本地测试 | 通过 | 后端 `go test ./...`、兼容迁移定向测试、四套部署脚本夹具、UI 56 场景、隔离构建静态合同均通过；Python 动态夹具需在 Linux/WSL 复跑 |
+| 隔离 PostgreSQL/旧版回归 | 待执行 | 最终 SHA 同步到 `SubNexusBuild20260904` 后执行真实数据库矩阵；未完成前不得构建交接镜像 |
+| 隔离不可变镜像/归档 | 待执行 | 直接使用 socket `unix:///var/run/subnexus-docker-96.sock`；不得复用历史候选或执行 prune |
+| 线上候选 Gate、备份、prepare、probe、最终审计 | 待执行 | 仅允许非停机、只读/备份/创建候选资源；实时确认 live/PG/Redis 身份不变 |
+| 手动切换 | 未开始 | 仅当同一 run 达到 `READY=prepared`、`FINAL_PRE_SWITCH_AUDIT=passed`、`ui_commit_intent=no` 后由维护者执行；当前没有有效切换命令 |

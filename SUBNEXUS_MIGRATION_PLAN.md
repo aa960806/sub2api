@@ -395,5 +395,13 @@ Model Plaza、Grok/XAI、插件系统、Composite 路由、Affiliate 基础能�
 3. 发布顺序固定为：提交并推送不可变候选；隔离构建；上传固定制品；服务器 Docker candidate Gate；线上只读生产身份/容量核验；全新备份和无停机 `prepare`；never-started probe；最终切换前审计；维护者手动 `switch`。代理停在最后一步之前。
 4. `prepare` 必须先确认历史 SubNexus anchor 存在且完整，通过后只将当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一目标名和 `ui_new_rollback_state=prepared` 写入 manifest，不停止、重命名或创建容器。
 5. `switch` 停止并把切换前 live 重命名为 `production-app-ui-prior-<run-id>`，将其作为本轮 stopped 回滚目标保留，再创建并启动候选。候选健康后不得清理该目标；`rollback` 只恢复该目标，不再恢复更早的历史 SubNexus。
-6. 历史 anchor 不是本轮恢复对象，但现行 wrapper 仍要求它及其容器/镜像贯穿 switch/rollback 窗口保持完整。空间足够时继续保留全部历史数据；空间不足时，仅可根据完整 ID/路径/SHA 和未被引用证据精确删除其他已确认无用的历史 run 备份或垃圾并保存审计；不得宽泛 prune，也不得删除历史 anchor、本轮新回滚目标、run、备份或审计证据。
+6. 历史 anchor 不是本轮恢复对象，只在 prepare 和 switch 提交前作为连续性门禁；switch 开始后即使该 anchor 缺失或漂移，也不得阻止 automatic recover、manual recover 或 rollback 恢复 previous-live。空间足够时继续保留全部历史数据；空间不足时，仅可根据完整 ID/路径/SHA 和未被引用证据精确删除其他已确认无用的历史 run 备份或垃圾并保存审计；不得宽泛 prune，也不得删除历史 anchor、本轮新回滚目标、run、备份或审计证据。
 7. 最终交接必须明确列出候选 SHA/tree、image ID、归档 SHA、wrapper/controller SHA、Gate evidence、run/manifest、备份、probe、最终审计，以及新回滚目标五项身份。只交付绑定同一 wrapper/run 的一整行 `switch` 和一整行 `rollback` 命令。
+
+## 16. 2026-09-09 回滚合同纠偏与重新发布
+
+1. 维护者的硬要求是异常时恢复到执行 switch 前服务器正在运行的版本。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的 wrapper 会在成功切换后删除该容器，因此其镜像、Gate、wrapper、prepare、probe、审计及命令全部失效，禁止复用。
+2. 修复后的 `prepare` 只读固定当前 live 的完整 container ID、`.Image`、`.Config.Image`、runtime contract、唯一暂存名称和 `ui_new_rollback_state=prepared`；它仍生成全新 PostgreSQL/catalog、Redis 和应用数据备份，但不停止、重命名、重启或创建生产容器。
+3. 维护者执行 `switch` 后，wrapper 将切换前 live 重命名并保留为 stopped 一级回滚目标。只有该目标身份与合同完整、候选健康稳定、依赖和受保护设置未漂移时才提交成功；发生 `ERR/HUP/INT/TERM` 时优先自动恢复它。
+4. 正式 `rollback` 只恢复上述切换前 live，不恢复历史旧 SubNexus，不默认恢复 PostgreSQL/Redis，也不修改 Nginx、设置或功能开关。历史 SubNexus anchor 继续在 prepare/switch 提交前承担连续性校验并保留，但不替代一级回滚目标；其后续缺失或漂移不能阻断 previous-live 恢复。
+5. 必须从修复后的新提交重新执行：推送、隔离构建、上传与安装、Docker Gate、首页 observer/handoff、无停机 prepare、never-started probe 和最终只读审计。只有输出 `state=prepared`、`ui_state=prepared`、`ui_commit_intent=no`、`READY=prepared`、`UI_READY=application-refresh-v1`、`PROBE_REMOVED=true`、`FINAL_PRE_SWITCH_AUDIT=passed`，并确认 live/PG/Redis 身份健康不变、无残留且空间足够后，才生成两条人工命令。

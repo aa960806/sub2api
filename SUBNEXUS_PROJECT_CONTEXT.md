@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态：2026-09-08（Asia/Shanghai）。`F:\Sub2Api\SubNexus` 保留二开用户端界面和 `F:\Rain` 首页已迁入，本轮继续统一登录后用户端的雨景背景与毛玻璃卡片，所有功能/API 仍使用当前项目实现。本地审核与完整前端门禁已通过；线上候选、镜像、Gate、全新备份、prepare 和新回滚目标尚待生成。2026-09-07 生产事实保留为历史，以本文文末最新记录为准。
+> 当前权威状态：2026-09-09（Asia/Shanghai）。`F:\Sub2Api\SubNexus` 保留二开用户端界面和 `F:\Rain` 首页已迁入，本轮包含登录后用户端视觉性能分级、菜单层级与签到文案修复，所有功能/API 仍使用当前项目实现。旧候选 `bf5aae07...` 的发布证据已撤回；修复后的候选、镜像、Gate、全新备份、prepare 和以切换前 live 为目标的回滚合同尚待重新生成。历史生产事实保留，以本文文末最新记录为准。
 
 ## 项目身份
 
@@ -11,7 +11,7 @@
 - 旧二开输入：`F:\Sub2Api\SubNexus`
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
-- 最新上游基线：`upstream/main=ab99d56e9626e6cd731592dae8553c9758a0efa2`（版本 `0.2.1`，发布标签 `v0.2.1=578785ee7fb35030b094b69624efe25670a36f5f`）
+- 最新本地上游基线：`upstream/main=98d86915becae9fe9491a91ffc6defd5235c8d2b`（版本 `0.2.4`，2026-09-09 合并提交 `c76c04dd170c6eb4d34f864150c8e03536f38c24`）；以下 `0.2.1` 生产信息仍为历史快照，不代表本轮已部署。
 - 当前迁移分支：`feature/subnexus-migration`；预期生产应用基线为 `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`。本轮 Rain + Glass 不可变候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已推送；生产基线仍须线上实时复核，`main` 未修改。
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
@@ -253,12 +253,20 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 
 切换后设置审计只发现 `subnexus_invite_activities_config` 变化；Nginx 记录管理员 `PUT /api/v1/admin/invite-activities/config` 成功，数据库 `updated_at=2026-09-07T06:45:51.718553Z`，未回写或恢复，其他 17 项保护设置保持 prepare 值。清理证据 `/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt` 的 SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558`；失败审计 partial、迁移上传副本等 27 个临时文件已精确删除，正式证据、备份、应用数据和固定回滚对象保留。第 13 节旧 Rain rollback 已关闭；需要恢复时只使用切换手册第 14 节同 run rollback。
 
-## 当前发布任务（2026-09-08，Rain + Glass 用户端视觉）
+## 当前发布任务（2026-09-09，用户端视觉性能与显示修复）
 
-本轮工作树把首页同源雨景和毛玻璃材质扩展到 `/dashboard`、`/keys`、`/usage`、`/monitor`、`/subscriptions`、`/purchase`、`/orders` 等所有 `AppLayout` 用户端页面。管理端、认证/公开页和外部支付页隔离；现有数据、API、路由、权限、配置、功能开关、按钮和业务逻辑不变。水滴层级、既有 hover、sticky 表头/列可读性和订单表结构问题均已修复，本地验证为 Vitest `294/294` 文件、`2041/2041` 测试、typecheck、lint、build 和 `git diff --check` 通过。
+当前应用改动包含 Rain + Glass 用户端页面、标准/轻量/兼容三档视觉性能模式，以及 `/usage` 日期菜单层级、窄屏日期菜单和签到翻译文案修复。管理端、认证/公开页和外部支付页隔离；数据、API、路由、权限、配置、功能开关、按钮和业务逻辑不变。业务/前端验证沿用已记录的完整结果，发布 wrapper 另有独立故障恢复测试。
 
-发布仍处于本地到线上前置阶段。不可变 candidate commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已固定并推送，UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`。镜像 ID、归档 SHA、Docker Gate、全新备份、prepare run、probe 和最终审计值必须由实际流程生成后追加，不能从 2026-09-07 历史记录复制。后续仅记账的文档提交不得替代该镜像构建 SHA；最终 `switch` 由维护者手动执行，代理必须停在 `state=prepared/ui_state=prepared`。
+发布仍处于本地到线上前置阶段。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的镜像、Gate、wrapper 和 prepared run 因无法恢复切换前现网版本而全部作废。修复后的不可变 commit/tree、镜像 ID、归档 SHA、Docker Gate、全新备份、prepare run、probe 和最终审计必须重新生成；最终 `switch` 由维护者手动执行，代理必须停在 `state=prepared/ui_state=prepared`。
 
 本轮回滚模型已变更：`prepare` 先要求历史旧 SubNexus anchor 存在并完整校验，然后仅把当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和状态固化到新 manifest，Docker 状态保持不变。最终 switch 时才停止和重命名该 live，并把它作为 stopped 新回滚目标保留；本轮 rollback 只恢复该目标，不恢复更早的旧 SubNexus。目标缺失或 ID/image/configured image/name/runtime contract 漂移时必须失败关闭。
 
-历史 anchor 不是本轮实际恢复对象，但现行 wrapper 仍把它及其容器/镜像作为整个 switch/rollback 窗口的强制连续性门禁，不能删除。空间足够时保留全部历史数据；容量证据确认不足时，仅可在保存完整 ID/路径/SHA 的精确清理审计后删除其他已失效 run 备份或无引用垃圾。不允许 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、本轮新回滚目标与新 run 证据不可删除。最终只接受切换手册第 15 节中绑定同一 wrapper/run 的两条单行命令。
+历史 anchor 不是本轮实际恢复对象，只在 prepare 和 switch 提交前作为强制连续性门禁，并继续保留为二级灾备证据。一旦 switch 已开始，其缺失或漂移不得阻止 automatic recover、manual recover 或 rollback 恢复经过 manifest 严格绑定的 previous-live。空间足够时保留全部历史数据；容量证据确认不足时，仅可在保存完整 ID/路径/SHA 的精确清理审计后删除其他已失效 run 备份或无引用垃圾。不允许 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、本轮新回滚目标与新 run 证据不可删除。最终只接受切换手册第 15 节中绑定同一 wrapper/run 的两条单行命令。
+
+## 本地上游对齐（2026-09-09，v0.2.4）
+
+- 当前本地代码已合并上游 `98d86915becae9fe9491a91ffc6defd5235c8d2b`，merge commit=`c76c04dd170c6eb4d34f864150c8e03536f38c24`，tree=`4ed29392a38985a10a4a6ae7f04d94d04374dbc4`。保留 F01-F13、Rain 首页、用户端视觉性能模式、菜单层级与签到文案修复。
+- 合并补齐监控用户排行设置的公共读取、DTO、页面注入与后台开关，恢复 V2/V3 吞吐量开关；默认关闭和 V3 模式语义保持本项目约定。上游 MiniMax、模型白名单、Astra/Image 2.5、支付、网关和代理修复已纳入。
+- 前端全量 Vitest 311 文件/2174 测试通过；后续监控修复定向 3 文件/45 测试通过（新增 2 项），lint、类型检查与生产构建通过。后端默认和 unit 标签包均通过，受失败或改动影响的包已复跑；`go vet`、embed 构建、Wire/Ent 生成一致性通过。
+- 本轮没有推送或访问服务器，没有迁移数据库、发布镜像、创建回滚对象或执行 switch/rollback。原有 6 个文档、2 个部署脚本未提交改动仍留在工作区，没有纳入上述代码合并提交；本文追加记录也留在工作区。
+- 后续发布必须按包含后端和数据库迁移的完整更新重新取证。上游 `235/236` 会重命名 `groups.models_list_config` 为 `model_allowlist`；旧二进制可能仍依赖旧列，不能把仅 UI 更新的同库回滚结论直接复用。本轮未运行生产备份的隔离迁移/旧版回归 Gate，也没有生成有效切换命令。`9001`-`9013` 内容保持原样。

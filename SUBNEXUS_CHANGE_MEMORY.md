@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-09 Asia/Shanghai）：用户端下拉层级与签到文案修复已完成本地验证，新的发布前置须按实际证据记录。最新回滚合同固定为此前旧 SubNexus，不创建新的回滚容器或镜像，prepare 不记录 `ui_new_rollback_*`；最终 switch 仍由维护者执行。2026-09-08“保留切换前 live 为新目标”的合同作为历史记录保留，当前状态取信于文末最新记录和切换手册第 15.2 节。
+> 当前权威状态（2026-09-09 Asia/Shanghai）：用户端视觉性能分级、下拉层级和签到文案修复已完成本地验证。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的镜像、Gate、wrapper 和 prepared run 因无法回滚到切换前现网版本而全部作废，禁止 switch。现行合同恢复为：`prepare` 固定切换前 live 的完整身份但不改变 Docker 状态；最终 `switch` 将该 live 保留为 stopped 一级回滚目标；本轮 `rollback` 只恢复它。历史旧 SubNexus 只作为 prepare/switch 提交前的连续性 anchor；switch 一旦开始，其缺失或漂移不得阻止 automatic recover、manual recover 或 rollback 恢复 previous-live。最终 switch 仍由维护者执行，当前状态取信于文末最新记录和切换手册第 15.2 节。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1552,3 +1552,53 @@
 - 本地存储受限不会导致页面初始化失败。模式切换保持现有内容节点，不重载业务页面；管理/公开路由不挂用户视觉，API、数据库、权限、路由、配置与业务功能不变。
 - 发布前实时核验：生产 subnexus-cutover=617ec2d9fb3b5a2344ab9b288f0fd6b76dfb3a48dba579d20612f7223ec20ccf，image=sha256:4f1336bcf711f35b2a752d3896960cf4df4309903718c05d140f92ffedc4a8e4，running/healthy/restart=0；镜像 provenance=3418ed1a599160d4f1e1b29e4da8d32c1871281e，作为本轮 base。上轮 20260909054636-2120213 已 switched，不可重用。本次从新的不可变 commit/tree 构建，所有新 image/Gate/prepare/probe/audit 证据在完成后单独追加。
 - UI wrapper 只新增性能模块及三个测试的精确路径校验，不更改 switch/rollback；28 个故障/恢复场景及来源路径校验通过。新 run 的在线备份和证据仍为必需，它们不是新增回滚容器/镜像。此条是准备记录，不表示切换前验收已完成，也没有执行 switch/rollback。
+
+## 2026-09-09（Asia/Shanghai）— 用户端视觉性能分级发布已完成切换前置
+
+- 本轮不可变候选为 commit=`bf5aae07bb30b380cb1be154c49149c9c64cc7f7`、tree=`11ff7c25d42a22d582c12e3166649c4e34e16dfc`、image=`sha256:db1f6f23238301bbecece8b2e5ff3cccdcca8f09aa87099635e5674ba4877577`，归档 SHA256=`f9c5498da435bf4fea09e1a9012b13474faedd3eeee791617b2048500236b705`。线上安装 wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-83d5ec3f-perf-bf5aae07bb30.sh`、SHA256=`83d5ec3f8fc9f0deee1d2a2b25c24a45cf149192046b7c9e0c52054e84dcfdcf`；固定 controller SHA256=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`。
+- 候选 Gate evidence=`/srv/subnexus-migration/docker-candidate/20260909T075323Z-1706be18-1b8e-46d6-b6d3-b1f82a8a9b88/evidence.txt`，SHA256=`a9778206963647d172fdc8fa7e25c2fc173e705107614cc5f7ba34be5b88fd02`；首页 observer evidence=`/srv/subnexus-migration/diagnostics/rain-home-bf5aae07bb30.E901uCy5/evidence.txt`，SHA256=`79dc5ebb9e76c60c4364bf5bdf7a3dff4ec94035b6ef5ac2008ffa9e4006858a`；Gate handoff=`/srv/subnexus-migration/gate-rain-bf5aae07bb30-20260909T075316Z-2188119.env`，SHA256=`e2ee007aab78244a9c78c165e95f2da3938102e34d3042743a7188be52af5af0`。
+- 有效 prepare run=`/srv/subnexus-migration/cutover/20260909083917-2245949`，`READY=prepared`、`UI_READY=application-refresh-v1`，manifest `state=prepared/ui_state=prepared/ui_commit_intent=no`，SHA256=`a703c65f9d2eb18b1d035602a2073b8b6ffd1924136b81d9e173aa00052af8ab`。备份为 PostgreSQL `5575725893` B（SHA256=`7b41e4c47bf2269782eb6aca4bc98b9cc5f70019afb562b0bcf57ac3c67e3ca0`）、catalog `118684` B（SHA256=`f6d6c9eabdc024efcd782a54aece374e87c26ab029b75d5d1f66b922de7ca8c1`）、Redis `11682462` B（SHA256=`3cc8e0411e546a30eaed69de1ebf617c9cf7c7cc2fe4f8fac3f0d08e0671c11a`）、应用数据 `77958589` B（SHA256=`62deb6f737a3d1fbd9ff4f0bddb3a1ab84309a6b58d137508d8838b323114280`）。
+- stopped/never-started probe evidence=`/srv/subnexus-migration/diagnostics/probe-rain-bf5aae07bb30-20260909083917-2245949.evidence`，SHA256=`4e432ed2f9c209d73c11c20d36496de42b9f5ac4f559dcd56e3defb9bb051cd`；临时容器 ID=`2064f87a3f620a7fb646f762541e68e1e60c0702c7a078867bea8e8605203af7`，创建后从未启动并已删除。最终审计日志=`/srv/subnexus-migration/rain-bf5aae07bb30-final-audit-20260909083917-2245949.log`，SHA256=`b811178f2050e6a1bfed1b2350756b26660a75b53a3bb78e60b881f49eddb01a`，`FINAL_PRE_SWITCH_AUDIT=passed`、`FINAL_SWITCH_EXECUTED=false`。
+- 审计时生产 app=`617ec2d9fb3b5a2344ab9b288f0fd6b76dfb3a48dba579d20612f7223ec20ccf`、image=`sha256:4f1336bcf711f35b2a752d3896960cf4df4309903718c05d140f92ffedc4a8e4`，`running/healthy/restart=0`；PostgreSQL 与 Redis 身份、状态和重启次数未变化；公网 health/home 通过，`/srv` 与 Docker 可用空间约 27.5 GB。固定旧 SubNexus 回滚对象仍为 `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee` / `sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd` / `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`，anchor SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。本轮没有新建永久回滚对象、没有执行 switch/rollback，也没有使用 prune 或删除历史回滚数据。
+- 交接命令必须绑定上述 wrapper、controller 和 run，并使用 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600`；switch 需要短时生产窗口和无结算任务确认，rollback 使用应用回滚确认。命令已在交接时给出，代理未执行。
+
+## 2026-09-09（Asia/Shanghai）— 撤回旧交接并修复切换前现网回滚合同
+
+- 独立审查确认上条候选使用的 wrapper 会在成功切换后删除切换前 live，正式 rollback 只能恢复更早的固定旧 SubNexus，不满足维护者明确要求的“可回滚为服务器现在的版本”。因此 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 对应镜像、归档、Gate、wrapper、observer、handoff、`20260909080410-2227099`、`20260909083917-2245949` 及其所有 switch/rollback 命令均已撤回，禁止复用。应用 UI 改动本身不因此回退，但必须连同修复后的部署证据重新构建。
+- `tools/production-deploy/subnexus-ui-cutover.sh` 已恢复切换前 live 一级回滚合同：prepare 记录其完整 container ID、`.Image`、`.Config.Image`、唯一暂存名称和 `prepared` 状态，不停止、重命名或重启它；switch 才停止并重命名，候选健康后继续保留该 stopped 容器；rollback 精确删除候选后恢复该容器到生产名称。它不会被 `docker commit`、转换为额外镜像或在成功 switch 后删除。
+- 新目标的 ID、镜像、配置镜像、名称、状态或 runtime contract 任一漂移均失败关闭；候选删除仍要求完整身份匹配。switch 新增 `SIGHUP` 自动恢复，测试覆盖提交窗口、响应丢失、四类中断、目标缺失/漂移和幂等恢复。Git Bash 完整结果为 `46` 个故障/恢复场景及源码范围合同通过，两个脚本 `bash -n` 与 `git diff --check` 通过。
+- 历史旧 SubNexus 容器及 anchor 继续保留，并在 prepare/switch 阶段作为连续性门禁；它不再替代切换前 live 承担本轮正常 rollback。当前仅完成本地修复，尚未形成新的不可变提交、镜像、Gate、prepare、probe 或最终审计；线上仍运行原容器，未执行 stop/rename/restart/switch/rollback，当前没有有效切换命令。
+
+## 2026-09-09（Asia/Shanghai）上游 v0.2.4 本地合并
+
+- 维护者本轮要求对齐 `https://github.com/Wei-Shaw/sub2api.git` 最新版本。同步目标固定为 `upstream/main=98d86915becae9fe9491a91ffc6defd5235c8d2b`，VERSION=`0.2.4`，标签 `v0.2.4=d681d0798064ee0ffff376d19687d12f09fe600f`。
+- 代码合并提交=`c76c04dd170c6eb4d34f864150c8e03536f38c24`，tree=`4ed29392a38985a10a4a6ae7f04d94d04374dbc4`；第一父提交=`bf5aae07bb30b380cb1be154c49149c9c64cc7f7`，第二父提交为上述上游 SHA。预合并本地安全分支 `backup/pre-upstream-sync-20260909-173148` 只用于 Git 代码恢复，不是线上回滚对象。
+- 使用 `git merge --no-commit --no-ff -X ours upstream/main` 后，对无策略 merge-tree 指出的7个冲突文件逐一复核。补齐 `ChannelMonitorHideUserRanking` 公共设置 key/read、service/DTO、handler 与首页注入，恢复后台 V2/V3 吞吐量 Toggle 和 V2 排行 Toggle；不改变本项目默认关闭和 V3 的业务约定。插件保留已有等效的 Windows ZIP 句柄修复及关闭错误处理。
+- 保留 F01-F13、Rain 首页/用户端视觉模式、下拉层级、签到文案，以及所有 `9001`-`9013` SQL。纳入上游模型白名单、MiniMax、Astra/Image 2.5、网关、支付、代理等更新；已执行的历史迁移没有改名、删除或修改。
+- 前端验证：`pnpm run typecheck`、`pnpm run lint:check`、`pnpm run build` 通过；完整 Vitest `311/311` 文件、`2174/2174` 测试通过。监控修复新增 V2/V3 操作回归后，定向 3 文件/45 测试和再次 lint/build 通过。适配 provider 数量与 GroupsView 测试的 auth store、模型白名单 API 名称；不通过删除用例规避失败。
+- 后端验证：默认 Go 包测试全部通过（首次 repository 因 Windows PATH 缺 sh 失败，加入 Git Bash 后该包复跑通过）；unit 标签全包中 Ent schema 曾在并行生成时读取临时文件，生成结束后该包复跑通过。service 缺公共设置字段的真实合并问题修复后，`go test -tags=unit ./internal/service ./internal/handler ./internal/handler/dto ./internal/server -count=1 -p=1` 全过，其余 unit 包原轮次均通过。`go vet ./...`、受修改包 vet、`go build -tags embed ./...` 通过；Wire 与 Ent 重生成无代码漂移。
+- 依赖：上游 package.json 本轮只新增 i18n 构建检查，无依赖版本变化；pnpm 9.15.9 冻结离线 lockfile 校验通过。上游 Astra 指令文件只有11处行尾空白清理，无内容语义变更。部署脚本工作区测试49个故障/恢复场景通过，未纳入本次合并。
+- 共享工作区还有原迁移任务在写入，已发送协调消息并保留其原有6文档/2部署脚本改动；这些文件未进入代码合并提交。本次上下文、台账和记忆追加也保留为未提交文档改动。
+- 本轮没有 push、访问服务器、数据库 apply/restore、开关开启、镜像部署或 switch/rollback。后续 `0.2.4` 发布必须重新执行完整 Release Gate：`235/236` 将 `groups.models_list_config` 重命名为 `model_allowlist`，旧版同库回滚兼容性需要单独验证；不能沿用仅 UI 更新的脚本范围和历史运行证据。本轮未运行生产备份隔离迁移/旧版回归，也未生成新的上线命令。
+
+## 2026-09-09（Asia/Shanghai）— UI 回滚候选身份证明补强
+
+- 独立复审发现：当 previous-live 已被外部恢复到 `production-app` 名称，而候选仍被外部改名保留时，`ui_manual_rollback` 不能仅凭生产名判断回滚已完成。现行 wrapper 在该分支及自动恢复成功前，均通过 manifest 绑定的候选完整 container ID 精确确认候选不存在；候选仍存在、ID/名称/意图元数据不完整或无法证明时失败关闭，保留 previous-live 和候选现场，不写成功 marker。
+- 自动恢复在 `ui_remove_candidate` 后增加同样的 absent proof，覆盖“候选 ID 文件丢失但声明已写、候选被改为非生产名”的故障。只有明确证明候选从未创建的状态才允许无 ID：`candidate_container_id`、`candidate_container_name`、`candidate_container_intent` 均为空、ID 文件不存在、`ui_commit_intent=no`，且状态处于 `switching`、`rolling_back` 或已完成的 `recovered_current`；任何部分元数据或已提交状态都不放行。
+- 测试新增 `rollback_already_restored_candidate_present` 与 `recovery_candidate_identity_lost_detached`，并复跑 Git Bash 完整 `56` 个故障/恢复场景及源码范围合同；结果为 `UI cutover tests passed: 56 fault/recovery cases and source-contract checks`，两个脚本 `bash -n`、`git diff --check` 均通过。Windows Git Bash 的 `.config/git/ignore` 权限警告为环境噪声，不影响退出码 `0`。
+- 本轮只修改 `tools/production-deploy/subnexus-ui-cutover.sh`、其测试和本记忆/台账文本；未 `git add`、commit、push，未访问或修改线上服务器、Docker、PostgreSQL、Redis、Nginx、功能开关或 `F:\Sub2Api\SubNexus`。当前仍不能切换：主流程还需完成父任务的 v0.2.4 数据库兼容 Gate、不可变镜像/归档、全新线上备份、无停机 prepare、never-started probe 和最终审计。
+
+## 2026-09-09（Asia/Shanghai）— 历史 anchor 与一级恢复解耦
+
+- 二次独立审查指出：历史旧 SubNexus anchor 若同时作为 switch 后恢复门禁，会在该二级证据缺失或漂移时阻止恢复切换前现网版本，违反“用户数据优先、previous-live 可回滚”的一级目标。现行合同因此限定为：anchor 只在 `prepare` 和 `switch` 提交前做连续性校验；一旦 switch 已开始，恢复路径只依赖本轮 manifest 严格绑定的 previous-live。
+- `tools/production-deploy/subnexus-ui-cutover.sh` 的 `ui_load_run` 仅在 `scope=switch` 时检查 anchor 路径、状态和哈希；`ui_manual_rollback` 与 `ui_recover_entry` 不再调用 anchor gate。`ui_switch` 仍在停机前及候选提交前两次完整校验 anchor；第二次校验失败以及 `ERR/HUP/INT/TERM` 仍直接自动恢复 previous-live。
+- 测试将 `recover_anchor_missing`、`recover_anchor_drift` 和 `rollback_anchor_missing` 改为必须成功恢复，并新增 `rollback_anchor_drift`。每个场景都验证 production 名称/运行状态、候选清理、终态 marker、previous-live 身份、设置保持及未操作历史容器；切换前 `anchor_missing`/`anchor_drift` 仍失败关闭，`anchor_lost_during_switch` 仍自动恢复。
+- Git Bash 完整结果为 `50` 个故障/恢复场景及来源合同检查通过；两个脚本 `bash -n`、聚焦 7 场景和 `git diff --check` 通过。仅修改既有 6 个上下文/手册/台账文件与 2 个 UI 部署脚本；未 `git add`、commit、push，未访问服务器、Docker、数据库或线上用户。旧 `bf5aae07...` 制品和命令继续作废，必须待新提交及完整 v0.2.4 数据库兼容 Gate 后重新生成发布证据。
+
+## 2026-09-09（Asia/Shanghai）— 最终候选本地门禁收尾（尚未发布）
+
+- 当前工作树仍位于 `feature/subnexus-migration`，基线 HEAD=`c76c04dd170c6eb4d34f864150c8e03536f38c24`；本次未修改 `main` 或只读源项目 `F:\Sub2Api\SubNexus`，也未访问线上服务器、生产数据库或线上 Docker。
+- 本轮待提交改动包括 `234a_group_model_allowlist_legacy_compat.sql`、迁移 runner 合同校验、旧/新列双向同步与冲突 fail-closed 集成夹具，以及 UI retained-live 回滚 wrapper/56 场景测试和记忆文档。`.codex-go-cache*` 仅为本地测试缓存，不得提交或上传。
+- 本地验证结果：Git Bash 后端 `go test ./...` 通过；兼容迁移定向测试和 `migrations` 包通过；UI cutover 56 个故障/恢复场景通过；production cutover、Docker candidate、readonly preflight、Redis restore-check 四套脚本夹具通过；isolated image-build 静态合同通过。Windows Git Bash 的 Python 动态夹具因系统 `python3` 为 AppInstaller redirector 而按测试设计跳过，必须在 Linux/WSL 真实解释器环境复跑。
+- 隔离 WSL `SubNexusBuild20260904` 当前代码副本仍为旧提交 `187b128bd32d1e06ad6e08817632e7c6b5ccca92`，专用 Docker socket=`unix:///var/run/subnexus-docker-96.sock`，daemon=`ab82cd35-2345-44b4-8709-bdcbd49b22ca`，当前 0 容器/0 卷/0 自定义网络且五个固定基础镜像存在；历史候选镜像保留，禁止 prune。最终提交后必须先同步代码，再跑真实 PostgreSQL/旧版同库回归和不可变镜像构建。
+- 当前阶段结论：尚不可切换。必须依次完成提交/push、隔离 Linux PostgreSQL 兼容矩阵、不可变镜像与归档、线上只读候选 Gate、全新备份、无停机 `prepare`、never-started probe 和 `FINAL_PRE_SWITCH_AUDIT=passed`；只有这些证据绑定同一 run 且 manifest=`state=prepared/ui_state=prepared/ui_commit_intent=no` 后，才生成并交付唯一的手动 `switch`/`rollback` 命令。

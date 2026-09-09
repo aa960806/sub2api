@@ -1,6 +1,6 @@
 # SubNexus 回滚手册
 
-> 当前权威状态：2026-09-08（Asia/Shanghai）。第 8 节保留 2026-09-07 发布历史；本轮 Rain + Glass 用户端视觉更新采用新的回滚合同，最终 `switch` 时把切换前 live 以唯一名称保留为 stopped 容器，后续 rollback 只恢复该新目标。候选、run 和命令尚待本轮发布流程生成，以第 9 节为唯一现行交接。
+> 当前权威状态：2026-09-09（Asia/Shanghai）。第 8 节保留历史发布事实；本轮用户端视觉性能与显示修复在最终 `switch` 时把切换前 live 以唯一名称保留为 stopped 容器，后续 rollback 只恢复该目标。`bf5aae07...` 旧候选的发布证据与命令已撤回，新候选、run 和命令尚待重新生成，以第 9 节和切换手册第 15.2 节为唯一现行交接。
 
 回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只使用切换手册第 15 节最终登记的同一 UI wrapper/run；不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、新回滚目标和依赖身份校验。
 
@@ -20,7 +20,7 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 
 ## 2. 应用异常：快速回滚
 
-适用于隔离演练已证明旧版本兼容新增表/可选字段的情况。本轮 switch 进程退出后，如需恢复，只能使用切换手册第 15 节同 run rollback。switch 运行中只等待返回，wrapper 会在失败路径自动尝试恢复切换前 live，不得并发执行 rollback。本轮恢复对象就是 switch 时保留的切换前 live；其完整 ID、`.Image`、`.Config.Image`、唯一名称和状态必须与 prepared manifest 一致。
+适用于隔离演练已证明旧版本兼容新增表/可选字段的情况。本轮 switch 进程退出后，如需恢复，只能使用切换手册第 15 节同 run rollback。switch 运行中只等待返回，wrapper 会在失败路径自动尝试恢复切换前 live，不得并发执行 rollback。本轮恢复对象就是 switch 时保留的切换前 live；其完整 ID、`.Image`、`.Config.Image`、唯一名称和状态必须与 prepared manifest 一致。历史 anchor 只在 prepare/switch 提交前承担连续性门禁；一旦 switch 已开始，anchor 缺失或漂移不得阻止自动恢复、人工 recover 或正式 rollback。
 
 先用 `docker ps`/`docker inspect` 做只读确认，再由维护者执行本轮已发布的包装器命令。本轮使用既有入口，不修改或 reload Nginx；回滚后再访问健康接口：
 
@@ -106,5 +106,5 @@ wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh`
 - prepared manifest 必须固定新目标的 `ui_new_rollback_id`、`ui_new_rollback_image`、`ui_new_rollback_config_image`、`ui_new_rollback_name=production-app-ui-prior-<run-id>` 和 `ui_new_rollback_state=prepared`。任一字段缺失、格式错误或与 live 不一致都必须失败关闭。
 - 最终 `switch` 由维护者执行。wrapper 停止当前 live、按唯一名称重命名、验证其 `stopped` 状态及完整身份后才启动候选；候选健康并提交成功后，该 stopped 容器继续保留为本轮新回滚目标，不得删除、`docker commit` 或转换为另一套回滚方案。
 - 本轮 `rollback` 仅删除经精确身份校验的候选并恢复新目标到生产名称；不恢复历史旧 SubNexus，不默认恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关。新目标缺失，或 ID、`.Image`、`.Config.Image`、名称、runtime contract 任一漂移时，回滚必须停止并保留现场。
-- 历史 anchor 不是本轮恢复对象，但现行 wrapper 仍要求它及其容器/镜像在整个 switch/rollback 窗口保持完整，任何无证据缺失都会失败关闭。空间足够时继续保留全部历史数据；空间不足时，只能在形成精确对象清单、完整身份与 SHA 记录后删除其他已确认无用的历史 run 备份或无引用垃圾。不得执行 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、新目标和本轮 run/备份/审计不得纳入清理。
+- 历史 anchor 不是本轮恢复对象。现行 wrapper 在 prepare 和 switch 提交前要求它及其容器/镜像完整；若它在 switch 已开始后缺失或漂移，wrapper 仍必须优先恢复经过 manifest 严格绑定的 previous-live，人工 recover/rollback 也不得被该二级证据阻断。空间足够时继续保留全部历史数据；空间不足时，只能在形成精确对象清单、完整身份与 SHA 记录后删除其他已确认无用的历史 run 备份或无引用垃圾。不得执行 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、新目标和本轮 run/备份/审计不得纳入清理。
 - 候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已固定并推送；UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`。镜像、run、备份和最终审计仍待生成；当前没有可执行的本轮 rollback 命令。完成切换前全部门禁后，唯一命令只登记在切换手册第 15 节。

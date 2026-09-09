@@ -20,7 +20,13 @@ func TestMigration236RenamesLegacyModelsListConfigColumn(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 
-	_, err := tx.ExecContext(ctx, "ALTER TABLE groups RENAME COLUMN model_allowlist TO models_list_config")
+	// 234a is applied by the integration harness before this test.  Remove its
+	// bridge trigger and legacy column so this fixture can model the historical
+	// old-only shape that 236 is intended to repair.
+	dropGroupModelAllowlistCompatTrigger(t, tx)
+	_, err := tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN IF EXISTS models_list_config")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "ALTER TABLE groups RENAME COLUMN model_allowlist TO models_list_config")
 	require.NoError(t, err)
 
 	var groupID int64
@@ -50,7 +56,10 @@ func TestMigration236BackfillsWhenBothColumnsExist(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 
-	_, err := tx.ExecContext(ctx,
+	dropGroupModelAllowlistCompatTrigger(t, tx)
+	_, err := tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN IF EXISTS models_list_config")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx,
 		"ALTER TABLE groups ADD COLUMN models_list_config JSONB NOT NULL DEFAULT '{}'::jsonb")
 	require.NoError(t, err)
 
@@ -85,6 +94,7 @@ func TestMigration236RecreatesMissingModelAllowlistColumn(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 
+	dropGroupModelAllowlistCompatTrigger(t, tx)
 	_, err := tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN model_allowlist")
 	require.NoError(t, err)
 

@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态：2026-09-09（Asia/Shanghai）。本次为用户端下拉层级与签到文案显示修复，最终 `switch` 仍由维护者执行；回滚目标固定为此前旧 SubNexus，不创建新的回滚容器或镜像。第 15.1 节保留 2026-09-08 准备阶段的历史合同，第 15.2 节为唯一现行发布交接。新候选、镜像、脚本哈希、Gate、备份与 `prepare` 必须按本次实际证据重新固定，不得使用任何历史 `switch`/`rollback` 命令。
+> 当前权威状态：2026-09-09（Asia/Shanghai）。本次为用户端视觉性能、下拉层级与签到文案显示修复，最终 `switch` 仍由维护者执行；本轮一级回滚目标必须是切换前正在运行的 live，并在成功切换后以 stopped 容器保留。历史旧 SubNexus 只作连续性 anchor。第 15.1 节保留历史准备合同，第 15.2 节为唯一现行发布交接。`bf5aae07...` 的全部发布证据和命令已撤回，新候选、镜像、脚本哈希、Gate、备份与 `prepare` 必须重新生成。
 
 本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧 SubNexus anchor 及容器身份和 never-started probe 均核验完成之后。本轮最终 `switch` 仍由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
 
@@ -334,24 +334,24 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 1. `prepare` 前历史 SubNexus anchor `/srv/subnexus-migration/cutover/20260905085804-4072165` 必须存在，并对其 manifest、旧容器完整 ID、image、名称、停止状态、依赖和运行合同做完整校验；缺失或漂移必须在备份或 Docker 变更前失败关闭。
 2. `prepare` 不停止、重命名或创建容器，只把当时 live 固定为本轮新回滚目标，并在 manifest 记录 `ui_new_rollback_id`、`ui_new_rollback_image`、`ui_new_rollback_config_image`、唯一 `ui_new_rollback_name=production-app-ui-prior-<run-id>` 和 `ui_new_rollback_state=prepared`。
 3. 维护者执行 `switch` 时，wrapper 才停止当前 live、按上述唯一名称重命名并验证其完整 ID、`.Image`、`.Config.Image`、名称、runtime contract 和 `stopped` 状态；随后创建并启动候选。候选健康后保留该 stopped 容器，不得删除或提交为镜像。
-4. 本轮 `rollback` 删除经身份校验的候选并恢复上述新目标；历史 SubNexus anchor 不再是本轮恢复对象，但现行 wrapper 仍在 switch、失败恢复和 rollback 中把它作为连续性门禁。anchor 或其容器/镜像缺失，以及新目标任一身份字段漂移时，都必须失败关闭。
+4. 本轮 `rollback` 删除经身份校验的候选并恢复上述新目标。该次历史草案曾把历史 SubNexus anchor 同时用于 switch、失败恢复和 rollback 门禁；此约束已由第 15.2 节纠正，不得用于当前命令。现行恢复只对新目标的身份与运行合同失败关闭。
 5. 空间充足时保留全部历史数据。空间不足时，只能在删除清单逐项绑定完整 ID/路径/SHA 并保存 root-only 审计记录后，精确删除其他已失效 run 备份、上传残留或无引用垃圾；历史 anchor 及其容器/镜像必须贯穿本轮 switch/rollback 窗口保留。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理，历史 anchor、本轮新回滚目标及新 run 证据不得删除。
 
 该准备快照当时尚未生成可执行命令。其候选 SHA、脚本 SHA 或 run 不得作为本次发布输入；当前交接仅以第 15.2 节为准。
 
-### 15.2 2026-09-09 当前合同：固定旧 SubNexus 回滚目标
+### 15.2 2026-09-09 当前合同：回滚到切换前现网版本
 
-本次只修复用户端下拉菜单层级、窄屏日期菜单显示和签到文案。API、请求参数、路由、权限、认证、配置、功能开关、按钮事件及业务处理不变。维护者要求代理完成全部前置工作，最终手动执行切换；本次不新增永久回滚对象，也不把当前 live 改作新的最终回滚目标。
+本次包含用户端视觉性能分级、下拉菜单层级、窄屏日期菜单显示和签到文案。API、请求参数、路由、权限、认证、配置、功能开关、按钮事件及业务处理不变。维护者要求代理完成全部前置工作，最终手动执行切换，并明确要求异常时恢复到切换瞬间正在运行的服务器版本。
 
 | 固定项 | 当前合同与待核验项 |
 | --- | --- |
-| 固定回滚容器 | ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`；image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`；name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165` |
-| 固定 anchor | `/srv/subnexus-migration/cutover/20260905085804-4072165`；manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`；每次 prepare/switch/rollback 仍须实时验证容器、镜像、名称、停止或恢复状态、依赖及运行合同 |
-| prepare | 全新 run 与 PostgreSQL/catalog/Redis/应用数据备份仍为必需；不停止、重命名或创建回滚容器。manifest 固定 `ui_anchor_*`、`ui_rollback_id/image/name` 和 `ui_temporary_name`，不创建或记录 `ui_new_rollback_*` |
-| switch | 只在维护者执行后停止 live 并暂存到 `ui_temporary_name`，用于尚未提交的失败恢复；候选健康和合同校验通过后保存诊断日志，按完整 ID 删除该临时前版本容器，不把它保留为新永久回滚对象，不执行 `docker commit` |
-| 失败恢复与最终 rollback | 切换尚未提交时可恢复暂存 live，这是过程恢复；正式 `rollback` 始终通过本次 wrapper/run 恢复上述固定旧 SubNexus。候选和临时容器删除前均需完整身份核验，旧 anchor 缺失或漂移时失败关闭；不默认恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关 |
-| 已有历史对象 | 9 月 8 日曾保留的回滚对象及其他历史证据继续作为历史对象，不替代本次固定目标。空间足够时保留；确需清理时仅在完整 ID/路径/SHA、引用关系和 root-only 清理记录核验后精确删除可清理对象。固定旧 SubNexus、其 anchor、本次 run 与备份证据不可删除，禁止任何 prune 或通配符清理 |
+| 本轮一级回滚目标 | 本次全新 `prepare` 时的实际 live；其完整 ID、`.Image`、`.Config.Image`、运行合同和唯一名称必须由新 manifest 实时固定，不能从本表预填 |
+| 历史连续性 anchor | 旧 SubNexus ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`；只在 prepare 和 switch 提交前校验并继续保留，不是本轮正常 rollback 目标，也不得阻止 switch 开始后的恢复 |
+| prepare | 建立全新 run 与 PostgreSQL/catalog/Redis/应用数据备份；manifest 写入 `ui_new_rollback_id/image/config_image/name/state=prepared`。只读固定当前 live，不停止、重命名、重启或创建容器 |
+| switch | 只在维护者执行后停止 live 并重命名为 `production-app-ui-prior-<run-id>`；完整复核其 stopped 身份后才创建并启动候选。候选健康且提交成功后继续保留该 stopped 容器，不执行 `docker commit`，也不删除它 |
+| 失败恢复与最终 rollback | 提交前故障及 `HUP/INT/TERM/ERR` 自动恢复切换前 live；成功切换后的人工 recover/rollback 精确删除候选并恢复同一 stopped live。此时历史 anchor 缺失或漂移只影响二级灾备证据，不得阻断一级恢复；只有新目标或候选的身份/合同不可信时失败关闭。不默认恢复 PostgreSQL/Redis，不修改 Nginx、设置或功能开关 |
+| 已有历史对象 | 空间足够时全部保留。确需清理时仅可按完整 ID/路径/SHA 和无引用证据逐项精确处理；历史 anchor、本轮一级回滚目标、新 run、备份和审计不可删除，禁止 prune、通配符或前缀清理 |
 | 新发布固定值 | 候选完整 commit/tree、实时生产 base、image ID、归档路径/SHA/大小、UI wrapper/controller 安装路径及 SHA、Docker Gate、全新备份、prepare run、never-started probe 和最终审计必须由本次实际证据填写；本段不复用第 15.1 节的固定值 |
 | 人工边界 | 代理停在本次 `state=prepared/ui_state=prepared`，核验全部前置后只交付绑定同一 wrapper/run 的一整行 `switch` 和一整行 `rollback`，由维护者手动执行 |
 
-当前合同说明不构成可执行交接命令。所有历史已成功、失败或已回滚的 run 禁止重新用于 prepare/switch，也不得将历史 wrapper 的回滚命令改几个参数后当作本次命令。
+当前合同说明不构成可执行交接命令。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的镜像、Gate、wrapper、prepared run 和交接命令因回滚目标错误全部作废。所有历史已成功、失败或已回滚的 run 禁止重新用于 prepare/switch，也不得将历史命令改几个参数后当作本次命令。
