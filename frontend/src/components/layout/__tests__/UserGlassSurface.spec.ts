@@ -18,9 +18,9 @@ describe('user rain and glass surface scope', () => {
     expect(layout).toContain("import RainyBackground from '@/components/home/RainyBackground.vue'")
     expect(layout).toContain('route.meta.requiresAuth === true && route.meta.requiresAdmin !== true')
     expect(layout).toContain('<RainyBackground')
-    expect(layout).toContain('v-if="isUserSurface"')
+    expect(layout).toContain('v-if="isUserSurface && isGlassEnabled"')
     expect(layout).toContain(':droplets-z-index="9"')
-    expect(layout).toContain('v-if="!isUserSurface" class="pointer-events-none fixed inset-0 bg-mesh-gradient"')
+    expect(layout).toContain('v-if="!isUserSurface || !isGlassEnabled" class="pointer-events-none fixed inset-0 bg-mesh-gradient"')
   })
 
   it('keeps the teleported droplets between the wash and existing content layers', () => {
@@ -47,7 +47,7 @@ describe('user rain and glass surface scope', () => {
     expect(selectorGroups.length).toBeGreaterThan(0)
     for (const selectorGroup of selectorGroups) {
       if (selectorGroup.startsWith('@')) continue
-      expect(selectorGroup).toContain('.user-glass-surface')
+      expect(selectorGroup).toMatch(/\.user-glass-(?:surface|performance-compat)/)
     }
 
     expect(css).not.toMatch(/(^|[,{\s])body\b/)

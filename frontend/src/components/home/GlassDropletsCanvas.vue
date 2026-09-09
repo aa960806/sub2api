@@ -38,6 +38,7 @@ interface ImpactEvent {
 interface GlassDropletsCanvasProps {
   enabled: boolean;
   animated?: boolean;
+  quality?: 'standard' | 'balanced';
   mouseX?: number;
   mouseY?: number;
   zIndex?: number;
@@ -45,6 +46,7 @@ interface GlassDropletsCanvasProps {
 
 const props = withDefaults(defineProps<GlassDropletsCanvasProps>(), {
   animated: true,
+  quality: 'standard',
   mouseX: 0,
   mouseY: 0,
   zIndex: 30,
@@ -88,11 +90,22 @@ function startAnimation() {
 
   const droplets: Droplet[] = [];
   const impacts: ImpactEvent[] = [];
-  const staticDropletsCount = Math.min(72, Math.floor((width * height) / 21000));
-  const slidingDropletsCount = Math.min(12, Math.floor((width * height) / 52000));
+  const staticLimit = props.quality === 'balanced' ? 24 : 72;
+  const slidingLimit = props.quality === 'balanced' ? 0 : 12;
+  const density = props.quality === 'balanced' ? 42000 : 21000;
+  const maxDroplets = staticLimit + slidingLimit + 24;
+
+  function addTransientDroplet(droplet: Droplet) {
+    // Clicks and periodic impacts must not grow the collision loop indefinitely.
+    if (droplets.length >= maxDroplets) droplets.splice(staticLimit + slidingLimit, 1);
+    droplets.push(droplet);
+  }
 
   function initDroplets() {
     droplets.length = 0;
+    impacts.length = 0;
+    const staticDropletsCount = Math.min(staticLimit, Math.floor((width * height) / density));
+    const slidingDropletsCount = Math.min(slidingLimit, Math.floor((width * height) / 52000));
 
     // Static condensation micro-droplets on glass.
     for (let i = 0; i < staticDropletsCount; i++) {
@@ -137,11 +150,10 @@ function startAnimation() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
     initDroplets();
+    if (!props.animated) render();
   };
 
-  if (props.animated) {
-    window.addEventListener('resize', handleResize);
-  }
+  window.addEventListener('resize', handleResize);
   initDroplets();
 
   let nextImpactAt = performance.now() + 700 + Math.random() * 1000;
@@ -152,7 +164,7 @@ function startAnimation() {
     const clickX = event.clientX - rect.left;
     const clickY = event.clientY - rect.top;
 
-    droplets.push({
+    addTransientDroplet({
       x: clickX,
       y: clickY,
       radius: 3 + Math.random() * 1.5,
@@ -293,7 +305,7 @@ function startAnimation() {
     nextImpactAt = time + 1200 + Math.random() * 2600;
   }
 
-  function drawImpact(context: CanvasRenderingContext2D, impact: ImpactEvent, pX: number, pY: number) {
+  function drawImpact(context: CanvasRenderingContext2D, impact: ImpactEvent, pX: number, pY: number, delta: number) {
     const progress = impact.age / impact.life;
     const fade = Math.max(0, 1 - progress);
     const x = impact.x + pX;
@@ -311,7 +323,7 @@ function startAnimation() {
 
     // Fine outward droplets fade much faster than the pooled drop.
     for (const particle of impact.particles) {
-      particle.distance += particle.speed * 0.016;
+      particle.distance += particle.speed * delta;
       const px = x + Math.cos(particle.angle) * particle.distance;
       const py = y + Math.sin(particle.angle) * particle.distance * 0.42;
       context.beginPath();
@@ -329,10 +341,18 @@ function startAnimation() {
   }
 
   let lastFrame = performance.now();
+  let lastPaint = lastFrame;
+  const frameInterval = props.quality === 'balanced' ? 1000 / 30 : 1000 / 60;
   const render = () => {
     const frameNow = performance.now();
-    const delta = Math.min(0.035, Math.max(0.001, (frameNow - lastFrame) / 1000));
-    lastFrame = frameNow;
+    const elapsed = frameNow - lastFrame;
+    if (props.animated && elapsed + 0.5 < frameInterval) {
+      animId = requestFrame(render);
+      return;
+    }
+    const delta = props.animated ? Math.min(0.1, Math.max(0, (frameNow - lastPaint) / 1000)) : 0;
+    lastPaint = frameNow;
+    lastFrame = frameNow - (elapsed >= frameInterval ? elapsed % frameInterval : 0);
     ctx.clearRect(0, 0, width, height);
 
     if (!props.enabled) {
@@ -343,10 +363,10 @@ function startAnimation() {
     const now = Date.now();
     const frameTime = performance.now();
     // Very gentle parallax offset on droplets.
-    const pX = (mouseRef.current.x / (width || 1) - 0.5) * 5;
-    const pY = (mouseRef.current.y / (height || 1) - 0.5) * 5;
+    const pX = props.animated ? (mouseRef.current.x / (width || 1) - 0.5) * 5 : 0;
+    const pY = props.animated ? (mouseRef.current.y / (height || 1) - 0.5) * 5 : 0;
 
-    if (frameTime >= nextImpactAt) spawnImpact(frameTime);
+    if (props.animated && frameTime >= nextImpactAt) spawnImpact(frameTime);
 
     // Update and draw impact splashes before the persistent droplet field.
     for (let i = impacts.length - 1; i >= 0; i--) {
@@ -354,7 +374,7 @@ function startAnimation() {
       impact.age += delta;
       if (!impact.spawnedDrop && impact.age >= 0.12) {
         impact.spawnedDrop = true;
-        droplets.push({
+        addTransientDroplet({
           x: impact.x + (Math.random() - 0.5) * 3,
           y: impact.y + 3,
           radius: 3.1 + Math.random() * 1.8,
@@ -370,7 +390,7 @@ function startAnimation() {
           trailTick: 0,
         });
       }
-      drawImpact(ctx, impact, pX, pY);
+      drawImpact(ctx, impact, pX, pY, delta);
       if (impact.age >= impact.life) impacts.splice(i, 1);
     }
 
@@ -473,7 +493,7 @@ function startAnimation() {
 }
 
 onMounted(startAnimation);
-watch(() => [props.enabled, props.animated], startAnimation);
+watch(() => [props.enabled, props.animated, props.quality], startAnimation);
 watch([() => props.mouseX, () => props.mouseY], () => {
   mouseRef.current = { x: props.mouseX, y: props.mouseY };
 });

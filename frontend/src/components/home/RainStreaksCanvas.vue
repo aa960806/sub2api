@@ -4,6 +4,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 interface RainStreaksCanvasProps {
   enabled: boolean;
   animated?: boolean;
+  quality?: 'standard' | 'balanced';
   intensity?: number;
   windSpeed?: number;
 }
@@ -24,6 +25,7 @@ interface RainStreak {
 
 const props = withDefaults(defineProps<RainStreaksCanvasProps>(), {
   animated: true,
+  quality: 'standard',
   intensity: 0.6,
   windSpeed: 3.5,
 });
@@ -68,15 +70,17 @@ function startAnimation() {
   const handleResize = () => {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
+    if (!props.animated) render();
   };
 
-  if (props.animated) {
-    window.addEventListener('resize', handleResize);
-  }
+  window.addEventListener('resize', handleResize);
 
   // Keep enough drops on screen for a cinematic curtain, while reserving a
   // smaller near-camera layer for the thick, luminous streaks.
-  const count = Math.min(420, Math.floor(width * height * 0.0002 * (0.78 + props.intensity * 1.08)));
+  const areaCount = Math.floor(width * height * 0.0002 * (0.78 + props.intensity * 1.08));
+  const count = props.quality === 'balanced'
+    ? Math.min(150, Math.floor(areaCount * 0.52))
+    : Math.min(420, areaCount);
   const streaks: RainStreak[] = [];
 
   // Wind angle calculation: subtle slant.
@@ -105,10 +109,18 @@ function startAnimation() {
   }
 
   let lastFrame = performance.now();
+  let lastPaint = lastFrame;
+  const frameInterval = props.quality === 'balanced' ? 1000 / 30 : 1000 / 60;
   const render = () => {
     const now = performance.now();
-    const delta = Math.min(0.035, (now - lastFrame) / 1000);
-    lastFrame = now;
+    const elapsed = now - lastFrame;
+    if (props.animated && elapsed + 0.5 < frameInterval) {
+      if (props.animated) animId = requestFrame(render);
+      return;
+    }
+    const delta = props.animated ? Math.min(0.1, (now - lastPaint) / 1000) : 0;
+    lastPaint = now;
+    lastFrame = now - (elapsed >= frameInterval ? elapsed % frameInterval : 0);
     ctx.clearRect(0, 0, width, height);
 
     if (props.enabled) {
@@ -189,7 +201,7 @@ function startAnimation() {
 }
 
 onMounted(startAnimation);
-watch(() => [props.enabled, props.animated, props.intensity, props.windSpeed], startAnimation);
+watch(() => [props.enabled, props.animated, props.quality, props.intensity, props.windSpeed], startAnimation);
 onBeforeUnmount(() => {
   disposeAnimation?.();
   disposeAnimation = undefined;

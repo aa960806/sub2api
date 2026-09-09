@@ -4,12 +4,14 @@ import GlassDropletsCanvas from './GlassDropletsCanvas.vue'
 import RainStreaksCanvas from './RainStreaksCanvas.vue'
 
 type GlassTheme = 'cool-slate' | 'deep-night' | 'cyan-mist'
+type RainQuality = 'standard' | 'balanced'
 
 interface RainyBackgroundProps {
   /** Enables the rain and condensation animation layers. */
   enabled?: boolean
   /** Keeps a static rain frame visible while motion is reduced or paused. */
   animated?: boolean
+  quality?: RainQuality
   /** Selects the image from the target page's rotating city set. */
   imageIndex?: number
   mouseX?: number
@@ -24,6 +26,7 @@ interface RainyBackgroundProps {
 const props = withDefaults(defineProps<RainyBackgroundProps>(), {
   enabled: true,
   animated: true,
+  quality: 'standard' as RainQuality,
   imageIndex: 0,
   mouseX: 0,
   mouseY: 0,
@@ -70,7 +73,7 @@ onMounted(() => {
 })
 
 const parallaxStyle = computed(() => {
-  if (!props.enabled || typeof window === 'undefined') {
+  if (!props.enabled || !props.animated || props.quality === 'balanced' || typeof window === 'undefined') {
     return { transform: 'translate3d(0, 0, 0) scale(1.04)' }
   }
 
@@ -101,8 +104,9 @@ const imageStyle = {
     aria-hidden="true"
   >
     <div
-      class="absolute -inset-8 will-change-transform"
-      :style="{ ...parallaxStyle, transition: 'transform 500ms ease-out' }"
+      class="absolute -inset-8"
+      :class="{ 'will-change-transform': props.enabled && props.animated && props.quality === 'standard' }"
+      :style="{ ...parallaxStyle, transition: props.animated ? 'transform 500ms ease-out' : 'none' }"
     >
       <img
         v-if="currentImage"
@@ -128,10 +132,11 @@ const imageStyle = {
       class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_48%,rgba(3,7,16,0.34)_100%)]"
     />
 
-    <RainStreaksCanvas :enabled="props.enabled" :animated="props.animated" :intensity="0.85" :wind-speed="2.8" />
+    <RainStreaksCanvas v-if="props.quality === 'standard'" :enabled="props.enabled" :animated="props.animated" :quality="props.quality" :intensity="0.85" :wind-speed="2.8" />
     <GlassDropletsCanvas
       :enabled="props.enabled"
-      :animated="props.animated"
+      :animated="props.animated && props.quality === 'standard'"
+      :quality="props.quality"
       :mouse-x="props.mouseX"
       :mouse-y="props.mouseY"
       :z-index="props.dropletsZIndex"

@@ -378,6 +378,13 @@ git -C "$git_repo" config core.autocrlf false
 all_allowed_paths=("${ui_production_source_paths[@]}" "${ui_evidence_source_paths[@]}")
 duplicate_allowed_paths="$(printf '%s\n' "${all_allowed_paths[@]}" | sort | uniq -d)"
 [[ -z "$duplicate_allowed_paths" ]] || test_fail "duplicate UI allowlist path: $duplicate_allowed_paths"
+[[ "$(ui_source_path_class frontend/src/composables/useUserSurfacePerformance.ts)" == production ]] || test_fail 'visual performance preference must be an exact production UI path'
+for evidence_path in \
+  frontend/src/composables/__tests__/useUserSurfacePerformance.spec.ts \
+  frontend/src/components/home/__tests__/RainPerformance.spec.ts \
+  frontend/src/components/layout/__tests__/UserSurfacePerformanceRuntime.spec.ts; do
+  [[ "$(ui_source_path_class "$evidence_path")" == evidence ]] || test_fail "visual performance test must be an exact evidence path: $evidence_path"
+done
 for path in "${all_allowed_paths[@]}"; do
   mkdir -p "$git_repo/$(dirname -- "$path")"
   printf 'base %s\n' "$path" > "$git_repo/$path"
@@ -413,6 +420,10 @@ for forbidden_path in \
   frontend/src/style.css \
   frontend/tailwind.config.js \
   frontend/src/router/index.ts \
+  frontend/src/composables/useUnreviewedSurfacePerformance.ts \
+  frontend/src/composables/__tests__/useUnreviewedSurfacePerformance.spec.ts \
+  frontend/src/components/home/__tests__/UnreviewedRainPerformance.spec.ts \
+  frontend/src/components/layout/__tests__/UnreviewedUserSurfacePerformance.spec.ts \
   frontend/src/views/HomeView.vue \
   frontend/src/components/common/LocaleSwitcher.vue \
   frontend/src/components/home/GlassPane.vue \

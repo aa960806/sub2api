@@ -156,6 +156,27 @@
               </div>
 
               <div class="py-1">
+                <label v-if="isUserSurface" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200">
+                  <span class="flex items-center gap-2">
+                    <Icon name="sparkles" size="sm" />
+                    {{ t('common.visualMode') }}
+                  </span>
+                  <select
+                    :value="surfacePreference"
+                    :aria-label="t('common.visualMode')"
+                    class="input mt-2 w-full py-1 text-sm"
+                    @change="handleSurfacePreferenceChange"
+                  >
+                    <option v-for="choice in surfaceChoices" :key="choice" :value="choice">
+                      {{ t(`common.visualModes.${choice}`) }}
+                    </option>
+                  </select>
+                  <span v-if="surfacePreference === 'auto'" class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('common.visualModeCurrent', { mode: surfaceModeLabel }) }}
+                  </span>
+                  <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ t('common.visualModeHint') }}</span>
+                </label>
+
                 <router-link to="/profile" @click="closeDropdown" class="dropdown-item">
                   <Icon name="user" size="sm" />
                   {{ t('nav.profile') }}
@@ -264,6 +285,7 @@ import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import { useUserSurfacePerformance, type UserSurfacePreference } from '@/composables/useUserSurfacePerformance'
 
 withDefaults(defineProps<{
   showPageDescription?: boolean
@@ -278,6 +300,11 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const { mode: surfaceMode, preference: surfacePreference, setMode: setSurfaceMode } = useUserSurfacePerformance()
+const surfaceChoices: UserSurfacePreference[] = ['auto', 'standard', 'balanced', 'compat']
+function handleSurfacePreferenceChange(event: Event) {
+  setSurfaceMode((event.target as HTMLSelectElement).value as UserSurfacePreference)
+}
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
@@ -293,6 +320,8 @@ const balanceAvailableText = computed(() => t('common.availableBalance') === 'co
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
 const balanceFrozenLabel = computed(() => `${balanceFrozenText.value} ${formatHeaderMoney(frozenBalance.value)}`)
+const isUserSurface = computed(() => route.meta.requiresAuth === true && route.meta.requiresAdmin !== true)
+const surfaceModeLabel = computed(() => t(`common.visualModes.${surfaceMode.value}`))
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {

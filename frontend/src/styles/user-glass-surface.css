@@ -226,6 +226,40 @@ html:not(.dark) .user-glass-surface {
   backdrop-filter: blur(14px) saturate(135%);
 }
 
+/* Balanced mode keeps the Rain + Glass identity while reducing GPU compositing. */
+.user-glass-performance-balanced.user-glass-surface .sidebar,
+.user-glass-performance-balanced.user-glass-surface header.glass,
+.user-glass-performance-balanced.user-glass-surface main .card,
+.user-glass-performance-balanced.user-glass-surface main .glass-card,
+.user-glass-performance-balanced.user-glass-surface main .card-glass,
+.user-glass-performance-balanced.user-glass-surface main .stat-card,
+.user-glass-performance-balanced.user-glass-surface main .user-glass-panel,
+.user-glass-performance-balanced.user-glass-surface main .user-glass-card,
+.user-glass-performance-balanced.user-glass-surface .dropdown,
+.user-glass-performance-balanced.user-glass-surface .user-glass-tooltip,
+.user-glass-performance-balanced.user-glass-surface main .table-container,
+.user-glass-performance-balanced.user-glass-surface main .table-page-layout:not(.mobile-mode) .table-scroll-container {
+  -webkit-backdrop-filter: blur(6px) saturate(112%);
+  backdrop-filter: blur(6px) saturate(112%);
+  box-shadow: 0 12px 36px -16px rgba(1, 4, 12, 0.42),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.user-glass-performance-balanced.user-glass-surface main .user-glass-inset,
+.user-glass-performance-balanced.user-glass-surface main .user-glass-control,
+.user-glass-performance-balanced.user-glass-surface main .user-glass-pagination,
+.user-glass-performance-balanced.user-glass-surface main .tabs,
+.user-glass-performance-balanced.user-glass-surface main .user-glass-muted {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Compatibility removes the shared primitives' original blur as well as Rain's overrides. */
+.user-glass-performance-compat :is(.glass, .glass-card, .card-glass, .card, .stat-card, .sidebar, .dropdown, [class*='backdrop-blur']) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 @media (max-width: 639px) {
   /* Anchor narrow-screen date menus to the card, not the offset trigger. */
   .user-glass-surface main .user-glass-menu-host .date-picker-container {
