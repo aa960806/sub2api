@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-08 Asia/Shanghai）：2026-09-07 retained-UI 发布事实保留为历史；本轮 Rain + Glass 用户端视觉更新已通过审核、完整本地前端门禁和回滚状态机复核，不可变候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已推送，线上发布前置尚在进行。镜像、Gate、全新备份、prepare run 和最终审计必须按实际结果在文末追加。最终 switch 由维护者执行；本轮将在 switch 时保留切换前 live 为新的 stopped 回滚目标，rollback 只恢复该目标。当前状态取信于文末最新记录和切换手册第 15 节。
+> 当前权威状态（2026-09-09 Asia/Shanghai）：用户端下拉层级与签到文案修复已完成本地验证，新的发布前置须按实际证据记录。最新回滚合同固定为此前旧 SubNexus，不创建新的回滚容器或镜像，prepare 不记录 `ui_new_rollback_*`；最终 switch 仍由维护者执行。2026-09-08“保留切换前 live 为新目标”的合同作为历史记录保留，当前状态取信于文末最新记录和切换手册第 15.2 节。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1533,3 +1533,12 @@
 - 本地复验工具：`F:\MySub2\.playwright-qa\user-dropdown-qa.cjs`；报告/截图：`F:\MySub2\.playwright-qa\user-dropdown-20260909\report.json`、`aux-report.json` 及同目录 PNG。生产构建预览运行于 `http://127.0.0.1:3101/`，开发前端运行于 `http://127.0.0.1:3100/`；测试模拟数据只存在于自动化浏览器内，手动使用服务仍需本地业务后端。
 - 当前修复保留在未提交工作树，尚未更新线上；未创建或删除回滚对象，未执行 switch/rollback。后续发布仍须完成独立前置检查并由维护者手动执行最终切换。
 - 维护者随后确认签到只需修改文案；已撤销礼盒格顶部留白和角标位置调整，签到排列恢复原版横向布局，其他下拉层级修复保持不变。
+
+## 2026-09-09（Asia/Shanghai）- 本次 UI 修复发布沿用固定旧 SubNexus 回滚目标
+
+- 本条覆盖 2026-09-08 发布合同中的“保留切换前 live 为新回滚目标”约定，不重写该次历史事实。本次由代理完成发布前置并停在最后切换前，维护者手动执行最终 switch；不新建永久回滚容器、不执行 `docker commit`，也不把当前生产 live 改为本次最终回滚目标。
+- 固定恢复对象仍为旧 SubNexus：容器 ID=`be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`，image=`sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`，name=`subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`；anchor=`/srv/subnexus-migration/cutover/20260905085804-4072165`，anchor manifest SHA256=`e0b49d89e6a28044c5588afb5a536a3e87ceacfa2a7d679d324d65b14a4c100e`。这些为固定身份，仍需每次线上实时复核，不能把文档值当作已完成的新证据。
+- 当前 UI wrapper 的 prepare 仍建立全新 run 和备份，固定 `ui_anchor_*`、`ui_rollback_id/image/name` 与 `ui_temporary_name`，但不写入 `ui_new_rollback_*`。prepare 不停止、重命名或创建回滚容器；never-started probe 是后续独立验证步骤，不是永久回滚对象。
+- switch 过程会暂存切换前 live，供候选提交前的失败恢复使用；候选健康和合同校验通过后，保留诊断日志并按完整 ID 删除该临时前版本容器。此过程恢复与正式 rollback 不同：本次正式 rollback 通过同一新 wrapper/run 恢复固定旧 SubNexus，默认不恢复数据库或 Redis，也不修改 Nginx、设置或功能开关。
+- 既有历史回滚对象和证据不会因合同变更自动删除，也不替代固定目标。空间足够时保留；需要清理时按完整身份、精确路径、SHA 与引用关系逐项确认并保留 root-only 审计记录。固定旧 SubNexus 容器/镜像及 anchor、本次有效 run/备份/审计不可删除，不使用 prune 或通配符删除。
+- 已同步 `SUBNEXUS_CUTOVER_RUNBOOK.md` 第 15.2 节和 `SUBNEXUS_MIGRATION_LEDGER.md` 当前合同；第 15.1 节和 2026-09-08 台账保留为历史准备快照。本次应用候选、镜像、脚本安装路径/SHA、Gate、备份、prepare run、probe 与最终审计值必须单独生成核验，本条不提供可执行命令，不表示线上前置或切换已经完成。
