@@ -738,6 +738,36 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it.each(["v2", "v3"])("preserves monitor controls and saves %s settings", async (mode) => {
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      channel_monitor_enabled: true,
+      channel_monitor_mode: mode,
+      channel_monitor_hide_throughput: false,
+      channel_monitor_hide_user_ranking: false,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    const throughput = wrapper.get('[data-testid="channel-monitor-hide-throughput"]');
+    expect((throughput.element as HTMLInputElement).checked).toBe(false);
+    await throughput.setValue(true);
+    const ranking = wrapper.find('[data-testid="channel-monitor-hide-user-ranking"]');
+    expect(ranking.exists()).toBe(mode === "v2");
+    if (mode === "v2") {
+      expect((ranking.element as HTMLInputElement).checked).toBe(false);
+      await ranking.setValue(true);
+    }
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      channel_monitor_mode: mode,
+      channel_monitor_hide_throughput: true,
+      channel_monitor_hide_user_ranking: mode === "v2",
+    }));
+    wrapper.unmount();
+  });
+
   it("loads and saves registration IP cooldown with bounded seconds", async () => {
     const wrapper = mountView();
     await flushPromises();

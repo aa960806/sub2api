@@ -173,6 +173,31 @@ func TestSettingService_ChannelMonitorShowQuotaFailsClosed(t *testing.T) {
 	}
 }
 
+func TestSettingService_ChannelMonitorHideUserRankingDefaultsToVisible(t *testing.T) {
+	missing := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{}).GetChannelMonitorRuntime(context.Background())
+	require.False(t, missing.HideUserRanking)
+	public, err := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{}).GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.False(t, public.ChannelMonitorHideUserRanking)
+
+	for _, value := range []string{"true", "1", "on", "enabled"} {
+		svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{
+			SettingKeyChannelMonitorEnabled:         "true",
+			SettingKeyChannelMonitorHideUserRanking: value,
+		}}, &config.Config{})
+		runtime := svc.GetChannelMonitorRuntime(context.Background())
+		require.True(t, runtime.HideUserRanking, "value=%q", value)
+		public, err := svc.GetPublicSettings(context.Background())
+		require.NoError(t, err)
+		require.True(t, public.ChannelMonitorHideUserRanking, "value=%q", value)
+		injected, err := svc.GetPublicSettingsForInjection(context.Background())
+		require.NoError(t, err)
+		payload, ok := injected.(*PublicSettingsInjectionPayload)
+		require.True(t, ok)
+		require.True(t, payload.ChannelMonitorHideUserRanking, "value=%q", value)
+	}
+}
+
 func TestSettingService_GetPublicSettings_ExposesForceEmailOnThirdPartySignup(t *testing.T) {
 	repo := &settingPublicRepoStub{
 		values: map[string]string{

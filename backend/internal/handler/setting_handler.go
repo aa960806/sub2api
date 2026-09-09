@@ -111,6 +111,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds:  settings.ChannelMonitorDefaultIntervalSeconds,
 		ChannelMonitorHideThroughput:          settings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:               settings.ChannelMonitorShowQuota,
+		ChannelMonitorHideUserRanking:         settings.ChannelMonitorHideUserRanking,
 		SubNexusActivityCenterEnabled:         settings.SubNexusActivityCenterEnabled,
 		SubNexusMarqueeEnabled:                settings.SubNexusMarqueeEnabled,
 		SubNexusInviteActivitiesEnabled:       settings.SubNexusInviteActivitiesEnabled,
