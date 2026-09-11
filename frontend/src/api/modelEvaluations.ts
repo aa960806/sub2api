@@ -2,6 +2,7 @@ import { apiClient } from './client'
 
 export const MODEL_EVALUATION_PROMPT = '生成html，内容是svg绘制鹈鹕骑自行车2D动画，不用进行测试。'
 export type ModelEvaluationAPIFormat = 'chat_completions' | 'responses' | 'messages'
+export type ModelEvaluationReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 export interface ModelEvaluationGroup { id: number; name: string }
 export interface ModelEvaluationTaskInput {
   name: string
@@ -10,6 +11,8 @@ export interface ModelEvaluationTaskInput {
   api_format: ModelEvaluationAPIFormat
   api_key?: string
   model: string
+  /** Optional reasoning intensity for the private test/scheduled request. */
+  reasoning_effort?: ModelEvaluationReasoningEffort | ''
   enabled: boolean
   interval_seconds: number
   retention_days: number

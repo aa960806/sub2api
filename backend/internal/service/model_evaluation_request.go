@@ -29,12 +29,21 @@ func (s *ModelEvaluationService) execute(ctx context.Context, task *ModelEvaluat
 	case "chat_completions":
 		payload["messages"] = []map[string]string{{"role": "user", "content": ModelEvaluationPrompt}}
 		payload["max_tokens"] = 16384
+		if task.ReasoningEffort != "" {
+			payload["reasoning_effort"] = task.ReasoningEffort
+		}
 	case "responses":
 		payload["input"] = ModelEvaluationPrompt
 		payload["max_output_tokens"] = 16384
+		if task.ReasoningEffort != "" {
+			payload["reasoning"] = map[string]string{"effort": task.ReasoningEffort}
+		}
 	case "messages":
 		payload["messages"] = []map[string]string{{"role": "user", "content": ModelEvaluationPrompt}}
 		payload["max_tokens"] = 16384
+		if budget := modelEvaluationThinkingBudget(task.ReasoningEffort); budget > 0 {
+			payload["thinking"] = map[string]any{"type": "enabled", "budget_tokens": budget}
+		}
 	default:
 		result.ErrorMessage = "请求协议配置无效"
 		return result
@@ -101,6 +110,26 @@ func (s *ModelEvaluationService) execute(ctx context.Context, task *ModelEvaluat
 	result.HTML = html
 	result.Status = "success"
 	return result
+}
+
+// Anthropic Messages exposes a token budget rather than named efforts. Keep
+// the same selector useful across protocols while omitting the field for
+// "none" (and for the historical empty default).
+func modelEvaluationThinkingBudget(effort string) int {
+	switch effort {
+	case "minimal":
+		return 1024
+	case "low":
+		return 2048
+	case "medium":
+		return 4096
+	case "high":
+		return 8192
+	case "xhigh", "max", "ultra":
+		return 16384
+	default:
+		return 0
+	}
 }
 
 func modelEvaluationRequestError(ctx context.Context, err error) string {

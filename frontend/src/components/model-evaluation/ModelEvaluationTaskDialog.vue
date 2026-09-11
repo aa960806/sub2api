@@ -10,6 +10,7 @@
       <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.endpoint') }}</span><input v-model="form.endpoint" name="endpoint" type="url" pattern="https://.*" class="input" :placeholder="endpointExample" maxlength="2048" required :aria-invalid="!!endpointError" :aria-describedby="endpointError ? 'model-evaluation-endpoint-error' : undefined" @blur="endpointTouched = true" /><span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.endpointHelp') }}</span><span class="block break-all text-xs text-gray-500 dark:text-gray-400">{{ endpointExample }}</span><span v-if="endpointError" id="model-evaluation-endpoint-error" class="block text-xs text-red-600 dark:text-red-400" role="alert">{{ t(endpointError) }}</span></label>
       <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.key') }}</span><input v-model="form.api_key" name="api_key" type="password" autocomplete="new-password" class="input" maxlength="4096" :required="requiresKey" :placeholder="t(requiresKey ? 'modelEvaluations.admin.keyNew' : 'modelEvaluations.admin.keySaved')" /><span v-if="bindingChanged" class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.keyBindingChanged') }}</span></label>
       <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.model') }}</span><input v-model="form.model" name="model" class="input" maxlength="200" required /><span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.modelHelp') }}</span></label>
+      <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.reasoningEffort') }}</span><select v-model="form.reasoning_effort" name="reasoning_effort" class="input" data-testid="model-evaluation-reasoning-effort"><option value="">{{ t('modelEvaluations.admin.reasoningEffortDefault') }}</option><option v-for="effort in reasoningEfforts" :key="effort" :value="effort">{{ effort }}</option></select><span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.reasoningEffortHelp') }}</span></label>
       <div class="grid gap-4 sm:grid-cols-3">
         <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.interval') }}</span><input v-model.number="form.interval_seconds" name="interval_seconds" type="number" min="60" max="604800" step="1" class="input" required /></label>
         <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.retention') }}</span><input v-model.number="form.retention_days" name="retention_days" type="number" min="1" max="90" step="1" class="input" required /></label>
@@ -28,12 +29,13 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import { adminModelEvaluationsAPI, MODEL_EVALUATION_PROMPT, type ModelEvaluationGroup, type ModelEvaluationTask, type ModelEvaluationTaskInput } from '@/api/modelEvaluations'
+import { adminModelEvaluationsAPI, MODEL_EVALUATION_PROMPT, type ModelEvaluationGroup, type ModelEvaluationTask, type ModelEvaluationTaskInput, type ModelEvaluationReasoningEffort } from '@/api/modelEvaluations'
 import { modelEvaluationEndpointErrorKey, modelEvaluationErrorKey } from '@/utils/modelEvaluationErrors'
 const props = defineProps<{ show: boolean; task: ModelEvaluationTask | null; groups: ModelEvaluationGroup[] }>()
 const emit = defineEmits<{ close: []; saved: [task: ModelEvaluationTask] }>()
 const { t } = useI18n()
-const initial = (): ModelEvaluationTaskInput => ({ name: '', group_id: 0, endpoint: '', api_format: 'chat_completions', api_key: '', model: '', enabled: true, interval_seconds: 3600, retention_days: 7, max_records: 50 })
+const reasoningEfforts: ModelEvaluationReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+const initial = (): ModelEvaluationTaskInput => ({ name: '', group_id: 0, endpoint: '', api_format: 'chat_completions', api_key: '', model: '', reasoning_effort: '', enabled: true, interval_seconds: 3600, retention_days: 7, max_records: 50 })
 const form = reactive(initial())
 const bindingChanged = computed(() => !!props.task && (form.endpoint.trim() !== props.task.endpoint || form.api_format !== props.task.api_format || form.group_id !== props.task.group_id))
 const requiresKey = computed(() => !props.task?.has_api_key || bindingChanged.value)
@@ -47,7 +49,7 @@ watch(() => props.show, show => {
   endpointTouched.value = false
   if (!show) { form.api_key = ''; return }
   const task = props.task
-  Object.assign(form, task ? { name: task.name, group_id: task.group_id, endpoint: task.endpoint, api_format: task.api_format, api_key: '', model: task.model, enabled: task.enabled, interval_seconds: task.interval_seconds, retention_days: task.retention_days, max_records: task.max_records } : initial())
+  Object.assign(form, task ? { name: task.name, group_id: task.group_id, endpoint: task.endpoint, api_format: task.api_format, api_key: '', model: task.model, reasoning_effort: task.reasoning_effort || '', enabled: task.enabled, interval_seconds: task.interval_seconds, retention_days: task.retention_days, max_records: task.max_records } : initial())
 }, { immediate: true })
 function close() { if (!saving.value) { form.api_key = ''; emit('close') } }
 async function save() {

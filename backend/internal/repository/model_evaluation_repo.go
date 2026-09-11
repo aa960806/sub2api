@@ -33,7 +33,7 @@ func (r *modelEvaluationRepository) transaction(ctx context.Context) (*sql.Tx, e
 }
 
 const modelEvaluationEnabledSQL = `EXISTS (SELECT 1 FROM settings WHERE key='subnexus_model_evaluation_enabled' AND value='true')`
-const modelEvaluationTaskColumns = `t.id,t.name,t.group_id,g.name,t.endpoint,t.api_format,t.api_key_encrypted,t.model,t.enabled,t.interval_seconds,t.retention_days,t.max_records,t.next_run_at,t.created_at,t.updated_at,t.revision,t.lease_token,t.published,
+const modelEvaluationTaskColumns = `t.id,t.name,t.group_id,g.name,t.endpoint,t.api_format,t.api_key_encrypted,t.model,t.reasoning_effort,t.enabled,t.interval_seconds,t.retention_days,t.max_records,t.next_run_at,t.created_at,t.updated_at,t.revision,t.lease_token,t.published,
 CASE WHEN t.test_status='running' AND (t.lease_until IS NULL OR t.lease_until<=NOW()) THEN 'failed' ELSE t.test_status END,t.last_tested_at,
 CASE WHEN t.test_status='running' AND (t.lease_until IS NULL OR t.lease_until<=NOW()) THEN '测试已中断，请重新测试' ELSE t.test_error END,t.configuration_revision,t.lease_is_test`
 
@@ -43,7 +43,7 @@ type modelEvaluationScanner interface{ Scan(...any) error }
 
 func scanModelEvaluationTask(row modelEvaluationScanner) (*service.ModelEvaluationTask, error) {
 	t := &service.ModelEvaluationTask{}
-	err := row.Scan(&t.ID, &t.Name, &t.GroupID, &t.GroupName, &t.Endpoint, &t.APIFormat, &t.APIKeyEncrypted, &t.Model, &t.Enabled, &t.IntervalSeconds, &t.RetentionDays, &t.MaxRecords, &t.NextRunAt, &t.CreatedAt, &t.UpdatedAt, &t.Revision, &t.LeaseToken, &t.Published, &t.TestStatus, &t.LastTestedAt, &t.TestError, &t.ConfigurationRevision, &t.LeaseIsTest)
+	err := row.Scan(&t.ID, &t.Name, &t.GroupID, &t.GroupName, &t.Endpoint, &t.APIFormat, &t.APIKeyEncrypted, &t.Model, &t.ReasoningEffort, &t.Enabled, &t.IntervalSeconds, &t.RetentionDays, &t.MaxRecords, &t.NextRunAt, &t.CreatedAt, &t.UpdatedAt, &t.Revision, &t.LeaseToken, &t.Published, &t.TestStatus, &t.LastTestedAt, &t.TestError, &t.ConfigurationRevision, &t.LeaseIsTest)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, service.ErrModelEvaluationNotFound
 	}
@@ -105,9 +105,9 @@ func (r *modelEvaluationRepository) CreateTask(ctx context.Context, t *service.M
 	if count >= service.ModelEvaluationMaxTasks {
 		return service.ErrModelEvaluationLimit
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO subnexus_model_evaluation_tasks(name,group_id,endpoint,api_format,api_key_encrypted,model,enabled,interval_seconds,retention_days,max_records,next_run_at)
-SELECT $1,$2,$3,$4,$5,$6,$7,$8::integer,$9,$10,NOW()+$8::integer*INTERVAL '1 second' WHERE EXISTS(SELECT 1 FROM groups WHERE id=$2 AND status='active' AND deleted_at IS NULL)
-RETURNING id,revision,next_run_at,created_at,updated_at,published,test_status,configuration_revision`, t.Name, t.GroupID, t.Endpoint, t.APIFormat, t.APIKeyEncrypted, t.Model, t.Enabled, t.IntervalSeconds, t.RetentionDays, t.MaxRecords).Scan(&t.ID, &t.Revision, &t.NextRunAt, &t.CreatedAt, &t.UpdatedAt, &t.Published, &t.TestStatus, &t.ConfigurationRevision)
+	err = tx.QueryRowContext(ctx, `INSERT INTO subnexus_model_evaluation_tasks(name,group_id,endpoint,api_format,api_key_encrypted,model,reasoning_effort,enabled,interval_seconds,retention_days,max_records,next_run_at)
+SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9::integer,$10,$11,NOW()+$9::integer*INTERVAL '1 second' WHERE EXISTS(SELECT 1 FROM groups WHERE id=$2 AND status='active' AND deleted_at IS NULL)
+RETURNING id,revision,next_run_at,created_at,updated_at,published,test_status,configuration_revision`, t.Name, t.GroupID, t.Endpoint, t.APIFormat, t.APIKeyEncrypted, t.Model, t.ReasoningEffort, t.Enabled, t.IntervalSeconds, t.RetentionDays, t.MaxRecords).Scan(&t.ID, &t.Revision, &t.NextRunAt, &t.CreatedAt, &t.UpdatedAt, &t.Published, &t.TestStatus, &t.ConfigurationRevision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.ErrModelEvaluationInvalid
 	}
@@ -127,11 +127,11 @@ func (r *modelEvaluationRepository) UpdateTask(ctx context.Context, t *service.M
 	if err != nil {
 		return err
 	}
-	material := t.GroupID != old.GroupID || t.Endpoint != old.Endpoint || t.APIFormat != old.APIFormat || t.APIKeyEncrypted != old.APIKeyEncrypted || t.Model != old.Model
+	material := t.GroupID != old.GroupID || t.Endpoint != old.Endpoint || t.APIFormat != old.APIFormat || t.APIKeyEncrypted != old.APIKeyEncrypted || t.Model != old.Model || t.ReasoningEffort != old.ReasoningEffort
 	reset := material || old.TestStatus == "running" || (old.LeaseIsTest && old.LeaseToken != "")
-	err = tx.QueryRowContext(ctx, `UPDATE subnexus_model_evaluation_tasks SET name=$2,group_id=$3,endpoint=$4,api_format=$5,api_key_encrypted=$6,model=$7,enabled=$8,interval_seconds=$9::integer,retention_days=$10,max_records=$11,revision=revision+1,next_run_at=NOW()+$9::integer*INTERVAL '1 second',updated_at=NOW()
-,configuration_revision=configuration_revision+CASE WHEN $13 THEN 1 ELSE 0 END,published=CASE WHEN $14 THEN FALSE ELSE published END,test_status=CASE WHEN $14 THEN 'untested' ELSE test_status END,last_tested_at=CASE WHEN $14 THEN NULL ELSE last_tested_at END,test_error=CASE WHEN $14 THEN '' ELSE test_error END
-WHERE id=$1 AND revision=$12 AND EXISTS(SELECT 1 FROM groups WHERE id=$3 AND status='active' AND deleted_at IS NULL) RETURNING revision,next_run_at,updated_at,published,test_status,last_tested_at,test_error,configuration_revision`, t.ID, t.Name, t.GroupID, t.Endpoint, t.APIFormat, t.APIKeyEncrypted, t.Model, t.Enabled, t.IntervalSeconds, t.RetentionDays, t.MaxRecords, t.Revision, material, reset).Scan(&t.Revision, &t.NextRunAt, &t.UpdatedAt, &t.Published, &t.TestStatus, &t.LastTestedAt, &t.TestError, &t.ConfigurationRevision)
+	err = tx.QueryRowContext(ctx, `UPDATE subnexus_model_evaluation_tasks SET name=$2,group_id=$3,endpoint=$4,api_format=$5,api_key_encrypted=$6,model=$7,reasoning_effort=$8,enabled=$9,interval_seconds=$10::integer,retention_days=$11,max_records=$12,revision=revision+1,next_run_at=NOW()+$10::integer*INTERVAL '1 second',updated_at=NOW()
+,configuration_revision=configuration_revision+CASE WHEN $14 THEN 1 ELSE 0 END,published=CASE WHEN $15 THEN FALSE ELSE published END,test_status=CASE WHEN $15 THEN 'untested' ELSE test_status END,last_tested_at=CASE WHEN $15 THEN NULL ELSE last_tested_at END,test_error=CASE WHEN $15 THEN '' ELSE test_error END
+WHERE id=$1 AND revision=$13 AND EXISTS(SELECT 1 FROM groups WHERE id=$3 AND status='active' AND deleted_at IS NULL) RETURNING revision,next_run_at,updated_at,published,test_status,last_tested_at,test_error,configuration_revision`, t.ID, t.Name, t.GroupID, t.Endpoint, t.APIFormat, t.APIKeyEncrypted, t.Model, t.ReasoningEffort, t.Enabled, t.IntervalSeconds, t.RetentionDays, t.MaxRecords, t.Revision, material, reset).Scan(&t.Revision, &t.NextRunAt, &t.UpdatedAt, &t.Published, &t.TestStatus, &t.LastTestedAt, &t.TestError, &t.ConfigurationRevision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.ErrModelEvaluationBusy
 	}

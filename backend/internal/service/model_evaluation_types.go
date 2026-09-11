@@ -15,6 +15,22 @@ const (
 	ModelEvaluationMaxResponseBytes  = 2 * 1024 * 1024
 )
 
+// ModelEvaluationReasoningEfforts is the portable set accepted by OpenAI
+// compatible reasoning controls. An empty value leaves the provider default.
+var ModelEvaluationReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
+
+func IsValidModelEvaluationReasoningEffort(value string) bool {
+	if value == "" {
+		return true
+	}
+	for _, allowed := range ModelEvaluationReasoningEfforts {
+		if value == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 var (
 	ErrModelEvaluationNotFound             = infraerrors.NotFound("MODEL_EVALUATION_NOT_FOUND", "model evaluation not found")
 	ErrModelEvaluationDisabled             = infraerrors.Forbidden("MODEL_EVALUATION_DISABLED", "model evaluation monitoring is disabled")
@@ -31,16 +47,20 @@ type ModelEvaluationConfig struct {
 }
 
 type ModelEvaluationTaskInput struct {
-	Name            string `json:"name"`
-	GroupID         int64  `json:"group_id"`
-	Endpoint        string `json:"endpoint"`
-	APIFormat       string `json:"api_format"`
-	APIKey          string `json:"api_key"`
-	Model           string `json:"model"`
-	Enabled         bool   `json:"enabled"`
-	IntervalSeconds int    `json:"interval_seconds"`
-	RetentionDays   int    `json:"retention_days"`
-	MaxRecords      int    `json:"max_records"`
+	Name      string `json:"name"`
+	GroupID   int64  `json:"group_id"`
+	Endpoint  string `json:"endpoint"`
+	APIFormat string `json:"api_format"`
+	APIKey    string `json:"api_key"`
+	Model     string `json:"model"`
+	// ReasoningEffort optionally controls the upstream model's reasoning depth.
+	// Empty preserves the historical request payload for providers that do not
+	// support a reasoning control.
+	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
+	Enabled         bool    `json:"enabled"`
+	IntervalSeconds int     `json:"interval_seconds"`
+	RetentionDays   int     `json:"retention_days"`
+	MaxRecords      int     `json:"max_records"`
 }
 
 type ModelEvaluationTask struct {
@@ -51,6 +71,7 @@ type ModelEvaluationTask struct {
 	Endpoint              string     `json:"endpoint"`
 	APIFormat             string     `json:"api_format"`
 	Model                 string     `json:"model"`
+	ReasoningEffort       string     `json:"reasoning_effort,omitempty"`
 	Enabled               bool       `json:"enabled"`
 	Published             bool       `json:"published"`
 	TestStatus            string     `json:"test_status"`

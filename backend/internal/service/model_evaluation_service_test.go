@@ -94,6 +94,10 @@ func TestModelEvaluationTaskValidationEncryptionAndMasking(t *testing.T) {
 		_, err := svc.prepareTask(context.Background(), bad, task)
 		require.ErrorIs(t, err, ErrModelEvaluationInvalid)
 	}
+	unsupported := "unsupported"
+	in.ReasoningEffort = &unsupported
+	_, err = svc.prepareTask(context.Background(), in, nil)
+	require.ErrorIs(t, err, ErrModelEvaluationInvalid)
 }
 
 func TestModelEvaluationCredentialMustBeReenteredWhenBindingChanges(t *testing.T) {
@@ -137,6 +141,21 @@ func TestModelEvaluationCredentialMustBeReenteredWhenBindingChanges(t *testing.T
 	require.Equal(t, old.APIKeyEncrypted, updated.APIKeyEncrypted)
 }
 
+func TestModelEvaluationReasoningEffortOmissionPreservesAndEmptyClears(t *testing.T) {
+	svc := NewModelEvaluationService(nil, nil, evaluationTestGroups{}, evaluationTestEncryptor{})
+	defer svc.Stop()
+	effort := "high"
+	old, err := svc.prepareTask(context.Background(), ModelEvaluationTaskInput{Name: "task", GroupID: 1, Endpoint: "https://8.8.8.8/v1/chat/completions", Model: "model", APIKey: "key", ReasoningEffort: &effort}, nil)
+	require.NoError(t, err)
+	kept, err := svc.prepareTask(context.Background(), ModelEvaluationTaskInput{Name: "task", GroupID: 1, Endpoint: old.Endpoint, Model: "model"}, old)
+	require.NoError(t, err)
+	require.Equal(t, "high", kept.ReasoningEffort)
+	empty := ""
+	cleared, err := svc.prepareTask(context.Background(), ModelEvaluationTaskInput{Name: "task", GroupID: 1, Endpoint: old.Endpoint, Model: "model", ReasoningEffort: &empty}, old)
+	require.NoError(t, err)
+	require.Empty(t, cleared.ReasoningEffort)
+}
+
 func TestModelEvaluationEndpointAndTransportBlockSSRF(t *testing.T) {
 	for _, endpoint := range []string{"http://8.8.8.8/v1/chat/completions", "https://localhost/v1/messages", "https://127.0.0.1/v1/messages", "https://10.0.0.1/v1/messages", "https://[::ffff:127.0.0.1]/v1/messages", "https://169.254.169.254/latest/meta-data", "https://224.0.0.1/v1/messages", "https://user:secret@8.8.8.8/v1/messages", "https://8.8.8.8/v1/messages?key=secret"} {
 		require.ErrorIs(t, validateModelEvaluationEndpoint(context.Background(), endpoint), ErrModelEvaluationInvalid, endpoint)
@@ -168,6 +187,16 @@ func TestModelEvaluationProtocolsPreservePromptModelAndHTML(t *testing.T) {
 				require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
 				require.Equal(t, "configured-model", body["model"])
 				require.Equal(t, true, body["stream"])
+				if format == "chat_completions" {
+					require.Equal(t, "high", body["reasoning_effort"])
+				} else if format == "responses" {
+					reasoning := body["reasoning"].(map[string]any)
+					require.Equal(t, "high", reasoning["effort"])
+				} else {
+					thinking := body["thinking"].(map[string]any)
+					require.Equal(t, "enabled", thinking["type"])
+					require.Equal(t, float64(8192), thinking["budget_tokens"])
+				}
 				if format == "responses" {
 					require.Equal(t, ModelEvaluationPrompt, body["input"])
 				} else {
@@ -195,7 +224,7 @@ func TestModelEvaluationProtocolsPreservePromptModelAndHTML(t *testing.T) {
 				require.NoError(t, err)
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(raw))), Header: http.Header{}}, nil
 			})
-			result := svc.execute(context.Background(), &ModelEvaluationTask{ID: 1, GroupID: 2, Endpoint: "https://provider.test/custom/endpoint", Model: "configured-model", APIFormat: format, APIKeyEncrypted: "encrypted:test-api-key"})
+			result := svc.execute(context.Background(), &ModelEvaluationTask{ID: 1, GroupID: 2, Endpoint: "https://provider.test/custom/endpoint", Model: "configured-model", ReasoningEffort: "high", APIFormat: format, APIKeyEncrypted: "encrypted:test-api-key"})
 			require.Equal(t, "success", result.Status)
 			require.Empty(t, result.ErrorMessage)
 			require.Equal(t, evaluationTestHTML, result.HTML)

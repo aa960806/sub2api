@@ -221,6 +221,10 @@ func (s *ModelEvaluationService) prepareTask(ctx context.Context, in ModelEvalua
 	in.Endpoint = strings.TrimSpace(in.Endpoint)
 	in.APIKey = strings.TrimSpace(in.APIKey)
 	in.Model = strings.TrimSpace(in.Model)
+	reasoningEffort := ""
+	if in.ReasoningEffort != nil {
+		reasoningEffort = strings.ToLower(strings.TrimSpace(*in.ReasoningEffort))
+	}
 	if in.IntervalSeconds == 0 {
 		in.IntervalSeconds = 3600
 	}
@@ -234,6 +238,9 @@ func (s *ModelEvaluationService) prepareTask(ctx context.Context, in ModelEvalua
 		in.APIFormat = "chat_completions"
 	}
 	if in.Name == "" || utf8.RuneCountInString(in.Name) > 100 || in.GroupID <= 0 || in.Model == "" || len(in.Model) > 200 || strings.ContainsAny(in.Model, "\r\n\x00") || in.IntervalSeconds < 60 || in.IntervalSeconds > 604800 || in.RetentionDays < 1 || in.RetentionDays > 90 || in.MaxRecords < 1 || in.MaxRecords > 200 || len(in.APIKey) > 4096 || strings.ContainsAny(in.APIKey, "\r\n\x00") {
+		return nil, ErrModelEvaluationInvalid
+	}
+	if !IsValidModelEvaluationReasoningEffort(reasoningEffort) {
 		return nil, ErrModelEvaluationInvalid
 	}
 	switch in.APIFormat {
@@ -253,7 +260,7 @@ func (s *ModelEvaluationService) prepareTask(ctx context.Context, in ModelEvalua
 	if err != nil || group == nil || group.Status != StatusActive {
 		return nil, ErrModelEvaluationInvalid
 	}
-	task := &ModelEvaluationTask{Name: in.Name, GroupID: in.GroupID, GroupName: group.Name, Endpoint: in.Endpoint, APIFormat: in.APIFormat, Model: in.Model, Enabled: in.Enabled, IntervalSeconds: in.IntervalSeconds, RetentionDays: in.RetentionDays, MaxRecords: in.MaxRecords}
+	task := &ModelEvaluationTask{Name: in.Name, GroupID: in.GroupID, GroupName: group.Name, Endpoint: in.Endpoint, APIFormat: in.APIFormat, Model: in.Model, ReasoningEffort: reasoningEffort, Enabled: in.Enabled, IntervalSeconds: in.IntervalSeconds, RetentionDays: in.RetentionDays, MaxRecords: in.MaxRecords}
 	if old != nil {
 		task.ID = old.ID
 		task.APIKeyEncrypted = old.APIKeyEncrypted
@@ -264,6 +271,9 @@ func (s *ModelEvaluationService) prepareTask(ctx context.Context, in ModelEvalua
 		task.TestError = old.TestError
 		task.LastTestedAt = old.LastTestedAt
 		task.ConfigurationRevision = old.ConfigurationRevision
+		if in.ReasoningEffort == nil {
+			task.ReasoningEffort = old.ReasoningEffort
+		}
 	}
 	if in.APIKey != "" {
 		encrypted, err := s.encryptor.Encrypt(in.APIKey)

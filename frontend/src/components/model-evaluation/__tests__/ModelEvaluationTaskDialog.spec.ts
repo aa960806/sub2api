@@ -23,6 +23,19 @@ describe('model evaluation task editor', () => {
     wrapper.unmount()
   })
 
+  it('submits the selected reasoning effort for private tests', async () => {
+    const wrapper = mount(ModelEvaluationTaskDialog, { props: { show: true, task: null, groups: [{ id: 7, name: 'Group' }] }, global: { stubs: { BaseDialog: Dialog } } })
+    await wrapper.find('[name="group_id"]').setValue('7')
+    await wrapper.find('[name="endpoint"]').setValue('https://example.com/v1/responses')
+    await wrapper.find('[name="api_key"]').setValue('test-key')
+    await wrapper.find('[name="model"]').setValue('gpt-6-astra')
+    await wrapper.find('[name="reasoning_effort"]').setValue('xhigh')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-6-astra', reasoning_effort: 'xhigh' }))
+    wrapper.unmount()
+  })
+
   it('clears a newly entered key when the editor closes', async () => {
     const wrapper = mount(ModelEvaluationTaskDialog, { props: { show: true, task: null, groups: [] }, global: { stubs: { BaseDialog: Dialog } } })
     await wrapper.find('[name="api_key"]').setValue('test-key')
