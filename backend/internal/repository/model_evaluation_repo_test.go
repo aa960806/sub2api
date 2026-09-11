@@ -51,6 +51,10 @@ func modelEvaluationTestDB(t *testing.T, skipPublication ...bool) *sql.DB {
 		_, err = db.Exec(string(publicationMigration))
 		require.NoError(t, err)
 	}
+	reasoningMigration, err := dbmigrations.FS.ReadFile("9016_subnexus_model_evaluation_reasoning_effort.sql")
+	require.NoError(t, err)
+	_, err = db.Exec(string(reasoningMigration))
+	require.NoError(t, err)
 	// Replay is harmless and must not overwrite an administrator's enabled flag.
 	_, err = db.Exec(`UPDATE settings SET value='true'`)
 	require.NoError(t, err)
@@ -469,6 +473,10 @@ func TestModelEvaluationPostgresPublicationMigrationFailsClosedWithoutDeletingHi
 	require.NoError(t, err)
 	_, err = db.Exec(string(migration))
 	require.NoError(t, err)
+	reasoningMigration, readErr := dbmigrations.FS.ReadFile("9016_subnexus_model_evaluation_reasoning_effort.sql")
+	require.NoError(t, readErr)
+	_, readErr = db.Exec(string(reasoningMigration))
+	require.NoError(t, readErr)
 	repo := NewModelEvaluationRepository(db)
 	task, err := repo.GetTask(ctx, taskID)
 	require.NoError(t, err)
