@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-11 Asia/Shanghai）：此前模型监控 run `20260911130706-3232923` 已由维护者切换成功，实际线上为 `33a9601c9330` / `b4b66b9ca08f`。本轮更新候选 `ccb69f00132d` 包含流式生成、私有测试后发布及用户跨分组时间排序，前后端测试、构建和服务器候选 Gate 已通过，完整快照兼容验证进行中，尚不能切换。最新授权明确不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；最终 switch 仍由维护者手动执行。本轮状态以文末最新记录为准。
+> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1721,3 +1721,21 @@
 - 新独立 retained release 入口及 31 个故障/恢复场景通过，运维提交 `e4de7857608ed698c309b8e3c2d7fe92ddcbe58e`。原 full/UI/controller 字节不变。新入口 SHA=`a5b955de3ec51cb1acfc1393290ae2259e8b839fbd3825bda563650e45fd1c3b`，复用 `e389b3b1...` v0.2.4。当前 live 只在人工 switch 的提交前用作临时失败恢复，提交成功即精确删除，不保存为新回滚对象。
 - 全新快照 `/srv/subnexus-migration/model-evaluation-workflow-20260911/production.dump`，5756660659 bytes，SHA=`347eff0107d47edd707aadab84f79f11efea240741d3c40dfc16fd67c28f8dfb`；基线 380 条迁移，已有 9014、没有 9015，监控开关 false。数据库传输及完整隔离兼容验证尚未完成，不生成最终切换命令。
 - 现有配置/加密 Key/HTML 历史保留；9015 将任务初始化为未测试/未发布，切换后管理员须私有测试通过并明确发布才向用户展示。用户默认按生成时间查看全部有权限且已发布分组结果，分组下拉用于筛选。未发起真实供应商请求。
+
+
+## 2026-09-12 00:45（Asia/Shanghai）— 模型监控修复全部发布前置完成
+
+- 本次访问生产仅完成授权前置；正式 run `/srv/subnexus-migration/cutover/20260911163046-3338612`，manifest SHA=`20f1c17d67e37c41debaff189ac09a5ecec6369cc6abcc8fbb199192ecd49600`，`prepared/prepared/no`。代理没有执行 switch/rollback/生产迁移。
+- 应用固定 `ccb69f00132dcb9dcbad76e8c3f542231bb002fd` / `sha256:c8a9db0d90f3c99924d7c53c7b9b41b4b90f26d053341abc254888e58c12df55`；完整生产副本六阶段兼容测试共 15 项通过并完成精确清理，证据 `/srv/subnexus-migration/docker-candidate/full-ccb69f00132d-compat-eb3d959d95a343cf/evidence.env`，SHA=`e94acd215ff8bd28cb75202948640ac921a8d013227ad366e6689943efe724fc`。全部原配置/Key/HTML 保留，用户权限、错误脱敏、私有测试和明确发布合同验证通过。
+- 正式备份如下：
+- postgresql.dump: 2754913948 bytes / SHA256=`d88c07d48e47f080ee58b41327f8fb2596fc2c4a70026de3420120893787a9f0`。
+- postgresql.list: 121047 bytes / SHA256=`f416fd2ccb66b86aba78920356b946614a12e904f0b95d3c18b8492b54eff24b`。
+- redis.rdb: 11992744 bytes / SHA256=`2de507838ef36ab8d6b37edb8dd6c20f1043e0599ad6647d65f48c0b64a14fb6`。
+- redis-check-rdb.txt: 647 bytes / SHA256=`e1b928b6fda850b641ae91fba47d954860abfeae88fad904ab133d48c3e82d6b`。
+- application-data.tar.gz: 72548825 bytes / SHA256=`024b52ff704d0c4334821ea6b494f6fc61650e74fa1b59edf6e409501c580045`。
+- 最终证据 `/srv/subnexus-migration/diagnostics/full-ccb69f00132d-final-20260911163046-3338612.evidence`，SHA=`cc48896506865732eec6f08acb67e2d4d8e1ed6b213674cc11beb9427898a34a`；facts SHA=`e44a0e5479aa2ac91c53c05afb24eb2f40e345dca46289e299a691a4ea2e9c16`，退出 0，never-started probe 已删除。实际 live 仍为 b4b66b9ca08f，StartedAt=`2026-09-11T13:32:35.16865245Z`，healthy/restart=0；PG/Redis 和迁移/设置保持原状。
+- 本次不创建回滚目标，继续用 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；当前 live 只用于人工切换提交前失败恢复，成功提交即删除临时 current。既有镜像 tag/归档、旧 SubNexus anchor 及其备份保留。完整人工命令只在切换手册 15.5 节。
+- 为满足正式备份保留量，仅清理已逐一验证的旧 run `20260907045159-1121373`、`20260908073428-1688478` 的冗余 postgresql.dump，共 10732251260 bytes；审计 `/srv/subnexus-migration/cleanup-workflow-redundant-dumps-20260911.json`，SHA=`60c1f23d1ad9585e5ea9789e8ae58056884f69105c50e7811b54361265b9842c`。当前快照、当前回滚对应备份和所有回滚容器/镜像没有删除。最终服务器空闲 23109042176 bytes。
+- 本地完整快照 SHA256 校验后删除两份本轮重复下载临时文件；隔离测试容器、卷和网络已清理，辅助文件系统已卸载，专用 Docker daemon 和 WSL 已停止。专用 ext4.vhdx 停机压缩成功，62781390848→19507707904 bytes，回收 43273682944 bytes 空闲块，F 盘空闲恢复至 67200880640 bytes。先前被自动审批拒绝删除的 70 GiB ext4 文件继续保留，没有更换方式删除。
+- 用户明确要求任何用户数据不得受影响。准备阶段仅备份和读取生产；不执行生产 SQL 迁移、重启、切换或数据库恢复。9015 的 ADD COLUMN/CREATE INDEX 仅在维护者手动启动新版本时执行，保留原记录；应用回滚也不恢复旧数据库或历史设置。
+- 正式备份体积小于早前兼容快照，追加只读核对确认 1604 项完整备份目录完全一致。生产已有系统日志清理审计（UTC 16:23:51 删除 45359722 条、16:24:35 删除 3914 条），均早于本次 16:30:46 正式 prepare；未调查操作者身份，不将该既有后台操作归因为发布流程。本流程没有执行生产表清理。

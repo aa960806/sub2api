@@ -1,8 +1,8 @@
 # SubNexus 回滚手册
 
-> 当前权威状态（2026-09-11 Asia/Shanghai）：此前模型监控 run `20260911130706-3232923` 已由维护者切换成功，实际线上为 `33a9601c9330` / `b4b66b9ca08f`。本轮更新候选 `ccb69f00132d` 包含流式生成、私有测试后发布及用户跨分组时间排序，前后端测试、构建和服务器候选 Gate 已通过，完整快照兼容验证进行中，尚不能切换。最新授权明确不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；最终 switch 仍由维护者手动执行。本轮状态以文末最新记录为准。
+> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
 
-回滚默认只恢复应用，不恢复数据库、不改功能开关。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮须等待切换手册第 15.4 节完成全部门禁后登记同一 full-release wrapper/run；当前无可执行命令。不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、新回滚目标和依赖身份校验。
+回滚默认只恢复应用，不恢复数据库、不改功能开关。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮全部门禁已完成，当前人工命令见切换手册第 15.5 节；回滚复用第 11 节登记的既有 v0.2.4 目标。不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、既有回滚目标和依赖身份校验。
 
 本次线上应用数据目录的已审核 owner 是 `1000:1000`、叶目录 mode `0755`。执行 `prepare`、`switch` 或 `rollback` 时，只有在实时 `stat` 与 prepared manifest 一致的前提下，才同时传入以下三项环境变量；不得通过 `chown` 来“修复”不一致：
 
@@ -116,3 +116,8 @@ wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh`
 新增回滚镜像 tag=`subnexus-rollback:model-evaluation-20260911-890828afe0f7`，归档=`/srv/subnexus-migration/model-evaluation-20260911/rollback-image.tar`，SHA256=`a33a982c244bbc12d5b62a8200fc408305cc82186e64ec24a3d663f9a4935fb3`，已核验镜像来源及完整归档。只新增 tag/归档，没有 docker commit，没有预先停止或替换 live。归档为灾备补充，正常回滚恢复 retained-live 容器，不自动恢复 PostgreSQL/Redis。
 
 全量生产快照已通过新版/重启/旧版/新版兼容回归；新任务模型、加密 Key 和 HTML 历史不丢失。备份、探针及最终审计均通过，代理尚未切换。唯一完整单行 switch/rollback 命令见 `SUBNEXUS_CUTOVER_RUNBOOK.md` 第 15.4 节，禁止复用历史入口。
+
+
+## 11. 模型监控修复复用既有回滚目标（2026-09-12 00:45）
+
+本轮全部前置已完成，run `/srv/subnexus-migration/cutover/20260911163046-3338612` / manifest SHA `20f1c17d67e37c41debaff189ac09a5ecec6369cc6abcc8fbb199192ecd49600`，停在 prepared。候选 `ccb69f00132dcb9dcbad76e8c3f542231bb002fd` / `sha256:c8a9db0d90f3c99924d7c53c7b9b41b4b90f26d053341abc254888e58c12df55`。本次不创建回滚目标，正常回滚复用 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；切换提交前失败恢复当前 live，提交成功删除临时 current。完整生产副本六阶段回归、备份与 never-started probe 通过，生产迁移未执行。唯一人工命令见切换手册第 15.5 节；旧第 15.4 节 run 已 switched，禁止重用。

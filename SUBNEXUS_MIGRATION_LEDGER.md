@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 当前权威状态（2026-09-11 Asia/Shanghai）：此前模型监控 run `20260911130706-3232923` 已由维护者切换成功，实际线上为 `33a9601c9330` / `b4b66b9ca08f`。本轮更新候选 `ccb69f00132d` 包含流式生成、私有测试后发布及用户跨分组时间排序，前后端测试、构建和服务器候选 Gate 已通过，完整快照兼容验证进行中，尚不能切换。最新授权明确不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；最终 switch 仍由维护者手动执行。本轮状态以文末最新记录为准。
+> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
 
 ## 状态定义
 
@@ -393,3 +393,8 @@
 - 应用候选 `33a9601c93304f89a67b7845b4e3b10447edcf96` / `sha256:9342118b00d127deb7fdc1c62fe19a347acf5563a254a3e9541cf309f492506f`；完整快照新/重启/旧/新回归与 9014 兼容、新配置/HTML 保留验证通过。
 - 正式 run=`/srv/subnexus-migration/cutover/20260911130706-3232923`，`prepared/prepared/no`；全新 PostgreSQL/catalog/Redis/app 备份、未启动探针及最终审计通过，manifest SHA=`8436989b7f3ca1b5c338429a52c3493dae26c688dfed8c71a04a57b31ec63b10`。
 - 新回滚镜像及归档已创建并校验；恢复目标为当前 live e389b3b1... / 44e8dcf0...。生产切换未执行，当前唯一手动 switch/rollback 入口为切换手册第 15.4 节。
+
+
+## 模型监控修复发布验收（2026-09-12 00:45）
+
+本轮全部前置已完成，run `/srv/subnexus-migration/cutover/20260911163046-3338612` / manifest SHA `20f1c17d67e37c41debaff189ac09a5ecec6369cc6abcc8fbb199192ecd49600`，停在 prepared。候选 `ccb69f00132dcb9dcbad76e8c3f542231bb002fd` / `sha256:c8a9db0d90f3c99924d7c53c7b9b41b4b90f26d053341abc254888e58c12df55`。本次不创建回滚目标，正常回滚复用 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；切换提交前失败恢复当前 live，提交成功删除临时 current。完整生产副本六阶段回归、备份与 never-started probe 通过，生产迁移未执行。唯一人工命令见切换手册第 15.5 节；旧第 15.4 节 run 已 switched，禁止重用。
