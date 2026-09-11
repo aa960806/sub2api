@@ -1,8 +1,8 @@
 # SubNexus 回滚手册
 
-> 当前权威状态：2026-09-10（Asia/Shanghai）。本次 v0.2.4 完整发布前置已通过、尚未切换，唯一入口为切换手册第 15.3 节 full-release wrapper/run `20260909171117-2439922`。新一级回滚目标为切换前 live `b9de08a4...` / image `db1f6f23...`，切换时保留为 `subnexus-cutover-ui-prior-20260909171117-2439922`。已用完整生产快照验证新旧版本同库读写兼容，rollback 默认不恢复数据库。历史旧 SubNexus 不承担本轮正常 rollback。
+> 当前权威状态：2026-09-11（Asia/Shanghai）。v0.2.4 run `20260909171117-2439922` 已由维护者切换成功，第 15.3 节旧交接命令已撤回。本次模型表现监控候选为 `33a9601c...`，完整快照仍在本地隔离恢复索引，尚无正式 prepared run 或最终回滚命令。本次新回滚镜像已创建/归档，正常回滚目标为当前 live `e389b3b1...` / image `44e8dcf0...`，详见本文第 10 节及切换手册第 15.4 节。
 
-回滚默认只恢复应用，不恢复数据库、不改功能开关。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只使用切换手册第 15.3 节最终登记的同一 full-release wrapper/run；不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、新回滚目标和依赖身份校验。
+回滚默认只恢复应用，不恢复数据库、不改功能开关。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮须等待切换手册第 15.4 节完成全部门禁后登记同一 full-release wrapper/run；当前无可执行命令。不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、新回滚目标和依赖身份校验。
 
 本次线上应用数据目录的已审核 owner 是 `1000:1000`、叶目录 mode `0755`。执行 `prepare`、`switch` 或 `rollback` 时，只有在实时 `stat` 与 prepared manifest 一致的前提下，才同时传入以下三项环境变量；不得通过 `chown` 来“修复”不一致：
 
@@ -100,7 +100,7 @@ wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh`
 
 该节只记录当时的生产与回滚事实。其 wrapper/run 在 2026-09-08 新发布开始后不得作为现行恢复入口；历史命令已撤回，不能复制或改写后执行。
 
-## 9. Rain + Glass 用户端视觉更新回滚合同（2026-09-08，准备中）
+## 9. Rain + Glass 用户端视觉更新回滚合同（2026-09-08 历史准备快照）
 
 - `prepare` 必须要求历史旧 SubNexus anchor 存在，并完整核验其 manifest、容器、镜像、名称、停止状态和运行合同。只有校验通过后才生成本轮 run；`prepare` 只记录当前 live，不改变 Docker 状态。
 - prepared manifest 必须固定新目标的 `ui_new_rollback_id`、`ui_new_rollback_image`、`ui_new_rollback_config_image`、`ui_new_rollback_name=production-app-ui-prior-<run-id>` 和 `ui_new_rollback_state=prepared`。任一字段缺失、格式错误或与 live 不一致都必须失败关闭。
@@ -108,3 +108,11 @@ wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh`
 - 本轮 `rollback` 仅删除经精确身份校验的候选并恢复新目标到生产名称；不恢复历史旧 SubNexus，不默认恢复 PostgreSQL/Redis，不修改 Nginx 或功能开关。新目标缺失，或 ID、`.Image`、`.Config.Image`、名称、runtime contract 任一漂移时，回滚必须停止并保留现场。
 - 历史 anchor 不是本轮恢复对象。现行 wrapper 在 prepare 和 switch 提交前要求它及其容器/镜像完整；若它在 switch 已开始后缺失或漂移，wrapper 仍必须优先恢复经过 manifest 严格绑定的 previous-live，人工 recover/rollback 也不得被该二级证据阻断。空间足够时继续保留全部历史数据；空间不足时，只能在形成精确对象清单、完整身份与 SHA 记录后删除其他已确认无用的历史 run 备份或无引用垃圾。不得执行 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、新目标和本轮 run/备份/审计不得纳入清理。
 - 候选 commit=`187b128bd32d1e06ad6e08817632e7c6b5ccca92`、tree=`e81b71b7f136da0a62bd51e266f041c6312e6b0b` 已固定并推送；UI wrapper SHA256=`6b1635548887459ad408d56226fdceadbaa8d72b845e8b3a3dac3ae65815233f`，测试 SHA256=`6a682d9f33d308eb648c914519f08e1e1afdc8a041095bfc3dddd6e38db82b26`。镜像、run、备份和最终审计仍待生成；当前没有可执行的本轮 rollback 命令。完成切换前全部门禁后，唯一命令只登记在切换手册第 15 节。
+
+## 10. 分组模型表现监控发布回滚合同（2026-09-11，全部前置通过）
+
+本次 run=`/srv/subnexus-migration/cutover/20260911130706-3232923`，当前 `prepared/prepared/no`。一级回滚目标为本次切换前实际 live `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`，不是此前旧 SubNexus。维护者 switch 时才停止、改名为 `subnexus-cutover-ui-prior-20260911130706-3232923` 并保留同一容器；失败恢复及人工 rollback 继续核验完整 ID、镜像及运行合同。
+
+新增回滚镜像 tag=`subnexus-rollback:model-evaluation-20260911-890828afe0f7`，归档=`/srv/subnexus-migration/model-evaluation-20260911/rollback-image.tar`，SHA256=`a33a982c244bbc12d5b62a8200fc408305cc82186e64ec24a3d663f9a4935fb3`，已核验镜像来源及完整归档。只新增 tag/归档，没有 docker commit，没有预先停止或替换 live。归档为灾备补充，正常回滚恢复 retained-live 容器，不自动恢复 PostgreSQL/Redis。
+
+全量生产快照已通过新版/重启/旧版/新版兼容回归；新任务模型、加密 Key 和 HTML 历史不丢失。备份、探针及最终审计均通过，代理尚未切换。唯一完整单行 switch/rollback 命令见 `SUBNEXUS_CUTOVER_RUNBOOK.md` 第 15.4 节，禁止复用历史入口。

@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态：2026-09-10（Asia/Shanghai）。上游 v0.2.4 完整发布前置已通过，尚未切换。唯一有效交接为第 15.3 节 full-release wrapper/run；第 15.1/15.2 节保留历史合同。实际线上 bf5aae07... / b9de08a4... 是本轮新的一级回滚目标，成功切换后保留为 stopped 容器。历史旧 SubNexus 仅作连续性 anchor。
+> 当前权威状态：2026-09-11（Asia/Shanghai）。第 15.3 节 v0.2.4 run `20260909171117-2439922` 已由维护者切换成功，其交接命令撤回并仅留历史证据。实际生产为 `890828afe...` / `e389b3b1...`。本次模型表现监控发布正在本地隔离恢复完整快照索引，尚无最终 prepared run；当前没有新切换/回滚命令。已创建绑定实际 live 的新回滚镜像归档，状态见第 15.4 节。
 
 本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧 SubNexus anchor 及容器身份和 never-started probe 均核验完成之后。本轮最终 `switch` 仍由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
 
@@ -146,7 +146,7 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 2. 先访问候选本地端口 `/health`、登录、用户/API Key、余额、订阅、订单、用量、模型列表和管理端只读接口。
 3. 检查容器 UID、`NoNewPrivs`、重启次数、日志中的 migration/SQL/panic 错误。本轮继续使用既有入口，不修改 Nginx/Cloudflare 配置或端口。
 4. 切流后执行公网健康、登录、网关只读请求和支付回调模拟；观察至少一个完整任务/结算周期。
-5. 功能开关启用属于另一次业务发布，本轮 UI 发布不启用额外功能。任一异常保留日志和数据现场，只按第 15.2 节同一 wrapper/run 的回滚入口恢复固定旧 SubNexus，禁止直接删除新表。切换尚未提交时的临时 live 失败恢复不改变最终回滚目标。
+5. 功能开关启用属于另一次业务发布，本次部署不启用额外功能。任一异常保留日志和数据现场，只按完成本次门禁后登记的同一 full-release wrapper/run 恢复切换前实际 live；历史旧 SubNexus 仅为连续性 anchor，禁止直接删除新表。当前尚无本次可执行入口。
 
 ## 6. 数据核对
 
@@ -309,7 +309,7 @@ SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000
 sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_UI_CUTOVER_SCRIPT_SHA256=dd320d0982d357704d88bd702805cca69c36304ea6f5db523a572b10bdbdf49a SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 bash /srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/cutover/20260907045159-1121373
 ```
 
-## 15. 用户端 Rain + Glass 发布交接
+## 15. 发布交接与历史记录
 
 ### 15.1 2026-09-08 历史准备阶段快照（合同已由第 15.2 节替代）
 
@@ -337,9 +337,9 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 4. 本轮 `rollback` 删除经身份校验的候选并恢复上述新目标。该次历史草案曾把历史 SubNexus anchor 同时用于 switch、失败恢复和 rollback 门禁；此约束已由第 15.2 节纠正，不得用于当前命令。现行恢复只对新目标的身份与运行合同失败关闭。
 5. 空间充足时保留全部历史数据。空间不足时，只能在删除清单逐项绑定完整 ID/路径/SHA 并保存 root-only 审计记录后，精确删除其他已失效 run 备份、上传残留或无引用垃圾；历史 anchor 及其容器/镜像必须贯穿本轮 switch/rollback 窗口保留。不得执行 `docker system prune`、`docker volume prune` 或前缀/通配符清理，历史 anchor、本轮新回滚目标及新 run 证据不得删除。
 
-该准备快照当时尚未生成可执行命令。其候选 SHA、脚本 SHA 或 run 不得作为本次发布输入；当前交接仅以第 15.2 节为准。
+该准备快照当时尚未生成可执行命令。其候选 SHA、脚本 SHA 或 run 不得作为本次发布输入；本次状态见第 15.4 节。
 
-### 15.2 2026-09-09 当前合同：回滚到切换前现网版本
+### 15.2 2026-09-09 retained-live 合同（历史发布设计，原则继续适用）
 
 本次包含用户端视觉性能分级、下拉菜单层级、窄屏日期菜单显示和签到文案。API、请求参数、路由、权限、认证、配置、功能开关、按钮事件及业务处理不变。维护者要求代理完成全部前置工作，最终手动执行切换，并明确要求异常时恢复到切换瞬间正在运行的服务器版本。
 
@@ -354,18 +354,48 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 | 新发布固定值 | 候选完整 commit/tree、实时生产 base、image ID、归档路径/SHA/大小、UI wrapper/controller 安装路径及 SHA、Docker Gate、全新备份、prepare run、never-started probe 和最终审计必须由本次实际证据填写；本段不复用第 15.1 节的固定值 |
 | 人工边界 | 代理停在本次 `state=prepared/ui_state=prepared`，核验全部前置后只交付绑定同一 wrapper/run 的一整行 `switch` 和一整行 `rollback`，由维护者手动执行 |
 
-本历史合同说明不构成可执行交接命令。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的历史发布命令已撤回，后续实时核验确认该版本已在线运行，因此本轮以其实际 live 作为新回滚目标。所有历史已成功、失败或已回滚的 run 禁止重新用于 prepare/switch；本次仅使用下方第 15.3 节命令。
+本历史合同说明不构成可执行交接命令。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 当时作为 v0.2.4 发布的切换前 live；该次发布随后已成功，本次实际 live 由第 15.4 节覆盖。所有历史已成功、失败或已回滚的 run 禁止重新用于 prepare/switch。
 
-### 15.3 2026-09-10 v0.2.4 完整发布交接
+### 15.3 2026-09-10 v0.2.4 完整发布（已切换，历史交接命令撤回）
 
-本 run 已完成正式 prepare、全量生产快照 new-old-new 兼容 Gate、never-started probe 和最终审计，当前仍停在切换前：run=`/srv/subnexus-migration/cutover/20260909171117-2439922`，manifest `state=prepared/ui_state=prepared/ui_commit_intent=no`。候选 commit/tree=`890828afe0f726abb363029f147e04087fed2bca`/`9fc99f6dac3e8f2028b8f2178ec7ca6ae480d425`，image=`sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`。新的一级回滚目标是切换前 live `b9de08a4f4134a1a486bfc68537344af564b7f337e2117209a75a9cb3c2fb9f0` / `sha256:db1f6f23238301bbecece8b2e5ff3cccdcca8f09aa87099635e5674ba4877577`，暂存名为 `subnexus-cutover-ui-prior-20260909171117-2439922`。
+本 run=`/srv/subnexus-migration/cutover/20260909171117-2439922` 已由维护者切换成功。此前正式 prepare、全量生产快照 new-old-new 兼容 Gate、never-started probe 和最终审计通过时，manifest 为 `state=prepared/ui_state=prepared/ui_commit_intent=no`；这些字段仅为历史切换前快照，不能作为当前 run 状态。发布 commit/tree=`890828afe0f726abb363029f147e04087fed2bca`/`9fc99f6dac3e8f2028b8f2178ec7ca6ae480d425`，image=`sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`。当时一级回滚目标为切换前 live `b9de08a4f4134a1a486bfc68537344af564b7f337e2117209a75a9cb3c2fb9f0` / `sha256:db1f6f23238301bbecece8b2e5ff3cccdcca8f09aa87099635e5674ba4877577`，暂存名 `subnexus-cutover-ui-prior-20260909171117-2439922`；它不是本次模型表现监控发布的正常回滚目标。
 
 Full wrapper=`/srv/subnexus-migration/tools/subnexus-full-release-cutover-737f8603-full-890828afe0f7.sh`，SHA=`737f86031c94c27bf8b6cbe81150e89c8c5855f76e3ac34be1fe22ef7dd460ac`；兼容 Gate=`/srv/subnexus-migration/docker-candidate/full-890828afe0f7-compat-6b1a369a45a54206/evidence.env`，SHA=`0485384ea5ea8daaa020eba25d5d4a0fe1f232f0740cfd54ee1575bcda1e93c8`；生产快照 SHA=`321231ffa421029cac73b90fcba65eb5942228b27f577d3cdb869c1dcaf57265`。最终 evidence SHA=`e448ccc554b7f088c306f768c4a2ac0372c397e0abe5b9382f39ecfbcbdf40e0`，facts SHA=`36462811ffc980329321b41da1a2265f71ad5583e6e648accf1aa4a3e5bc80fe`；`FINAL_PRE_SWITCH_AUDIT=passed`、`FINAL_METADATA_AUDIT=passed`、`PROBE_EXIT_AND_CLEANUP=passed`、`FINAL_SWITCH_EXECUTED=false`。
 
-```bash
-sudo -n env SUBNEXUS_APPROVED_FULL_RELEASE_SCRIPT_SHA256=737f86031c94c27bf8b6cbe81150e89c8c5855f76e3ac34be1fe22ef7dd460ac SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS bash /srv/subnexus-migration/tools/subnexus-full-release-cutover-737f8603-full-890828afe0f7.sh switch /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/tools/subnexus-ui-cutover-8fdfc825-full-890828afe0f7.sh /srv/subnexus-migration/cutover/20260909171117-2439922
-```
+旧 switch/rollback 命令正文已撤回；保留上述身份和证据仅供审计，不得从历史命令改写后执行本次发布。2026-09-11 实时复核的线上容器为 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836`，使用上述 v0.2.4 镜像，StartedAt=`2026-09-10T00:38:47.787671032Z`。
+
+### 15.4 2026-09-11 分组模型表现监控发布（全部前置通过，停在切换前）
+
+本次候选包含分组模型表现监控和独立迁移 9014。镜像构建、服务器候选 Gate、全量生产快照 new/restart/old/new 兼容回归、正式 prepare、never-started probe 和最终审计全部通过。代理没有执行生产 switch/rollback/migration；最终切换由维护者手动执行。以下两条命令是本次唯一交接入口，不复用第 15.3 节或更早历史命令。
+
+| 固定项 | 已核验值 |
+| --- | --- |
+| 候选 commit/tree | `33a9601c93304f89a67b7845b4e3b10447edcf96` / `efb0d3a6e9089ecb7eea188f91e5299a3694b8d6` |
+| 候选镜像 | `sha256:9342118b00d127deb7fdc1c62fe19a347acf5563a254a3e9541cf309f492506f` |
+| 正式 run | `/srv/subnexus-migration/cutover/20260911130706-3232923` |
+| 准备时间与状态 | `2026-09-11T13:21:27+00:00`；`state=prepared/ui_state=prepared/ui_commit_intent=no` |
+| manifest SHA256 | `8436989b7f3ca1b5c338429a52c3493dae26c688dfed8c71a04a57b31ec63b10` |
+| 实际 live / 本次一级回滚容器 | `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836`；镜像 `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9` |
+| 切换后保留名称 | `subnexus-cutover-ui-prior-20260911130706-3232923` |
+| 新回滚镜像 tag | `subnexus-rollback:model-evaluation-20260911-890828afe0f7` |
+| 新回滚镜像归档 | `/srv/subnexus-migration/model-evaluation-20260911/rollback-image.tar`；SHA256=`a33a982c244bbc12d5b62a8200fc408305cc82186e64ec24a3d663f9a4935fb3` |
+| 兼容 Gate | `/srv/subnexus-migration/docker-candidate/full-33a9601c9330-compat-8b63adeb67e24bd7/evidence.env`；SHA256=`a813fccfe95616d3dc19755bb89cf14b901d3bc489688192a1e90c6beada729d` |
+| 最终审计 | `/srv/subnexus-migration/diagnostics/full-33a9601c9330-final-20260911130706-3232923.evidence`；SHA256=`807c4ab7eaea72a1bad745b4c1a17a99ad209beb5fddaee0f466db1c838c367f`；facts SHA256=`f2367751b502a2d1a735e86f008a949c2ec7cefbcb00bde78560ef912138e722` |
+
+原 controller SHA=`19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65`、UI library SHA=`8fdfc8253020d61c1e5f0b13b49c340295e0713f552763c66603d32ae949e38d` 保持不变。本次 full wrapper SHA=`7bb384a1700c5c24a90c855f8f444fd6ad01fcae3a21b31b01f4ad3d81cf5c9b`，base 固定为实际线上 `890828afe0f726abb363029f147e04087fed2bca`。
+
+所有备份和 sidecar 已验证；探针从未启动且已精确删除，生产 app/PG/Redis 的身份、启动时间、受保护设置和迁移账本未变化，内部及公网健康/首页均 HTTP 200。新监控开关在准备期缺失/false，切换后仍默认关闭，需要后台配置分组、URL、Key 和模型后再启用。
+
+切换（维护者在服务器终端执行）：
 
 ```bash
-sudo -n env SUBNEXUS_APPROVED_FULL_RELEASE_SCRIPT_SHA256=737f86031c94c27bf8b6cbe81150e89c8c5855f76e3ac34be1fe22ef7dd460ac SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK bash /srv/subnexus-migration/tools/subnexus-full-release-cutover-737f8603-full-890828afe0f7.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/tools/subnexus-ui-cutover-8fdfc825-full-890828afe0f7.sh /srv/subnexus-migration/cutover/20260909171117-2439922
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_FULL_RELEASE_SCRIPT_SHA256=7bb384a1700c5c24a90c855f8f444fd6ad01fcae3a21b31b01f4ad3d81cf5c9b SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS bash /srv/subnexus-migration/tools/subnexus-full-release-cutover-7bb384a1-full-33a9601c9330.sh switch /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/tools/subnexus-ui-cutover-8fdfc825-full-33a9601c9330.sh /srv/subnexus-migration/cutover/20260911130706-3232923
 ```
+
+回滚（仅在本次切换后需要恢复时执行）：
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_FULL_RELEASE_SCRIPT_SHA256=7bb384a1700c5c24a90c855f8f444fd6ad01fcae3a21b31b01f4ad3d81cf5c9b SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK bash /srv/subnexus-migration/tools/subnexus-full-release-cutover-7bb384a1-full-33a9601c9330.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/tools/subnexus-ui-cutover-8fdfc825-full-33a9601c9330.sh /srv/subnexus-migration/cutover/20260911130706-3232923
+```
+
+正常 rollback 恢复本次切换前实际 live 容器，不自动恢复数据库或 Redis。新回滚 tag/归档为额外保留的不可变镜像；没有执行 docker commit。历史旧 SubNexus anchor、最近 v0.2.4 备份及其他回滚镜像均保留。空间清理仅覆盖已核验失效的三份冗余快照，记录见变更记忆。

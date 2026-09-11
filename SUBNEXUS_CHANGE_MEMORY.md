@@ -1660,3 +1660,38 @@
 - 工作区仍为 feature/subnexus-migration；未提交/push、未访问生产服务器、未开启线上功能、未执行 switch/rollback。原有五份部署文档修改保持保留。本次新功能不在先前 890828afe... 的 v0.2.4 制品中，不能用旧切换命令宣称发布本功能；正式上线须从本次代码重新构建并完成发布门禁。
 - 两个新增隔离 PostgreSQL 实例和浏览器预览服务均已停止；目录 `F:\MySub2\.model-evaluation-pg-20260911`、`F:\MySub2\.model-evaluation-pg-test-20260911` 保留。后者清理曾被自动审批以 blocked by policy 拒绝，未更换方式重试；这些目录和测试缓存不进入 Git，不是生产回滚对象。
 - 最终收尾复验：包含最后 HTML 提取、Key 绑定提示和分组标签样式修改的当前工作树，`pnpm run build`（i18n 检查、vue-tsc、Vite）退出 0；随后 `go vet ./...` 和 `go build -tags embed ./...` 均退出 0，嵌入当前前端产物。`git diff --check` 通过；依赖及锁文件、历史迁移没有修改。前端最终测试和构建日志分别为 `F:\MySub2\.playwright-qa\model-evaluation-frontend-verified.log`、`F:\MySub2\.playwright-qa\model-evaluation-build-verified.log`。尚未调用真实模型供应商，模型请求以测试传输和浏览器夹具验证。
+
+## 2026-09-11 分组模型表现监控发布前置（进行中，尚不可切换）
+
+- 用户授权完成全部线上前置，创建新的回滚镜像，最终切换仍由用户手动执行。实际 live 已为 v0.2.4：`e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / image `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`，StartedAt=`2026-09-10T00:38:47.787671032Z`，healthy/restart=0。旧手册 15.3 run 已 switched，禁止再次执行其 switch。本轮无生产停止、重启、切换或迁移。
+- 新候选 commit=`33a9601c93304f89a67b7845b4e3b10447edcf96`、tree=`efb0d3a6e9089ecb7eea188f91e5299a3694b8d6` 已推送；image=`sha256:9342118b00d127deb7fdc1c62fe19a347acf5563a254a3e9541cf309f492506f`；归档 `48738304` bytes / SHA=`cbda8db4b80edf5d9f5f106d26649b8226b6793d8578d92e3bc2b7140c708d5c`。source=`/srv/subnexus-migration/source-full-33a9601c9330`、artifact=`/srv/subnexus-migration/candidate-artifacts/full-33a9601c9330`。本地构建两次网络超时后，确认重启后本地 daemon 的 iptables=false 导致无 NAT，改为专用本地 daemon 管理构建网络规则后构建通过，生产 Docker 未改。
+- 新 full wrapper 把 base 固定为实际 890828afe...，原 UI library/controller 字节和恢复流程不变；56 场景与 Gate/source 校验通过。安装 full=`subnexus-full-release-cutover-7bb384a1-full-33a9601c9330.sh`，SHA=`7bb384a1700c5c24a90c855f8f444fd6ad01fcae3a21b31b01f4ad3d81cf5c9b`；UI=`subnexus-ui-cutover-8fdfc825-full-33a9601c9330.sh`。服务器候选 Gate=`/srv/subnexus-migration/docker-candidate/20260911T105404Z-8b297a5e-c2fe-4339-a49e-73ed2531893f/evidence.txt`，SHA=`9f303367535e90a7428ec5a017f143958e298d8735b3e2996521ff886199472c`，passed，生产运行身份不变。
+- 新回滚 tag=`subnexus-rollback:model-evaluation-20260911-890828afe0f7`，绑定实际 live image；归档 `/srv/subnexus-migration/model-evaluation-20260911/rollback-image.tar`，48681984 bytes / SHA=`a33a982c244bbc12d5b62a8200fc408305cc82186e64ec24a3d663f9a4935fb3`。未 docker commit；归档完整验证 OCI manifest/config/layers。正常回滚仍使用本次 prepare 绑定并在用户 switch 时保留的 actual-live 容器，归档为补充灾备。
+- 全新完整快照 `/srv/subnexus-migration/model-evaluation-20260911/production.dump`，5742805036 bytes / SHA=`c0e8a98e1104bfddd9a048012537e822462d941cbe762410466b68ff62f3ffe4`，catalog/完整哈希通过；379 条基线 migration，无 9014 且新开关缺失/false。基线账本 SHA=`b46cd2b9ee34283118f39888863e8f564147ba52153f394856d031b265dafccd`。本地下载至 `D:\SubNexusRelease\model-evaluation-20260911` 正在进行，单连接下载主动停止后转为分段续传，必须整文件哈希通过后才用于恢复。
+- 空间不足时仅删除 3 份已逐一核验 SHA 的失效冗余快照：旧 run `20260906134705-774592`、`20260909054636-2120213` 的 postgresql.dump（两者 live/candidate 已不存在），以及前次独立兼容快照 `production-20260909T134428Z.dump`。保留其 sidecar/manifest/审计、最新 v0.2.4 备份、固定旧 SubNexus anchor、本次快照和所有回滚镜像。释放 16348982364 bytes，审计 `/srv/subnexus-migration/cleanup-model-evaluation-expired-snapshots-20260911.json` / SHA=`57a14eb0fa33b08444389d2237806bd7f6aef4bcfc45044bbc4ccbf30e50d3a5`。
+- 本地专用 WSL 在无运行容器时完成离线虚拟磁盘压缩，F 盘从约 19 GiB 可用恢复至约 64 GiB；仅精确删除四个前次本地测试遗留且无引用的小型匿名卷。先前删除被拒绝的 70 GiB 辅助 ext4 文件没有删除/重格式化，确认内部 data 为空后重新挂载，用于本轮隔离索引恢复。新本地兼容 helper 位于 `tools/release-model-evaluation-20260911/compat-local.py`（仓库外），全量数据原生卷、索引辅助盘，保持每盘 10 GiB 余量；尚待实际运行。
+- 待完成：完整快照下载校验、全量隔离 new/restart/old/new 与新功能数据保留验证、兼容 Gate 安装、正式 prepare 新备份、never-started probe 与最终审计。当前不能交付切换命令；旧 15.3 命令不用于本次功能。
+
+## 2026-09-11 21:07（Asia/Shanghai）— 完整兼容验证通过，正式准备中
+
+- 固定候选仍为 `33a9601c93304f89a67b7845b4e3b10447edcf96` / image `sha256:9342118b00d127deb7fdc1c62fe19a347acf5563a254a3e9541cf309f492506f`；完整快照 `5742805036` bytes / SHA=`c0e8a98e1104bfddd9a048012537e822462d941cbe762410466b68ff62f3ffe4` 已下载并完成全量恢复、索引及约束校验。
+- `compat-8b63adeb67e24bd7` 的新版/重启/当前线上旧版/新版共 10 项验证全部通过：登录、分组、密钥、订阅和模型配置写入正常；新增 9014 外的 379 条 migration filename/checksum 不变；开关 false、两个容量槽空闲；新任务的模型、加密 Key 及原始 HTML 在往返版本间保留。测试只访问隔离副本，没有调用供应商。
+- 兼容证据已安装：`/srv/subnexus-migration/docker-candidate/full-33a9601c9330-compat-8b63adeb67e24bd7/evidence.env`，SHA=`a813fccfe95616d3dc19755bb89cf14b901d3bc489688192a1e90c6beada729d`，`result=passed/cleanup=passed`。本地副本见 `F:\MySub2\tools\release-model-evaluation-20260911\compat-8b63adeb67e24bd7.env` 及 `.checks.json`。
+- 所有本地兼容测试容器、卷和网络已清理，辅助测试盘确认 data 子目录为空后已卸载。此前因策略拒绝删除的辅助 ext4 文件仍保留，未删除或重新格式化；专用构建 daemon 已停止，并回收其虚拟磁盘空闲空间。
+- 21:06 再次只读核验：生产 app/PG/Redis 身份及 StartedAt 保持原值，379 条迁移账本 SHA 不变，无执行中的结算任务或 schema DDL，新功能仍缺失/false。正式 prepare helper=`/srv/subnexus-migration/tools/run-full-prepare-1e94cdc8-33a9601c9330.sh`，SHA=`1e94cdc8e833f500dfa8dbc9781fb86f3227b48be2377819038d3636a7875180`（Docker timeout 1800 秒的已安装修正版，不再使用最早 helper 清单中的 aedffb6d）。准备日志=`/srv/subnexus-migration/diagnostics/model-evaluation-33a9601c9330-prepare.log`，退出码同名 `.exit`。
+- 尚待正式 prepare 退出 0、never-started probe 与最终审计；尚不可切换，未执行任何生产 switch/rollback/migration。
+
+## 2026-09-11 21:26（Asia/Shanghai）— 分组模型表现监控全部前置完成
+
+- 候选 commit/tree=`33a9601c93304f89a67b7845b4e3b10447edcf96` / `efb0d3a6e9089ecb7eea188f91e5299a3694b8d6`，image=`sha256:9342118b00d127deb7fdc1c62fe19a347acf5563a254a3e9541cf309f492506f`；应用源码与镜像仍绑定此提交，后续文档提交不改变候选。服务器正式 prepare 和最终审计均退出 0。
+- 正式 run=`/srv/subnexus-migration/cutover/20260911130706-3232923`，prepared_at=`2026-09-11T13:21:27+00:00`，manifest SHA=`8436989b7f3ca1b5c338429a52c3493dae26c688dfed8c71a04a57b31ec63b10`，READY/UI_READY/FULL_READY 均通过，`state=prepared/ui_state=prepared/ui_commit_intent=no`；无候选 ID、SWITCHED 或 ROLLED_BACK 标记。
+- 完整快照兼容 Gate=`/srv/subnexus-migration/docker-candidate/full-33a9601c9330-compat-8b63adeb67e24bd7/evidence.env`，SHA=`a813fccfe95616d3dc19755bb89cf14b901d3bc489688192a1e90c6beada729d`；10 项完整验证和 cleanup 均通过。正式切换备份如下：
+- postgresql.dump: `5751049383` bytes / SHA256=`df5055adaceb5130c2d1c2b964911718e7c56d7294e644ebf4ccf532f5d0b551`。
+- postgresql.list: `119007` bytes / SHA256=`eaec2ab69e8942df1224d7445fbf2c7e2ce0b741167930e508ccee80a5c0e6b4`。
+- redis.rdb: `10781268` bytes / SHA256=`5453b2f3cfd29d0b5ea744f21ac9ab77b88c554d257d9d3575e6d7b7d1ad4e98`。
+- redis-check-rdb.txt: `647` bytes / SHA256=`63a08f55ec51b6c58ef15340ca4916a64fae26edb0cc5e668248497551faa3fb`。
+- application-data.tar.gz: `78526290` bytes / SHA256=`b387cf4ccc04759963f6fe8458831ea6d6a9c3a678f662f7f0686dced5735ae9`。
+- 本次新回滚 tag=`subnexus-rollback:model-evaluation-20260911-890828afe0f7`，archive SHA=`a33a982c244bbc12d5b62a8200fc408305cc82186e64ec24a3d663f9a4935fb3`；一级容器目标=`e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836`，镜像=`sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`。用户 switch 才停止改名并保留为 `subnexus-cutover-ui-prior-20260911130706-3232923`；普通 rollback 不恢复数据库。
+- 最终证据=`/srv/subnexus-migration/diagnostics/full-33a9601c9330-final-20260911130706-3232923.evidence`，SHA=`807c4ab7eaea72a1bad745b4c1a17a99ad209beb5fddaee0f466db1c838c367f`；facts SHA=`f2367751b502a2d1a735e86f008a949c2ec7cefbcb00bde78560ef912138e722`；`FINAL_PRE_SWITCH_AUDIT=passed`、`FINAL_METADATA_AUDIT=passed`、`PROBE_EXIT_AND_CLEANUP=passed`、`FINAL_SWITCH_EXECUTED=false`。探针从未启动且已精确删除；公网及本地 health/home 全部 HTTP 200，服务器空闲 `22436515840` bytes。
+- 生产应用仍为 e389b3b1...，StartedAt=`2026-09-10T00:38:47.787671032Z`，healthy/restart=0；PG/Redis 身份/启动时间不变，379 条迁移账本不变，新功能仍缺失/false，未执行生产 switch/rollback/migration。唯一人工命令已写入切换手册第 15.4 节。
+- 本地隔离测试容器/卷/网络已清理，测试辅助盘已卸载，专用 daemon 已停止；F 盘虚拟磁盘再次离线回收后空闲约 63 GiB。此前自动审批拒绝删除的 `D:\SubNexusRelease\compat-890828afe0f7.ext4`（70 GiB）继续保留，未改用其他方式删除。
