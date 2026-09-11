@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-09 Asia/Shanghai）：用户端视觉性能分级、下拉层级和签到文案修复已完成本地验证。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的镜像、Gate、wrapper 和 prepared run 因无法回滚到切换前现网版本而全部作废，禁止 switch。现行合同恢复为：`prepare` 固定切换前 live 的完整身份但不改变 Docker 状态；最终 `switch` 将该 live 保留为 stopped 一级回滚目标；本轮 `rollback` 只恢复它。历史旧 SubNexus 只作为 prepare/switch 提交前的连续性 anchor；switch 一旦开始，其缺失或漂移不得阻止 automatic recover、manual recover 或 rollback 恢复 previous-live。最终 switch 仍由维护者执行，当前状态取信于文末最新记录和切换手册第 15.2 节。
+> 当前权威状态（2026-09-11 Asia/Shanghai）：此前模型监控 run `20260911130706-3232923` 已由维护者切换成功，实际线上为 `33a9601c9330` / `b4b66b9ca08f`。本轮更新候选 `ccb69f00132d` 包含流式生成、私有测试后发布及用户跨分组时间排序，前后端测试、构建和服务器候选 Gate 已通过，完整快照兼容验证进行中，尚不能切换。最新授权明确不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；最终 switch 仍由维护者手动执行。本轮状态以文末最新记录为准。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1710,3 +1710,14 @@
 - 用户确认未选择分组时汇总全部分组结果，按生成时间排序；选定分组时只展示该分组。继续遵守用户已有分组权限、发布状态及开关约束。“全部”不扩大访问范围。
 - 已核对原查询支持默认不传 group_id，在权限过滤后统一 `created_at DESC,id DESC` 排序分页；选择/清空分组均回第一页，无需修改后端。用户卡片将分组、生成时间、模型、任务名、状态及耗时置于预览上方，增加排序与筛选说明；保留原预览交互和错误详情隐藏。
 - 9 项现有画廊/语言完整性测试、定向 ESLint 和 TypeScript 通过。实际 Chromium 桌面/移动、明暗四组合通过：默认跨分组列表、时间降序、选定分组过滤、翻页后切回全部恢复第一页、预览上方信息位置及无横向溢出。报告：`F:\MySub2\.playwright-qa\model-evaluation-user-feed\report.json`。本轮仅本地 UI 与文档修改，未部署或执行切换。
+
+
+## 2026-09-11 — 模型监控工作流修复发布前置（进行中，不新建回滚）
+
+- 最新授权：完成全部前置、停在最终切换前，本次不新建回滚目标。旧指示中创建新回滚镜像仅适用于已成功发布的 `33a9601c9330`，不适用于本轮。
+- 已实时确认该发布 run `20260911130706-3232923` 为 switched；实际 live=`b4b66b9ca08f185ecbe2e41fc768ff0f3c2685d9a97a4e51ef095da35aafad24`，image=`sha256:9342118b00d127deb7fdc1c62fe19a347acf5563a254a3e9541cf309f492506f`，StartedAt=`2026-09-11T13:32:35.16865245Z`，healthy/restart=0。旧交接命令已撤回。
+- 应用 commit=`ccb69f00132dcb9dcbad76e8c3f542231bb002fd`，tree=`4fe51217a193bed8207e23916277d1329bec2f71` 已推送；前端 317 文件/2213 测试及 build 通过，后端完整 `go test -p 2 ./...` 通过。Windows 临时目录转到 F 盘并补 Git sh PATH 后解决测试环境问题，不改应用逻辑。
+- 隔离镜像 image=`sha256:c8a9db0d90f3c99924d7c53c7b9b41b4b90f26d053341abc254888e58c12df55`；归档 SHA=`b76430f44eadbe3dac5a0e7c8c775bf2d78f879346f5c17e1f40d4eac878b713`。服务器 candidate Gate `20260911T145454Z-e1e5ca10-25b7-4d7c-bcb7-eccbf059eafd` 已 passed，临时服务清理完成且生产身份未变化。
+- 新独立 retained release 入口及 31 个故障/恢复场景通过，运维提交 `e4de7857608ed698c309b8e3c2d7fe92ddcbe58e`。原 full/UI/controller 字节不变。新入口 SHA=`a5b955de3ec51cb1acfc1393290ae2259e8b839fbd3825bda563650e45fd1c3b`，复用 `e389b3b1...` v0.2.4。当前 live 只在人工 switch 的提交前用作临时失败恢复，提交成功即精确删除，不保存为新回滚对象。
+- 全新快照 `/srv/subnexus-migration/model-evaluation-workflow-20260911/production.dump`，5756660659 bytes，SHA=`347eff0107d47edd707aadab84f79f11efea240741d3c40dfc16fd67c28f8dfb`；基线 380 条迁移，已有 9014、没有 9015，监控开关 false。数据库传输及完整隔离兼容验证尚未完成，不生成最终切换命令。
+- 现有配置/加密 Key/HTML 历史保留；9015 将任务初始化为未测试/未发布，切换后管理员须私有测试通过并明确发布才向用户展示。用户默认按生成时间查看全部有权限且已发布分组结果，分组下拉用于筛选。未发起真实供应商请求。
