@@ -33,6 +33,7 @@ type ModelEvaluationService struct {
 type modelEvaluationActiveRun struct {
 	token  string
 	cancel context.CancelFunc
+	isTest bool
 }
 
 func NewModelEvaluationService(repo ModelEvaluationRepository, settings SettingRepository, groups GroupRepository, encryptor SecretEncryptor) *ModelEvaluationService {
@@ -60,7 +61,7 @@ func (s *ModelEvaluationService) UpdateConfig(ctx context.Context, cfg ModelEval
 		return nil, err
 	}
 	if !cfg.Enabled {
-		s.cancelActive(0)
+		s.cancelScheduled()
 	}
 	return &cfg, nil
 }
@@ -128,7 +129,19 @@ func (s *ModelEvaluationService) ListResults(ctx context.Context, p ModelEvaluat
 	if p.PageSize < 1 || p.PageSize > 100 {
 		p.PageSize = 20
 	}
-	return s.repo.ListResults(ctx, p)
+	items, total, err := s.repo.ListResults(ctx, p)
+	if err != nil || p.Admin {
+		return items, total, err
+	}
+	visible := make([]*ModelEvaluationResult, 0, len(items))
+	for _, item := range items {
+		if safe := ModelEvaluationUserResult(item); safe != nil {
+			visible = append(visible, safe)
+		} else if total > 0 {
+			total--
+		}
+	}
+	return visible, total, nil
 }
 
 func (s *ModelEvaluationService) GetResult(ctx context.Context, id int64, p ModelEvaluationListParams) (*ModelEvaluationResult, error) {
@@ -138,7 +151,54 @@ func (s *ModelEvaluationService) GetResult(ctx context.Context, id int64, p Mode
 			return nil, ErrModelEvaluationNotFound
 		}
 	}
-	return s.repo.GetResult(ctx, id, p)
+	result, err := s.repo.GetResult(ctx, id, p)
+	if err != nil || p.Admin {
+		return result, err
+	}
+	safe := ModelEvaluationUserResult(result)
+	if safe == nil {
+		return nil, ErrModelEvaluationNotFound
+	}
+	return safe, nil
+}
+
+// ModelEvaluationUserResult is the final disclosure boundary for generated
+// failures. Return a copy so shared/cache/admin objects retain their diagnostics.
+func ModelEvaluationUserResult(result *ModelEvaluationResult) *ModelEvaluationResult {
+	if result == nil {
+		return nil
+	}
+	if result.IsTest && result.Status != "success" {
+		return nil
+	}
+	copy := *result
+	copy.ErrorMessage = ""
+	if copy.Status != "success" {
+		copy.ErrorMessage = "生成失败"
+		copy.HTML = ""
+	}
+	return &copy
+}
+
+func (s *ModelEvaluationService) SetPublication(ctx context.Context, id int64, published bool) (*ModelEvaluationTask, error) {
+	task, err := s.repo.SetPublication(ctx, id, published)
+	if err == nil && !published {
+		s.cancelActive(id)
+	}
+	return task, err
+}
+
+// TestTask is an explicit administrator action and intentionally works while
+// scheduling and public visibility are disabled. It shares the same DB slots.
+func (s *ModelEvaluationService) TestTask(ctx context.Context, id int64) error {
+	task, err := s.repo.ClaimTest(ctx, id)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return ErrModelEvaluationBusy
+	}
+	return s.launch(task)
 }
 
 func (s *ModelEvaluationService) DeleteResult(ctx context.Context, id int64) error {
@@ -199,6 +259,11 @@ func (s *ModelEvaluationService) prepareTask(ctx context.Context, in ModelEvalua
 		task.APIKeyEncrypted = old.APIKeyEncrypted
 		task.CreatedAt = old.CreatedAt
 		task.Revision = old.Revision
+		task.Published = old.Published
+		task.TestStatus = old.TestStatus
+		task.TestError = old.TestError
+		task.LastTestedAt = old.LastTestedAt
+		task.ConfigurationRevision = old.ConfigurationRevision
 	}
 	if in.APIKey != "" {
 		encrypted, err := s.encryptor.Encrypt(in.APIKey)
@@ -211,6 +276,10 @@ func (s *ModelEvaluationService) prepareTask(ctx context.Context, in ModelEvalua
 		return nil, ErrModelEvaluationInvalid
 	}
 	task.HasAPIKey = true
+	if old == nil {
+		task.TestStatus = "untested"
+		task.ConfigurationRevision = 1
+	}
 	return task, nil
 }
 
@@ -224,7 +293,7 @@ func validateModelEvaluationEndpoint(ctx context.Context, endpoint string) error
 	}
 	// The saved URL is a complete request URL; it is never silently rewritten.
 	if u.Path == "" || u.Path == "/" {
-		return ErrModelEvaluationInvalid
+		return ErrModelEvaluationEndpointPathRequired
 	}
 	if ip := net.ParseIP(u.Hostname()); ip != nil && (isPrivateIP(ip) || !ip.IsGlobalUnicast()) {
 		return ErrModelEvaluationInvalid
@@ -268,6 +337,16 @@ func (s *ModelEvaluationService) cancelActive(id int64) {
 	}
 }
 
+func (s *ModelEvaluationService) cancelScheduled() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, run := range s.active {
+		if !run.isTest {
+			run.cancel()
+		}
+	}
+}
+
 func (s *ModelEvaluationService) RunNow(ctx context.Context, id int64) error {
 	cfg, _ := s.GetConfig(ctx)
 	if !cfg.Enabled {
@@ -297,7 +376,7 @@ func (s *ModelEvaluationService) loop() {
 		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
 		cfg, _ := s.GetConfig(ctx)
 		if !cfg.Enabled {
-			s.cancelActive(0)
+			s.cancelScheduled()
 			cancel()
 			continue
 		}
@@ -329,7 +408,7 @@ func (s *ModelEvaluationService) launch(task *ModelEvaluationTask) error {
 		return ErrModelEvaluationDisabled
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 180*time.Second)
-	s.active[task.ID] = modelEvaluationActiveRun{token: task.LeaseToken, cancel: cancel}
+	s.active[task.ID] = modelEvaluationActiveRun{token: task.LeaseToken, cancel: cancel, isTest: task.LeaseIsTest}
 	s.wg.Add(1)
 	s.mu.Unlock()
 	go func() {
@@ -369,6 +448,7 @@ func (s *ModelEvaluationService) launch(task *ModelEvaluationTask) error {
 		current, err := s.repo.LeaseCurrent(ctx, task)
 		if err == nil && current {
 			result := s.execute(ctx, task)
+			result.IsTest = task.LeaseIsTest
 			// A timeout is a useful failed sample; shutdown/config cancellation is not.
 			if !errors.Is(ctx.Err(), context.Canceled) {
 				saveCtx, done := context.WithTimeout(context.Background(), 10*time.Second)

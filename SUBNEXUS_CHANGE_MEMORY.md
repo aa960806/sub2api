@@ -1695,3 +1695,18 @@
 - 最终证据=`/srv/subnexus-migration/diagnostics/full-33a9601c9330-final-20260911130706-3232923.evidence`，SHA=`807c4ab7eaea72a1bad745b4c1a17a99ad209beb5fddaee0f466db1c838c367f`；facts SHA=`f2367751b502a2d1a735e86f008a949c2ec7cefbcb00bde78560ef912138e722`；`FINAL_PRE_SWITCH_AUDIT=passed`、`FINAL_METADATA_AUDIT=passed`、`PROBE_EXIT_AND_CLEANUP=passed`、`FINAL_SWITCH_EXECUTED=false`。探针从未启动且已精确删除；公网及本地 health/home 全部 HTTP 200，服务器空闲 `22436515840` bytes。
 - 生产应用仍为 e389b3b1...，StartedAt=`2026-09-10T00:38:47.787671032Z`，healthy/restart=0；PG/Redis 身份/启动时间不变，379 条迁移账本不变，新功能仍缺失/false，未执行生产 switch/rollback/migration。唯一人工命令已写入切换手册第 15.4 节。
 - 本地隔离测试容器/卷/网络已清理，测试辅助盘已卸载，专用 daemon 已停止；F 盘虚拟磁盘再次离线回收后空闲约 63 GiB。此前自动审批拒绝删除的 `D:\SubNexusRelease\compat-890828afe0f7.ext4`（70 GiB）继续保留，未改用其他方式删除。
+
+## 2026-09-11 — 监控私下测试、发布门禁及失败诊断（本地修改）
+
+- 用户截图中的生成请求约 125 秒后返回 HTTP 524，表明上游代理等待响应超时；不能据此判定 Key、模型权限或额度错误。原实现发送非流式请求，现改为三种协议的流式 SSE 接收，仍兼容完整 JSON 响应。必须收到正常完成事件才保存成功 HTML；保留 180 秒总超时、响应/HTML 大小限制、两个并发槽位、不自动重试。未向真实供应商发出验证请求，不能承诺上游不再超时。
+- 新增管理员 `POST /tasks/:id/test` 和 `PUT /tasks/:id/publication {published}`（均位于 `/api/v1/admin/model-evaluations`）。任务包含发布状态、测试状态、时间、后台诊断。先保存，再主动测试，测试通过后手动发布；测试允许全局和任务开关关闭。再次测试暂时取消发布，失败不得发布。
+- 追加 `9015_subnexus_model_evaluation_publication.sql`，原 9014 不变。已有任务升级后默认未测试、未发布，配置/加密 Key/历史保留，需要管理员逐项测试并发布。修改分组、URL、协议、Key、模型会失效测试并撤销发布；普通元数据修改保留通过状态。当前配置版本之外的历史不向用户展示。
+- 用户组列表、历史和详情在服务端受已发布、启用、全局开关及原分组权限约束。测试失败始终只供后台查看；成功测试在发布后可作首个用户样本。后续定时失败在用户 API/界面只显示“生成失败”，清除具体诊断及失败 HTML；后台保留固定、无凭据的诊断。裸域名 URL 现在有明确路径错误提示。
+- 验证：前端全量 317 文件 / 2213 项测试通过；定向 ESLint、TypeScript、前端构建通过。后端相关 service/repository/user/admin handler 测试通过，包含真实本地 PostgreSQL 的 4 个主测试、发布鉴权路由测试，以及三种流式协议、截断/错误/超限测试。相关包 go vet 和嵌入最终前端产物的 `go build -tags embed ./...` 均通过。浏览器夹具验证关闭开关时私测、失败禁止发布、成功后手动发布，以及桌面/移动用户诊断隐藏；无页面错误或横向溢出。
+- 浏览器报告：`F:\MySub2\.playwright-qa\model-evaluation-workflow\report.json`；前端全量与构建日志前缀 `model-evaluation-workflow-`。本地专用 PG 端口 55439 和 Vite 3107 测试结束后均已停止。没有连接或修改生产，没有创建发布回滚目标或执行切换；这些本地改动需要后续重新完成发布前置，旧候选镜像不包含本次修复。
+
+## 2026-09-11 — 用户监控结果汇总与筛选展示（本地修改）
+
+- 用户确认未选择分组时汇总全部分组结果，按生成时间排序；选定分组时只展示该分组。继续遵守用户已有分组权限、发布状态及开关约束。“全部”不扩大访问范围。
+- 已核对原查询支持默认不传 group_id，在权限过滤后统一 `created_at DESC,id DESC` 排序分页；选择/清空分组均回第一页，无需修改后端。用户卡片将分组、生成时间、模型、任务名、状态及耗时置于预览上方，增加排序与筛选说明；保留原预览交互和错误详情隐藏。
+- 9 项现有画廊/语言完整性测试、定向 ESLint 和 TypeScript 通过。实际 Chromium 桌面/移动、明暗四组合通过：默认跨分组列表、时间降序、选定分组过滤、翻页后切回全部恢复第一页、预览上方信息位置及无横向溢出。报告：`F:\MySub2\.playwright-qa\model-evaluation-user-feed\report.json`。本轮仅本地 UI 与文档修改，未部署或执行切换。

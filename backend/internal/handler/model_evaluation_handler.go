@@ -96,6 +96,15 @@ func (h *ModelEvaluationUserHandler) ListResults(c *gin.Context) {
 		}
 	}
 	c.Header("Cache-Control", "no-store")
+	visible := make([]*service.ModelEvaluationResult, 0, len(items))
+	for _, item := range items {
+		if safe := service.ModelEvaluationUserResult(item); safe != nil {
+			visible = append(visible, safe)
+		} else if total > 0 {
+			total--
+		}
+	}
+	items = visible
 	response.Success(c, gin.H{"items": items, "total": total, "page": p.Page, "page_size": p.PageSize})
 }
 func (h *ModelEvaluationUserHandler) GetResult(c *gin.Context) {
@@ -114,6 +123,11 @@ func (h *ModelEvaluationUserHandler) GetResult(c *gin.Context) {
 	item, err := h.service.GetResult(c.Request.Context(), id, p)
 	if err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+	item = service.ModelEvaluationUserResult(item)
+	if item == nil {
+		response.ErrorFrom(c, service.ErrModelEvaluationNotFound)
 		return
 	}
 	c.Header("Cache-Control", "no-store")

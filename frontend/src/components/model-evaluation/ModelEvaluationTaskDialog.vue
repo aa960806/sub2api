@@ -1,12 +1,13 @@
 <template>
   <BaseDialog :show="show" :title="t(task ? 'modelEvaluations.admin.edit' : 'modelEvaluations.admin.create')" width="wide" @close="close">
     <form id="model-evaluation-task-form" class="space-y-4" @submit.prevent="save">
+      <p class="rounded-xl bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/40 dark:text-blue-200">{{ t('modelEvaluations.admin.saveHelp') }}</p>
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.name') }}</span><input v-model="form.name" name="name" class="input" maxlength="100" required /></label>
         <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.group') }}</span><select v-model.number="form.group_id" name="group_id" class="input" required><option :value="0" disabled>{{ t('modelEvaluations.admin.chooseGroup') }}</option><option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option></select></label>
       </div>
       <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.format') }}</span><select v-model="form.api_format" name="api_format" class="input"><option value="chat_completions">{{ t('modelEvaluations.admin.chatCompletions') }}</option><option value="responses">{{ t('modelEvaluations.admin.responses') }}</option><option value="messages">{{ t('modelEvaluations.admin.anthropic') }}</option></select></label>
-      <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.endpoint') }}</span><input v-model="form.endpoint" name="endpoint" type="url" pattern="https://.*" class="input" :placeholder="endpointExample" maxlength="2048" required /><span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.endpointHelp') }}</span><span class="block break-all text-xs text-gray-500 dark:text-gray-400">{{ endpointExample }}</span></label>
+      <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.endpoint') }}</span><input v-model="form.endpoint" name="endpoint" type="url" pattern="https://.*" class="input" :placeholder="endpointExample" maxlength="2048" required :aria-invalid="!!endpointError" :aria-describedby="endpointError ? 'model-evaluation-endpoint-error' : undefined" @blur="endpointTouched = true" /><span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.endpointHelp') }}</span><span class="block break-all text-xs text-gray-500 dark:text-gray-400">{{ endpointExample }}</span><span v-if="endpointError" id="model-evaluation-endpoint-error" class="block text-xs text-red-600 dark:text-red-400" role="alert">{{ t(endpointError) }}</span></label>
       <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.key') }}</span><input v-model="form.api_key" name="api_key" type="password" autocomplete="new-password" class="input" maxlength="4096" :required="requiresKey" :placeholder="t(requiresKey ? 'modelEvaluations.admin.keyNew' : 'modelEvaluations.admin.keySaved')" /><span v-if="bindingChanged" class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.keyBindingChanged') }}</span></label>
       <label class="block space-y-1 text-sm"><span>{{ t('modelEvaluations.admin.model') }}</span><input v-model="form.model" name="model" class="input" maxlength="200" required /><span class="block text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.admin.modelHelp') }}</span></label>
       <div class="grid gap-4 sm:grid-cols-3">
@@ -28,8 +29,9 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import { adminModelEvaluationsAPI, MODEL_EVALUATION_PROMPT, type ModelEvaluationGroup, type ModelEvaluationTask, type ModelEvaluationTaskInput } from '@/api/modelEvaluations'
+import { modelEvaluationEndpointErrorKey, modelEvaluationErrorKey } from '@/utils/modelEvaluationErrors'
 const props = defineProps<{ show: boolean; task: ModelEvaluationTask | null; groups: ModelEvaluationGroup[] }>()
-const emit = defineEmits<{ close: []; saved: [] }>()
+const emit = defineEmits<{ close: []; saved: [task: ModelEvaluationTask] }>()
 const { t } = useI18n()
 const initial = (): ModelEvaluationTaskInput => ({ name: '', group_id: 0, endpoint: '', api_format: 'chat_completions', api_key: '', model: '', enabled: true, interval_seconds: 3600, retention_days: 7, max_records: 50 })
 const form = reactive(initial())
@@ -37,26 +39,33 @@ const bindingChanged = computed(() => !!props.task && (form.endpoint.trim() !== 
 const requiresKey = computed(() => !props.task?.has_api_key || bindingChanged.value)
 const saving = ref(false)
 const error = ref('')
+const endpointTouched = ref(false)
+const endpointError = computed(() => endpointTouched.value ? modelEvaluationEndpointErrorKey(form.endpoint) : '')
 const endpointExample = computed(() => form.api_format === 'messages' ? 'https://api.example.com/v1/messages' : form.api_format === 'responses' ? 'https://api.example.com/v1/responses' : 'https://api.example.com/v1/chat/completions')
 watch(() => props.show, show => {
   error.value = ''
+  endpointTouched.value = false
   if (!show) { form.api_key = ''; return }
   const task = props.task
   Object.assign(form, task ? { name: task.name, group_id: task.group_id, endpoint: task.endpoint, api_format: task.api_format, api_key: '', model: task.model, enabled: task.enabled, interval_seconds: task.interval_seconds, retention_days: task.retention_days, max_records: task.max_records } : initial())
 }, { immediate: true })
 function close() { if (!saving.value) { form.api_key = ''; emit('close') } }
 async function save() {
+  if (saving.value) return
+  endpointTouched.value = true
+  if (endpointError.value) return
   if (requiresKey.value && !form.api_key?.trim()) { error.value = t('modelEvaluations.admin.keyRequired'); return }
   if (saving.value || !form.group_id) return
   saving.value = true
   error.value = ''
   try {
     const input = { ...form, api_key: form.api_key || undefined }
-    if (props.task) await adminModelEvaluationsAPI.update(props.task.id, input)
-    else await adminModelEvaluationsAPI.create(input)
+    const saved = props.task
+      ? await adminModelEvaluationsAPI.update(props.task.id, input)
+      : await adminModelEvaluationsAPI.create(input)
     form.api_key = ''
-    emit('saved')
-  } catch { error.value = t('modelEvaluations.admin.failed') }
+    emit('saved', saved)
+  } catch (cause) { error.value = t(modelEvaluationErrorKey(cause)) }
   finally { saving.value = false }
 }
 </script>

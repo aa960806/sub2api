@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -20,7 +22,9 @@ func (s *ModelEvaluationService) execute(ctx context.Context, task *ModelEvaluat
 		result.ErrorMessage = "凭据解密失败，请重新填写 API Key"
 		return result
 	}
-	payload := map[string]any{"model": task.Model, "stream": false}
+	// Incremental responses let upstream proxies flush data/heartbeats while a
+	// long animation is generated, instead of waiting for the entire document.
+	payload := map[string]any{"model": task.Model, "stream": true}
 	switch task.APIFormat {
 	case "chat_completions":
 		payload["messages"] = []map[string]string{{"role": "user", "content": ModelEvaluationPrompt}}
@@ -46,6 +50,7 @@ func (s *ModelEvaluationService) execute(ctx context.Context, task *ModelEvaluat
 		return result
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream, application/json")
 	if task.APIFormat == "messages" {
 		req.Header.Set("x-api-key", key)
 		req.Header.Set("anthropic-version", "2023-06-01")
@@ -54,28 +59,32 @@ func (s *ModelEvaluationService) execute(ctx context.Context, task *ModelEvaluat
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		if ctx.Err() != nil {
-			result.ErrorMessage = "请求超时或已取消"
-		} else {
-			result.ErrorMessage = "请求失败，请检查地址、凭据与服务状态"
-		}
+		result.ErrorMessage = modelEvaluationRequestError(ctx, err)
 		return result
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		result.ErrorMessage = fmt.Sprintf("上游返回 HTTP %d，请检查配置或额度", resp.StatusCode)
+		result.ErrorMessage = modelEvaluationHTTPError(resp.StatusCode)
 		return result
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, ModelEvaluationMaxResponseBytes+1))
-	if err != nil {
-		result.ErrorMessage = "读取上游响应失败"
-		return result
+	var content, reason string
+	if strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+		content, reason = readModelEvaluationStream(task.APIFormat, resp.Body)
+	} else {
+		// Some compatible providers still return a completed JSON response.
+		var raw []byte
+		raw, err = io.ReadAll(io.LimitReader(resp.Body, ModelEvaluationMaxResponseBytes+1))
+		if err != nil {
+			reason = modelEvaluationRequestError(ctx, err)
+		} else if len(raw) > ModelEvaluationMaxResponseBytes {
+			reason = "上游响应超过 2 MiB 限制"
+		} else {
+			content, reason = parseModelEvaluationResponse(task.APIFormat, raw)
+		}
 	}
-	if len(raw) > ModelEvaluationMaxResponseBytes {
-		result.ErrorMessage = "上游响应超过 2 MiB 限制"
-		return result
+	if ctx.Err() != nil {
+		reason = modelEvaluationRequestError(ctx, ctx.Err())
 	}
-	content, reason := parseModelEvaluationResponse(task.APIFormat, raw)
 	if reason != "" {
 		result.ErrorMessage = reason
 		return result
@@ -92,6 +101,33 @@ func (s *ModelEvaluationService) execute(ctx context.Context, task *ModelEvaluat
 	result.HTML = html
 	result.Status = "success"
 	return result
+}
+
+func modelEvaluationRequestError(ctx context.Context, err error) string {
+	var timeout net.Error
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+		return "等待上游响应超时（单次请求最多 180 秒），请检查模型生成耗时与代理超时设置"
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return "请求已取消"
+	}
+	return "请求或读取响应失败，请检查接口地址、网络与上游服务状态"
+}
+
+// Fixed messages keep credentials and untrusted provider bodies out of history.
+func modelEvaluationHTTPError(status int) string {
+	switch status {
+	case 524:
+		return "上游返回 HTTP 524：代理等待模型响应超时，请检查上游耗时与代理超时设置"
+	case 408, 504:
+		return fmt.Sprintf("上游返回 HTTP %d：请求超时，请检查上游服务与代理超时设置", status)
+	case 401, 403:
+		return fmt.Sprintf("上游返回 HTTP %d：鉴权或访问被拒绝，请检查 Key、模型权限与访问策略", status)
+	case 429:
+		return "上游返回 HTTP 429：请求被限流或额度受限，请检查上游限制"
+	default:
+		return fmt.Sprintf("上游返回 HTTP %d，请检查接口协议、模型配置与服务状态", status)
+	}
 }
 
 func parseModelEvaluationResponse(format string, raw []byte) (string, string) {

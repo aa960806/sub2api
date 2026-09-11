@@ -18,6 +18,7 @@ type evaluationUserStub struct {
 	enabled bool
 	seen    service.ModelEvaluationListParams
 	calls   int
+	results []*service.ModelEvaluationResult
 }
 
 func (s *evaluationUserStub) GetConfig(context.Context) (*service.ModelEvaluationConfig, error) {
@@ -31,11 +32,17 @@ func (s *evaluationUserStub) ListGroups(_ context.Context, ids []int64) ([]servi
 func (s *evaluationUserStub) ListResults(_ context.Context, p service.ModelEvaluationListParams) ([]*service.ModelEvaluationResult, int64, error) {
 	s.calls++
 	s.seen = p
+	if s.results != nil {
+		return s.results, int64(len(s.results)), nil
+	}
 	return []*service.ModelEvaluationResult{}, 0, nil
 }
 func (s *evaluationUserStub) GetResult(_ context.Context, _ int64, p service.ModelEvaluationListParams) (*service.ModelEvaluationResult, error) {
 	s.calls++
 	s.seen = p
+	if len(s.results) > 0 {
+		return s.results[0], nil
+	}
 	return nil, service.ErrModelEvaluationNotFound
 }
 
@@ -118,4 +125,29 @@ func TestModelEvaluationUserGroupLookupFailureDoesNotReadResults(t *testing.T) {
 	h.ListResults(c)
 	require.Equal(t, 500, w.Code)
 	require.Zero(t, s.calls)
+}
+
+func TestModelEvaluationUserHandlerNeverExposesFailureDiagnostics(t *testing.T) {
+	s := &evaluationUserStub{enabled: true, results: []*service.ModelEvaluationResult{{ID: 1, Status: "error", ErrorMessage: "sensitive provider error", HTML: "unsafe failure document"}, {ID: 2, Status: "error", IsTest: true, ErrorMessage: "private test error"}, {ID: 3, Status: "success", HTML: "<html></html>"}}}
+	h := &ModelEvaluationUserHandler{service: s, groups: &evaluationGroupsStub{}}
+	c, w := evaluationContext("/model-evaluations/results", true)
+	h.ListResults(c)
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), "生成失败")
+	require.NotContains(t, w.Body.String(), "sensitive")
+	require.NotContains(t, w.Body.String(), "private test")
+	require.NotContains(t, w.Body.String(), "unsafe failure")
+	require.Contains(t, w.Body.String(), `"total":2`)
+	c, w = evaluationContext("/model-evaluations/results/1", true)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	h.GetResult(c)
+	require.Equal(t, 200, w.Code)
+	require.NotContains(t, w.Body.String(), "sensitive")
+	require.NotContains(t, w.Body.String(), "unsafe failure")
+	s.results = s.results[1:]
+	c, w = evaluationContext("/model-evaluations/results/2", true)
+	c.Params = gin.Params{{Key: "id", Value: "2"}}
+	h.GetResult(c)
+	require.Equal(t, 404, w.Code)
+	require.NotContains(t, w.Body.String(), "private test error")
 }

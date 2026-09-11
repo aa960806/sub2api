@@ -13,7 +13,19 @@ import (
 
 type evaluationAdminStub struct {
 	ModelEvaluationAdminService
-	updated *service.ModelEvaluationConfig
+	updated     *service.ModelEvaluationConfig
+	testedID    int64
+	publication *bool
+	err         error
+}
+
+func (s *evaluationAdminStub) TestTask(_ context.Context, id int64) error {
+	s.testedID = id
+	return s.err
+}
+func (s *evaluationAdminStub) SetPublication(_ context.Context, _ int64, p bool) (*service.ModelEvaluationTask, error) {
+	s.publication = &p
+	return &service.ModelEvaluationTask{Published: p}, s.err
 }
 
 func (s *evaluationAdminStub) UpdateConfig(_ context.Context, cfg service.ModelEvaluationConfig) (*service.ModelEvaluationConfig, error) {
@@ -62,4 +74,43 @@ func TestModelEvaluationBodyAndPaginationLimits(t *testing.T) {
 		require.False(t, ok)
 		require.Equal(t, 400, w.Code)
 	}
+}
+
+func TestModelEvaluationAdminPrivateTestAndPublication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	s := &evaluationAdminStub{}
+	h := &ModelEvaluationHandler{service: s}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/tasks/9/test", nil)
+	c.Params = gin.Params{{Key: "id", Value: "9"}}
+	h.TestTask(c)
+	require.Equal(t, 202, w.Code)
+	require.Equal(t, int64(9), s.testedID)
+	for _, body := range []string{`{}`, `null`, `{"published":null}`, `{"published":"true"}`, `{"published":true,"test_status":"passed"}`} {
+		s.publication = nil
+		w = httptest.NewRecorder()
+		c, _ = gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("PUT", "/tasks/9/publication", strings.NewReader(body))
+		c.Params = gin.Params{{Key: "id", Value: "9"}}
+		h.SetPublication(c)
+		require.Equal(t, 400, w.Code)
+		require.Nil(t, s.publication)
+	}
+	s.err = service.ErrModelEvaluationTestRequired
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/tasks/9/publication", strings.NewReader(`{"published":true}`))
+	c.Params = gin.Params{{Key: "id", Value: "9"}}
+	h.SetPublication(c)
+	require.Equal(t, 400, w.Code)
+	require.Contains(t, w.Body.String(), "MODEL_EVALUATION_TEST_REQUIRED")
+	s.err = nil
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/tasks/9/publication", strings.NewReader(`{"published":true}`))
+	c.Params = gin.Params{{Key: "id", Value: "9"}}
+	h.SetPublication(c)
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), `"published":true`)
 }

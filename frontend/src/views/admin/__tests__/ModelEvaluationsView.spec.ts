@@ -1,28 +1,30 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ModelEvaluationsView from '../ModelEvaluationsView.vue'
-const api = vi.hoisted(() => ({ config: vi.fn(), setConfig: vi.fn(), tasks: vi.fn(), cleanup: vi.fn(), deleteTask: vi.fn(), run: vi.fn() }))
+const api = vi.hoisted(() => ({ config: vi.fn(), setConfig: vi.fn(), tasks: vi.fn(), cleanup: vi.fn(), deleteTask: vi.fn(), run: vi.fn(), test: vi.fn(), setPublication: vi.fn() }))
 const store = vi.hoisted(() => ({ showSuccess: vi.fn(), showError: vi.fn(), fetchPublicSettings: vi.fn() }))
 vi.mock('@/api/modelEvaluations', () => ({ adminModelEvaluationsAPI: api }))
-vi.mock('@/api/admin/groups', () => ({ getAllIncludingInactive: vi.fn(async () => [{ id: 3, name: 'Group' }]) }))
+vi.mock('@/api/admin/groups', () => ({ getAllIncludingInactive: async () => [{ id: 3, name: 'Group' }] }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => store }))
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: { value: 'en' } }) }))
 vi.mock('@/components/model-evaluation/ModelEvaluationGallery.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/components/model-evaluation/ModelEvaluationTaskDialog.vue', () => ({ default: { template: '<div />' } }))
 const Dialog = defineComponent({ props: ['show'], template: '<div v-if="show" data-testid="dialog"><slot /><slot name="footer" /></div>' })
-const task = { id: 9, name: 'Test', group_id: 3, group_name: 'Group', model: 'test-model', enabled: true, endpoint: 'https://example.com/v1/messages', interval_seconds: 60, retention_days: 7, max_records: 50 }
+const task = { id: 9, name: 'Test', group_id: 3, group_name: 'Group', model: 'test-model', enabled: true, endpoint: 'https://example.com/v1/messages', interval_seconds: 60, retention_days: 7, max_records: 50, published: true, test_status: 'passed', test_error: '', last_tested_at: null }
 function render() { return mount(ModelEvaluationsView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, BaseDialog: Dialog } } }) }
 function findButton(wrapper: ReturnType<typeof render>, label: string) { return wrapper.findAll('button').find(button => button.text() === label)! }
 describe('model evaluation admin controls', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
     api.config.mockResolvedValue({ enabled: false })
-    api.tasks.mockResolvedValue({ items: [task] })
+    api.tasks.mockResolvedValue({ items: [{ ...task }] })
     api.setConfig.mockResolvedValue({ enabled: true })
     api.cleanup.mockResolvedValue({ deleted: 4 })
   })
+  afterEach(() => vi.useRealTimers())
   it('keeps maintenance available when disabled and refreshes public settings after enabling', async () => {
     const wrapper = render()
     await flushPromises()
@@ -51,6 +53,87 @@ describe('model evaluation admin controls', () => {
     expect(api.cleanup).toHaveBeenLastCalledWith({ task_id: undefined, all: true })
     await findButton(wrapper, 'modelEvaluations.admin.cleanup').trigger('click')
     expect(wrapper.find<HTMLInputElement>('[data-testid="dialog"] input[type="checkbox"]').element.checked).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('allows private testing while disabled and requires a passed test for explicit publication', async () => {
+    api.tasks.mockResolvedValueOnce({ items: [{ ...task, enabled: false, published: false, test_status: 'untested' }] })
+    const wrapper = render()
+    await flushPromises()
+    expect(findButton(wrapper, 'modelEvaluations.admin.publish').attributes('disabled')).toBeDefined()
+    expect(findButton(wrapper, 'modelEvaluations.admin.test').attributes('disabled')).toBeUndefined()
+    api.tasks.mockResolvedValueOnce({ items: [{ ...task, enabled: false, published: false, test_status: 'passed' }] })
+    await findButton(wrapper, 'modelEvaluations.admin.test').trigger('click')
+    await flushPromises()
+    expect(api.test).toHaveBeenCalledWith(9)
+    expect(api.setPublication).not.toHaveBeenCalled()
+    expect(findButton(wrapper, 'modelEvaluations.admin.publish').attributes('disabled')).toBeUndefined()
+    api.setPublication.mockResolvedValue({ ...task, enabled: false, published: true })
+    await findButton(wrapper, 'modelEvaluations.admin.publish').trigger('click')
+    await flushPromises()
+    expect(api.setPublication).toHaveBeenCalledWith(9, true)
+    expect(findButton(wrapper, 'modelEvaluations.admin.run').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('fails closed for publication when the server omits test status', async () => {
+    api.tasks.mockResolvedValue({ items: [{ ...task, published: false, test_status: undefined }] })
+    const wrapper = render()
+    await flushPromises()
+    expect(findButton(wrapper, 'modelEvaluations.admin.publish').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="test-status"]').text()).toContain('modelEvaluations.admin.untested')
+    wrapper.unmount()
+  })
+
+  it('polls only running tests, stops after completion, and displays admin failure details', async () => {
+    vi.useFakeTimers()
+    api.tasks.mockResolvedValueOnce({ items: [{ ...task, published: false, test_status: 'running' }] })
+    const wrapper = render()
+    await flushPromises()
+    api.tasks.mockResolvedValueOnce({ items: [{ ...task, published: false, test_status: 'failed', test_error: 'Upstream HTTP 401' }] })
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(api.tasks).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="test-error"]').text()).toContain('Upstream HTTP 401')
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(api.tasks).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('does not overlap status requests and cancels them while hidden or unmounted', async () => {
+    vi.useFakeTimers()
+    api.tasks.mockResolvedValueOnce({ items: [{ ...task, test_status: 'running' }] })
+    const wrapper = render()
+    await flushPromises()
+    let resolvePoll!: (value: unknown) => void
+    api.tasks.mockImplementationOnce(() => new Promise(resolve => { resolvePoll = resolve }))
+    await vi.advanceTimersByTimeAsync(2000)
+    const signal = api.tasks.mock.calls[1][0] as AbortSignal
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(api.tasks).toHaveBeenCalledTimes(2)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(signal.aborted).toBe(true)
+    resolvePoll({ items: [{ ...task, test_status: 'failed', test_error: 'STALE' }] })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('STALE')
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(api.tasks).toHaveBeenCalledTimes(2)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(api.tasks).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds automatic status checks even if a test stays running', async () => {
+    vi.useFakeTimers()
+    api.tasks.mockResolvedValue({ items: [{ ...task, test_status: 'running' }] })
+    const wrapper = render()
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(300000)
+    expect(api.tasks).toHaveBeenCalledTimes(121)
+    expect(wrapper.text()).toContain('modelEvaluations.admin.pollPaused')
     wrapper.unmount()
   })
 })

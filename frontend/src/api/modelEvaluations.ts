@@ -22,6 +22,10 @@ export interface ModelEvaluationTask extends Omit<ModelEvaluationTaskInput, 'api
   next_run_at: string | null
   created_at: string
   updated_at: string
+  published: boolean
+  test_status: 'untested' | 'running' | 'passed' | 'failed'
+  last_tested_at: string | null
+  test_error: string
 }
 export interface ModelEvaluationResult {
   id: number
@@ -35,6 +39,7 @@ export interface ModelEvaluationResult {
   duration_ms: number
   created_at: string
   html?: string
+  is_test?: boolean
 }
 export interface ModelEvaluationPage {
   items: ModelEvaluationResult[]
@@ -63,7 +68,7 @@ export const adminModelEvaluationsAPI = {
   async setConfig(enabled: boolean): Promise<{ enabled: boolean }> {
     return (await apiClient.put(`${adminPath}/config`, { enabled })).data
   },
-  async tasks(): Promise<{ items: ModelEvaluationTask[] }> { return (await apiClient.get(`${adminPath}/tasks`)).data },
+  async tasks(signal?: AbortSignal): Promise<{ items: ModelEvaluationTask[] }> { return (await apiClient.get(`${adminPath}/tasks`, { signal })).data },
   async create(input: ModelEvaluationTaskInput): Promise<ModelEvaluationTask> {
     return (await apiClient.post(`${adminPath}/tasks`, input)).data
   },
@@ -72,6 +77,10 @@ export const adminModelEvaluationsAPI = {
   },
   async deleteTask(id: number): Promise<void> { await apiClient.delete(`${adminPath}/tasks/${id}`) },
   async run(id: number): Promise<void> { await apiClient.post(`${adminPath}/tasks/${id}/run`) },
+  async test(id: number): Promise<void> { await apiClient.post(`${adminPath}/tasks/${id}/test`) },
+  async setPublication(id: number, published: boolean): Promise<ModelEvaluationTask> {
+    return (await apiClient.put(`${adminPath}/tasks/${id}/publication`, { published })).data
+  },
   async deleteResult(id: number): Promise<void> { await apiClient.delete(`${adminPath}/results/${id}`) },
   async cleanup(input: { task_id?: number; all: boolean }): Promise<{ deleted: number }> {
     return (await apiClient.post(`${adminPath}/cleanup`, input)).data

@@ -10,6 +10,7 @@
       </label>
       <button type="button" class="btn btn-secondary" :disabled="loading" @click="loadResults">{{ t('modelEvaluations.refresh') }}</button>
     </div>
+    <p v-if="!admin" class="text-xs text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.newestFirst') }}</p>
     <p v-if="loading" role="status" class="py-12 text-center text-gray-500">{{ t('modelEvaluations.loading') }}</p>
     <div v-else-if="error" role="alert" class="card p-8 text-center">
       <p>{{ t('modelEvaluations.loadFailed') }}</p>
@@ -17,21 +18,23 @@
     </div>
     <p v-else-if="!results.length" class="card user-glass-panel p-10 text-center text-gray-500 dark:text-gray-400">{{ t('modelEvaluations.empty') }}</p>
     <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      <article v-for="result in results" :key="result.id" :ref="el => observeCard(el, result.id)" class="card user-glass-panel min-w-0 overflow-hidden" :data-result-id="result.id">
+      <article v-for="result in results" :key="result.id" :ref="el => observeCard(el, result.id)" class="card user-glass-panel flex min-w-0 flex-col overflow-hidden" :data-result-id="result.id">
+        <header class="space-y-2 p-4" :class="{ 'order-last': admin }">
+          <div class="flex items-center justify-between gap-2"><h3 class="min-w-0 truncate font-semibold" :title="result.group_name">{{ result.group_name }}</h3><span class="shrink-0 rounded-full px-2 py-0.5 text-xs" :class="result.status === 'success' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'">{{ t(`modelEvaluations.${result.status}`) }}</span></div>
+          <div v-if="!admin" class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400"><span>{{ t('modelEvaluations.generatedAt') }}: <time :datetime="result.created_at">{{ formatTime(result.created_at) }}</time></span><span>{{ t('modelEvaluations.duration', { seconds: (result.duration_ms / 1000).toFixed(1) }) }}</span></div>
+          <p class="truncate text-sm text-gray-600 dark:text-gray-300" :title="result.model">{{ result.model }}</p>
+          <p class="truncate text-xs text-gray-500 dark:text-gray-400" :title="result.task_name">{{ result.task_name }}</p>
+          <p v-if="admin && result.is_test" class="text-xs text-amber-600 dark:text-amber-400">{{ t('modelEvaluations.admin.privateTest') }}</p>
+          <div v-if="admin" class="flex flex-wrap justify-between gap-1 text-xs text-gray-500 dark:text-gray-400"><time :datetime="result.created_at">{{ formatTime(result.created_at) }}</time><span>{{ t('modelEvaluations.duration', { seconds: (result.duration_ms / 1000).toFixed(1) }) }}</span></div>
+          <button v-if="admin" type="button" class="text-xs text-red-600 hover:underline dark:text-red-400" @click="pendingDelete = result.id">{{ t('modelEvaluations.admin.deleteResult') }}</button>
+        </header>
         <button v-if="result.status === 'success'" type="button" class="relative block h-52 w-full overflow-hidden bg-slate-950 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500" :aria-label="`${t('modelEvaluations.preview')}: ${result.group_name} · ${result.model}`" @mouseenter="scheduleHover(result.id)" @mouseleave="closeHover" @focus="scheduleHover(result.id)" @blur="closeHover" @click="openPreview(result.id)">
           <ModelEvaluationPreview v-if="htmlById[result.id] && smallActiveIds.has(result.id)" :html="htmlById[result.id]!" :title="result.model" class="pointer-events-none h-full w-full" />
           <span v-else class="flex h-full items-center justify-center px-4 text-sm text-slate-300">{{ detailErrors.has(result.id) ? t('modelEvaluations.previewFailed') : t('modelEvaluations.previewPaused') }}</span>
           <span class="pointer-events-none absolute inset-x-0 bottom-0 bg-black/65 px-3 py-2 text-xs">{{ t('modelEvaluations.previewHint') }}</span>
         </button>
         <div v-else class="flex h-52 items-center justify-center bg-red-50 p-5 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
-          <p class="max-h-36 overflow-y-auto break-words">{{ result.error_message || t('modelEvaluations.error') }}</p>
-        </div>
-        <div class="space-y-2 p-4">
-          <div class="flex items-center justify-between gap-2"><h3 class="truncate font-semibold" :title="result.group_name">{{ result.group_name }}</h3><span class="rounded-full px-2 py-0.5 text-xs" :class="result.status === 'success' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'">{{ t(`modelEvaluations.${result.status}`) }}</span></div>
-          <p class="truncate text-sm text-gray-600 dark:text-gray-300" :title="result.model">{{ result.model }}</p>
-          <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ result.task_name }}</p>
-          <div class="flex flex-wrap justify-between gap-1 text-xs text-gray-500 dark:text-gray-400"><time :datetime="result.created_at">{{ formatTime(result.created_at) }}</time><span>{{ t('modelEvaluations.duration', { seconds: (result.duration_ms / 1000).toFixed(1) }) }}</span></div>
-          <button v-if="admin" type="button" class="text-xs text-red-600 hover:underline dark:text-red-400" @click="pendingDelete = result.id">{{ t('modelEvaluations.admin.deleteResult') }}</button>
+          <p class="max-h-36 overflow-y-auto break-words">{{ admin && result.error_message ? result.error_message : t('modelEvaluations.generationFailed') }}</p>
         </div>
       </article>
     </div>

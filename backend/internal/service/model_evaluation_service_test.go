@@ -138,9 +138,10 @@ func TestModelEvaluationCredentialMustBeReenteredWhenBindingChanges(t *testing.T
 }
 
 func TestModelEvaluationEndpointAndTransportBlockSSRF(t *testing.T) {
-	for _, endpoint := range []string{"http://8.8.8.8/v1/chat/completions", "https://localhost/v1/messages", "https://127.0.0.1/v1/messages", "https://10.0.0.1/v1/messages", "https://[::ffff:127.0.0.1]/v1/messages", "https://169.254.169.254/latest/meta-data", "https://224.0.0.1/v1/messages", "https://user:secret@8.8.8.8/v1/messages", "https://8.8.8.8/v1/messages?key=secret", "https://8.8.8.8"} {
+	for _, endpoint := range []string{"http://8.8.8.8/v1/chat/completions", "https://localhost/v1/messages", "https://127.0.0.1/v1/messages", "https://10.0.0.1/v1/messages", "https://[::ffff:127.0.0.1]/v1/messages", "https://169.254.169.254/latest/meta-data", "https://224.0.0.1/v1/messages", "https://user:secret@8.8.8.8/v1/messages", "https://8.8.8.8/v1/messages?key=secret"} {
 		require.ErrorIs(t, validateModelEvaluationEndpoint(context.Background(), endpoint), ErrModelEvaluationInvalid, endpoint)
 	}
+	require.ErrorIs(t, validateModelEvaluationEndpoint(context.Background(), "https://8.8.8.8"), ErrModelEvaluationEndpointPathRequired)
 	for _, address := range []string{"127.0.0.1:443", "[::1]:443", "169.254.169.254:443", "224.0.0.1:443", "localhost:443"} {
 		conn, err := modelEvaluationSafeDialContext(context.Background(), "tcp", address)
 		require.Error(t, err)
@@ -166,7 +167,7 @@ func TestModelEvaluationProtocolsPreservePromptModelAndHTML(t *testing.T) {
 				var body map[string]any
 				require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
 				require.Equal(t, "configured-model", body["model"])
-				require.Equal(t, false, body["stream"])
+				require.Equal(t, true, body["stream"])
 				if format == "responses" {
 					require.Equal(t, ModelEvaluationPrompt, body["input"])
 				} else {
@@ -353,4 +354,94 @@ func TestModelEvaluationDisableAndStopCancelWithoutSaving(t *testing.T) {
 		svc.Stop()
 		require.Zero(t, r.completed.Load())
 	}
+}
+
+type evaluationPrivateTestRepo struct{ *evaluationSchedulerRepo }
+
+func (r *evaluationPrivateTestRepo) ClaimTest(ctx context.Context, id int64) (*ModelEvaluationTask, error) {
+	task, err := r.Claim(ctx, id, true)
+	if task != nil {
+		task.LeaseIsTest = true
+	}
+	return task, err
+}
+func (r *evaluationPrivateTestRepo) SetEnabled(context.Context, bool) error { return nil }
+
+func TestModelEvaluationPrivateTestWorksWhileDisabledAndSurvivesGlobalDisable(t *testing.T) {
+	r := &evaluationPrivateTestRepo{&evaluationSchedulerRepo{current: true, released: make(chan struct{}, 1)}}
+	svc := NewModelEvaluationService(r, evaluationTestSettings{value: "false"}, nil, evaluationTestEncryptor{})
+	defer svc.Stop()
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	cancelled := make(chan struct{})
+	svc.client.Transport = evaluationTestTransport(func(req *http.Request) (*http.Response, error) {
+		close(started)
+		select {
+		case <-req.Context().Done():
+			close(cancelled)
+			return nil, req.Context().Err()
+		case <-finish:
+		}
+		body, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]string{"content": evaluationTestHTML}}}})
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(body))), Header: http.Header{}}, nil
+	})
+	require.ErrorIs(t, svc.RunNow(context.Background(), 1), ErrModelEvaluationDisabled)
+	require.NoError(t, svc.TestTask(context.Background(), 1))
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("private test did not start")
+	}
+	_, err := svc.UpdateConfig(context.Background(), ModelEvaluationConfig{Enabled: false})
+	require.NoError(t, err)
+	select {
+	case <-cancelled:
+		t.Fatal("global scheduling switch cancelled explicit private test")
+	default:
+	}
+	close(finish)
+	select {
+	case <-r.released:
+	case <-time.After(time.Second):
+		t.Fatal("private test did not finish")
+	}
+	require.Equal(t, int32(1), r.completed.Load())
+}
+
+type evaluationResultsRepo struct {
+	ModelEvaluationRepository
+	items []*ModelEvaluationResult
+}
+
+func (r *evaluationResultsRepo) ListResults(context.Context, ModelEvaluationListParams) ([]*ModelEvaluationResult, int64, error) {
+	return r.items, int64(len(r.items)), nil
+}
+func (r *evaluationResultsRepo) GetResult(_ context.Context, id int64, _ ModelEvaluationListParams) (*ModelEvaluationResult, error) {
+	return r.items[id-1], nil
+}
+
+func TestModelEvaluationUserResultsRedactDiagnosticsAndPrivateTestFailures(t *testing.T) {
+	r := &evaluationResultsRepo{items: []*ModelEvaluationResult{{ID: 1, Status: "error", ErrorMessage: "private upstream diagnostic", HTML: "unsafe failed HTML"}, {ID: 2, Status: "error", IsTest: true, ErrorMessage: "private test failure"}, {ID: 3, Status: "success", HTML: evaluationTestHTML, ErrorMessage: "stray secret"}}}
+	svc := NewModelEvaluationService(r, evaluationTestSettings{value: "true"}, nil, nil)
+	defer svc.Stop()
+	p := ModelEvaluationListParams{AllowedGroupIDs: []int64{1}}
+	items, total, err := svc.ListResults(context.Background(), p)
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	require.Equal(t, int64(2), total)
+	require.Equal(t, "生成失败", items[0].ErrorMessage)
+	require.Empty(t, items[0].HTML)
+	require.Empty(t, items[1].ErrorMessage)
+	require.Equal(t, evaluationTestHTML, items[1].HTML)
+	result, err := svc.GetResult(context.Background(), 1, p)
+	require.NoError(t, err)
+	require.Equal(t, "生成失败", result.ErrorMessage)
+	_, err = svc.GetResult(context.Background(), 2, p)
+	require.ErrorIs(t, err, ErrModelEvaluationNotFound)
+	adminItems, total, err := svc.ListResults(context.Background(), ModelEvaluationListParams{Admin: true})
+	require.NoError(t, err)
+	require.Len(t, adminItems, 3)
+	require.Equal(t, int64(3), total)
+	require.Equal(t, "private upstream diagnostic", adminItems[0].ErrorMessage)
+	require.Equal(t, "private test failure", adminItems[1].ErrorMessage)
 }

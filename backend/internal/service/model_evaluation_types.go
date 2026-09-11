@@ -16,12 +16,14 @@ const (
 )
 
 var (
-	ErrModelEvaluationNotFound           = infraerrors.NotFound("MODEL_EVALUATION_NOT_FOUND", "model evaluation not found")
-	ErrModelEvaluationDisabled           = infraerrors.Forbidden("MODEL_EVALUATION_DISABLED", "model evaluation monitoring is disabled")
-	ErrModelEvaluationInvalid            = infraerrors.BadRequest("MODEL_EVALUATION_INVALID", "invalid model evaluation configuration")
-	ErrModelEvaluationBusy               = infraerrors.Conflict("MODEL_EVALUATION_BUSY", "model evaluation is running or worker capacity is full")
-	ErrModelEvaluationLimit              = infraerrors.BadRequest("MODEL_EVALUATION_LIMIT", "model evaluation task limit reached")
-	ErrModelEvaluationCredentialRequired = infraerrors.BadRequest("MODEL_EVALUATION_CREDENTIAL_REQUIRED", "changing the endpoint, API format or group requires re-entering the API Key")
+	ErrModelEvaluationNotFound             = infraerrors.NotFound("MODEL_EVALUATION_NOT_FOUND", "model evaluation not found")
+	ErrModelEvaluationDisabled             = infraerrors.Forbidden("MODEL_EVALUATION_DISABLED", "model evaluation monitoring is disabled")
+	ErrModelEvaluationInvalid              = infraerrors.BadRequest("MODEL_EVALUATION_INVALID", "invalid model evaluation configuration")
+	ErrModelEvaluationBusy                 = infraerrors.Conflict("MODEL_EVALUATION_BUSY", "model evaluation is running or worker capacity is full")
+	ErrModelEvaluationLimit                = infraerrors.BadRequest("MODEL_EVALUATION_LIMIT", "model evaluation task limit reached")
+	ErrModelEvaluationCredentialRequired   = infraerrors.BadRequest("MODEL_EVALUATION_CREDENTIAL_REQUIRED", "changing the endpoint, API format or group requires re-entering the API Key")
+	ErrModelEvaluationTestRequired         = infraerrors.BadRequest("MODEL_EVALUATION_TEST_REQUIRED", "a successful test of the current configuration is required before publication")
+	ErrModelEvaluationEndpointPathRequired = infraerrors.BadRequest("MODEL_EVALUATION_ENDPOINT_PATH_REQUIRED", "a complete request URL including the API path is required")
 )
 
 type ModelEvaluationConfig struct {
@@ -42,24 +44,30 @@ type ModelEvaluationTaskInput struct {
 }
 
 type ModelEvaluationTask struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	GroupID         int64      `json:"group_id"`
-	GroupName       string     `json:"group_name"`
-	Endpoint        string     `json:"endpoint"`
-	APIFormat       string     `json:"api_format"`
-	Model           string     `json:"model"`
-	Enabled         bool       `json:"enabled"`
-	IntervalSeconds int        `json:"interval_seconds"`
-	RetentionDays   int        `json:"retention_days"`
-	MaxRecords      int        `json:"max_records"`
-	HasAPIKey       bool       `json:"has_api_key"`
-	NextRunAt       *time.Time `json:"next_run_at"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	APIKeyEncrypted string     `json:"-"`
-	Revision        int64      `json:"-"`
-	LeaseToken      string     `json:"-"`
+	ID                    int64      `json:"id"`
+	Name                  string     `json:"name"`
+	GroupID               int64      `json:"group_id"`
+	GroupName             string     `json:"group_name"`
+	Endpoint              string     `json:"endpoint"`
+	APIFormat             string     `json:"api_format"`
+	Model                 string     `json:"model"`
+	Enabled               bool       `json:"enabled"`
+	Published             bool       `json:"published"`
+	TestStatus            string     `json:"test_status"`
+	LastTestedAt          *time.Time `json:"last_tested_at"`
+	TestError             string     `json:"test_error"`
+	IntervalSeconds       int        `json:"interval_seconds"`
+	RetentionDays         int        `json:"retention_days"`
+	MaxRecords            int        `json:"max_records"`
+	HasAPIKey             bool       `json:"has_api_key"`
+	NextRunAt             *time.Time `json:"next_run_at"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+	APIKeyEncrypted       string     `json:"-"`
+	Revision              int64      `json:"-"`
+	LeaseToken            string     `json:"-"`
+	LeaseIsTest           bool       `json:"-"`
+	ConfigurationRevision int64      `json:"-"`
 }
 
 type ModelEvaluationGroup struct {
@@ -75,6 +83,7 @@ type ModelEvaluationResult struct {
 	TaskName     string    `json:"task_name"`
 	Model        string    `json:"model"`
 	Status       string    `json:"status"`
+	IsTest       bool      `json:"is_test"`
 	DurationMS   int64     `json:"duration_ms"`
 	ErrorMessage string    `json:"error_message,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -104,12 +113,14 @@ type ModelEvaluationRepository interface {
 	CreateTask(context.Context, *ModelEvaluationTask) error
 	UpdateTask(context.Context, *ModelEvaluationTask) error
 	DeleteTask(context.Context, int64) error
+	SetPublication(context.Context, int64, bool) (*ModelEvaluationTask, error)
 	ListGroups(context.Context, []int64) ([]ModelEvaluationGroup, error)
 	ListResults(context.Context, ModelEvaluationListParams) ([]*ModelEvaluationResult, int64, error)
 	GetResult(context.Context, int64, ModelEvaluationListParams) (*ModelEvaluationResult, error)
 	DeleteResult(context.Context, int64) error
 	Cleanup(context.Context, ModelEvaluationCleanupParams) (int64, error)
 	Claim(context.Context, int64, bool) (*ModelEvaluationTask, error)
+	ClaimTest(context.Context, int64) (*ModelEvaluationTask, error)
 	LeaseCurrent(context.Context, *ModelEvaluationTask) (bool, error)
 	Complete(context.Context, *ModelEvaluationTask, *ModelEvaluationResult) (bool, error)
 	Release(context.Context, *ModelEvaluationTask) error

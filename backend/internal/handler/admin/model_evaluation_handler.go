@@ -20,6 +20,8 @@ type ModelEvaluationAdminService interface {
 	UpdateTask(context.Context, int64, service.ModelEvaluationTaskInput) (*service.ModelEvaluationTask, error)
 	DeleteTask(context.Context, int64) error
 	RunNow(context.Context, int64) error
+	TestTask(context.Context, int64) error
+	SetPublication(context.Context, int64, bool) (*service.ModelEvaluationTask, error)
 	ListResults(context.Context, service.ModelEvaluationListParams) ([]*service.ModelEvaluationResult, int64, error)
 	GetResult(context.Context, int64, service.ModelEvaluationListParams) (*service.ModelEvaluationResult, error)
 	DeleteResult(context.Context, int64) error
@@ -175,6 +177,41 @@ func (h *ModelEvaluationHandler) RunNow(c *gin.Context) {
 		return
 	}
 	response.Accepted(c, gin.H{"queued": true})
+}
+
+func (h *ModelEvaluationHandler) TestTask(c *gin.Context) {
+	id, ok := ParseModelEvaluationID(c)
+	if !ok {
+		return
+	}
+	if err := h.service.TestTask(c.Request.Context(), id); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Accepted(c, gin.H{"queued": true})
+}
+
+func (h *ModelEvaluationHandler) SetPublication(c *gin.Context) {
+	id, ok := ParseModelEvaluationID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Published *bool `json:"published"`
+	}
+	if !BindModelEvaluationJSON(c, &req) {
+		return
+	}
+	if req.Published == nil {
+		response.BadRequest(c, "Published is required")
+		return
+	}
+	task, err := h.service.SetPublication(c.Request.Context(), id, *req.Published)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, task)
 }
 func (h *ModelEvaluationHandler) ListResults(c *gin.Context) {
 	p, ok := ParseModelEvaluationList(c)

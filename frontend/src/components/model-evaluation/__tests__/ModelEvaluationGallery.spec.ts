@@ -88,13 +88,25 @@ describe('model evaluation gallery', () => {
     wrapper.unmount()
   })
 
-  it('never renders a failed model response as HTML', async () => {
+  it('hides failure details from users even when returned by the API', async () => {
     api.results.mockResolvedValue({ items: [{ ...record(1), status: 'error', error_message: '<script>alert(1)</script>' }], total: 1 })
     const wrapper = render()
     await flushPromises()
     expect(api.result).not.toHaveBeenCalled()
     expect(wrapper.find('script').exists()).toBe(false)
-    expect(wrapper.text()).toContain('<script>alert(1)</script>')
+    expect(wrapper.text()).not.toContain('<script>alert(1)</script>')
+    expect(wrapper.text()).toContain('modelEvaluations.generationFailed')
+    wrapper.unmount()
+  })
+
+  it('keeps escaped failure details and private test markers visible to admins only', async () => {
+    api.results.mockResolvedValue({ items: [{ ...record(1), status: 'error', error_message: '<script>failure</script>', is_test: true }], total: 1 })
+    const wrapper = render()
+    await wrapper.setProps({ admin: true })
+    await flushPromises()
+    expect(wrapper.text()).toContain('<script>failure</script>')
+    expect(wrapper.find('script').exists()).toBe(false)
+    expect(wrapper.text()).toContain('modelEvaluations.admin.privateTest')
     wrapper.unmount()
   })
 })

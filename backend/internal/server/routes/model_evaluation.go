@@ -21,6 +21,8 @@ func registerModelEvaluationAdminRoutes(parent *gin.RouterGroup, h *handler.Hand
 	g.PUT("/tasks/:id", s.UpdateTask)
 	g.DELETE("/tasks/:id", s.DeleteTask)
 	g.POST("/tasks/:id/run", s.RunNow)
+	g.POST("/tasks/:id/test", s.TestTask)
+	g.PUT("/tasks/:id/publication", s.SetPublication)
 	g.GET("/results", s.ListResults)
 	g.GET("/results/:id", s.GetResult)
 	g.DELETE("/results/:id", s.DeleteResult)
