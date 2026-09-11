@@ -607,6 +607,30 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/model-evaluations',
+    name: 'ModelEvaluations',
+    component: () => import('@/views/user/ModelEvaluationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresModelEvaluations: true,
+      title: 'Model Output Monitor',
+      titleKey: 'modelEvaluations.title'
+    }
+  },
+  {
+    path: '/admin/model-evaluations',
+    name: 'AdminModelEvaluations',
+    component: () => import('@/views/admin/ModelEvaluationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Model Output Monitor',
+      titleKey: 'modelEvaluations.title',
+      descriptionKey: 'modelEvaluations.admin.description'
+    }
+  },
+  {
     path: '/admin/accounts',
     name: 'AdminAccounts',
     component: () => import('@/views/admin/AccountsView.vue'),
@@ -1188,6 +1212,17 @@ router.beforeEach(async (to, _from, next) => {
       !appStore.publicSettingsLoaded ||
       appStore.cachedPublicSettings?.battle_pass_enabled !== true
     ) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
+  }
+
+  if (to.meta.requiresModelEvaluations) {
+    if (!appStore.publicSettingsLoaded) {
+      try { await appStore.fetchPublicSettings() }
+      catch { /* Missing settings leave the independent feature disabled. */ }
+    }
+    if (!appStore.publicSettingsLoaded || appStore.cachedPublicSettings?.subnexus_model_evaluation_enabled !== true) {
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return
     }

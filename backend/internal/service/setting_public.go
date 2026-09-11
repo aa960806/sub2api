@@ -245,6 +245,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySubNexusActivityCenterEnabled,
 		SettingKeySubNexusMarqueeEnabled,
 		SettingKeySubNexusCheckInEnabled,
+		SettingKeyModelEvaluationEnabled,
 		SettingKeySubNexusLeaderboardEnabled,
 		SettingKeySubNexusInviteActivitiesEnabled,
 		SettingKeySubNexusInviteActivitiesConfig,
@@ -401,6 +402,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SubNexusActivityCenterEnabled:         settings[SettingKeySubNexusActivityCenterEnabled] == "true",
 		SubNexusMarqueeEnabled:                settings[SettingKeySubNexusMarqueeEnabled] == "true",
 		SubNexusCheckInEnabled:                settings[SettingKeySubNexusCheckInEnabled] == "true",
+		ModelEvaluationEnabled:                settings[SettingKeyModelEvaluationEnabled] == "true",
 		SubNexusLeaderboardEnabled:            settings[SettingKeySubNexusLeaderboardEnabled] == "true",
 		SubNexusInviteActivitiesEnabled:       inviteActivitiesEnabled,
 		SubNexusInviteLotteryEnabled:          inviteLotteryEnabled,
@@ -699,6 +701,7 @@ type PublicSettingsInjectionPayload struct {
 	SubNexusActivityCenterEnabled         bool `json:"subnexus_activity_center_enabled"`
 	SubNexusMarqueeEnabled                bool `json:"subnexus_marquee_enabled"`
 	SubNexusCheckInEnabled                bool `json:"subnexus_checkin_enabled"`
+	ModelEvaluationEnabled                bool `json:"subnexus_model_evaluation_enabled"`
 	SubNexusLeaderboardEnabled            bool `json:"subnexus_leaderboard_enabled"`
 	SubNexusInviteActivitiesEnabled       bool `json:"subnexus_invite_activities_enabled"`
 	SubNexusInviteLotteryEnabled          bool `json:"subnexus_invite_lottery_enabled"`
@@ -796,6 +799,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		SubNexusActivityCenterEnabled:         settings.SubNexusActivityCenterEnabled,
 		SubNexusMarqueeEnabled:                settings.SubNexusMarqueeEnabled,
 		SubNexusCheckInEnabled:                settings.SubNexusCheckInEnabled,
+		ModelEvaluationEnabled:                settings.ModelEvaluationEnabled,
 		SubNexusLeaderboardEnabled:            settings.SubNexusLeaderboardEnabled,
 		SubNexusInviteActivitiesEnabled:       settings.SubNexusInviteActivitiesEnabled,
 		SubNexusInviteLotteryEnabled:          settings.SubNexusInviteLotteryEnabled,

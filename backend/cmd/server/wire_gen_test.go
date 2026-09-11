@@ -93,6 +93,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // backupSvc
 		nil, // paymentOrderExpiry
 		nil, // channelMonitorRunner
+		service.NewModelEvaluationService(nil, nil, nil, nil), // modelEvaluation shutdown is safe before Start
 		nil, // channelMonitorV2Aggregator
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe

@@ -245,7 +245,7 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 
 固定旧 SubNexus 始终为 ID `be459424b327ad056ea9bdc02187d6a458fe09082369b354158d6e7f7758beee`、image `sha256:b24b585a35e0eecff497a4eb7a2be480d9a2818f4b7a9780508f2f42cb5e09cd`、name `subnexus-cutover-pre-96b66b3e74c1-20260905085804-4072165`、anchor `/srv/subnexus-migration/cutover/20260905085804-4072165`。prepare 只在 manifest 中绑定该对象，没有创建新永久回滚容器或镜像。以上为切换前历史快照；第 13 节 rollback 窗口现已因后续 retained-UI switch 关闭，当前恢复只使用第 14 节同 run rollback。
 
-## 当前线上状态（2026-09-07，切换后）
+## 历史线上状态（2026-09-07，已由 2026-09-09 实时记录覆盖）
 
 保留二开用户端 UI 的唯一生产 run 为 `/srv/subnexus-migration/cutover/20260907045159-1121373`。切换前的 `READY=prepared` 和 `UI_READY=application-refresh-v1` 仍是准备阶段 marker；切换后新增 `SWITCHED=switched`，manifest 为 `state=switched/ui_state=switched/ui_commit_intent=yes`，SHA256=`5cc60f478673b2615d96d2993604da934353a6abb66d932e81f268bdfa4acda3`。当前容器 ID=`232f6c5b374605760529cfac6b765fe68ba6aafc0d5d0fc8641a6a3030d63511`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`，`running/healthy/restart=0`；固定旧回滚对象 `be459424...` 仍 `exited/restart=0`，没有创建新的永久回滚对象。
 
@@ -253,15 +253,15 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 
 切换后设置审计只发现 `subnexus_invite_activities_config` 变化；Nginx 记录管理员 `PUT /api/v1/admin/invite-activities/config` 成功，数据库 `updated_at=2026-09-07T06:45:51.718553Z`，未回写或恢复，其他 17 项保护设置保持 prepare 值。清理证据 `/srv/subnexus-migration/cleanup-retained-ui-postswitch-20260907-1121373.txt` 的 SHA256=`282250b4f612f154e60c7d1b42954ac005b9bb8b3e6db11710a08dacf46b6558`；失败审计 partial、迁移上传副本等 27 个临时文件已精确删除，正式证据、备份、应用数据和固定回滚对象保留。第 13 节旧 Rain rollback 已关闭；需要恢复时只使用切换手册第 14 节同 run rollback。
 
-## 当前发布任务（2026-09-09，用户端视觉性能与显示修复）
+## 当前发布任务（2026-09-09，上游 v0.2.4 完整更新）
 
-当前应用改动包含 Rain + Glass 用户端页面、标准/轻量/兼容三档视觉性能模式，以及 `/usage` 日期菜单层级、窄屏日期菜单和签到翻译文案修复。管理端、认证/公开页和外部支付页隔离；数据、API、路由、权限、配置、功能开关、按钮和业务逻辑不变。业务/前端验证沿用已记录的完整结果，发布 wrapper 另有独立故障恢复测试。
+本次发布合并上游 v0.2.4，包含后端和数据库迁移，保留已有 SubNexus 功能、Rain 首页、标准/轻量/兼容视觉模式、下拉菜单层级和签到文案修复。必须使用独立的 full-release 入口和生产快照 new-old-new 兼容性证据，不能使用 UI-only 发布入口。
 
-发布仍处于本地到线上前置阶段。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的镜像、Gate、wrapper 和 prepared run 因无法恢复切换前现网版本而全部作废。修复后的不可变 commit/tree、镜像 ID、归档 SHA、Docker Gate、全新备份、prepare run、probe 和最终审计必须重新生成；最终 `switch` 由维护者手动执行，代理必须停在 `state=prepared/ui_state=prepared`。
+发布仍处于切换前置阶段。旧候选 `bf5aae07bb30b380cb1be154c49149c9c64cc7f7` 的历史交接命令已撤回，但实时核验表明它已经在线运行，容器为 `b9de08a4f4134a1a486bfc68537344af564b7f337e2117209a75a9cb3c2fb9f0`、镜像为 `sha256:db1f6f23238301bbecece8b2e5ff3cccdcca8f09aa87099635e5674ba4877577`。本次以它作为 previous-live 和新的一级回滚目标。新应用候选固定为 `890828afe0f726abb363029f147e04087fed2bca`，镜像为 `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；镜像已安装并通过候选 Gate，完整生产快照兼容性验证、正式 prepare/probe 与最终审计完成前不可切换。最终 `switch` 由维护者手动执行，代理停在 `state=prepared/ui_state=prepared/ui_commit_intent=no`。
 
 本轮回滚模型已变更：`prepare` 先要求历史旧 SubNexus anchor 存在并完整校验，然后仅把当前 live 的完整 ID、`.Image`、`.Config.Image`、唯一 `production-app-ui-prior-<run-id>` 名称和状态固化到新 manifest，Docker 状态保持不变。最终 switch 时才停止和重命名该 live，并把它作为 stopped 新回滚目标保留；本轮 rollback 只恢复该目标，不恢复更早的旧 SubNexus。目标缺失或 ID/image/configured image/name/runtime contract 漂移时必须失败关闭。
 
-历史 anchor 不是本轮实际恢复对象，只在 prepare 和 switch 提交前作为强制连续性门禁，并继续保留为二级灾备证据。一旦 switch 已开始，其缺失或漂移不得阻止 automatic recover、manual recover 或 rollback 恢复经过 manifest 严格绑定的 previous-live。空间足够时保留全部历史数据；容量证据确认不足时，仅可在保存完整 ID/路径/SHA 的精确清理审计后删除其他已失效 run 备份或无引用垃圾。不允许 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、本轮新回滚目标与新 run 证据不可删除。最终只接受切换手册第 15 节中绑定同一 wrapper/run 的两条单行命令。
+历史 anchor 不是本轮实际恢复对象，只在 prepare 和 switch 提交前作为强制连续性门禁，并继续保留为二级灾备证据。一旦 switch 已开始，其缺失或漂移不得阻止 automatic recover、manual recover 或 rollback 恢复经过 manifest 严格绑定的 previous-live。空间足够时保留全部历史数据；容量证据确认不足时，仅可在保存完整 ID/路径/SHA 的精确清理审计后删除其他已失效 run 备份或无引用垃圾。不允许 `docker system prune`、`docker volume prune` 或模糊清理，历史 anchor、本轮新回滚目标与新 run 证据不可删除。切换手册第 15 节为此前 UI 发布合同；本次完整更新只能使用后续实际取证后登记的 full-release wrapper/run 命令。
 
 ## 本地上游对齐（2026-09-09，v0.2.4）
 
@@ -275,3 +275,13 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 ## 2026-09-09 23:00 发布前更新
 
 实际线上为 bf5aae07... / b9de08a4...；本次应用候选为 890828afe... / image 44e8dcf0...。构建、服务器候选 Gate、全新生产快照已完成；生产备份完整下载/隔离 new-old-new Gate、正式 prepare/probe 和最终审计尚待完成，目前不可切换。以 SUBNEXUS_CHANGE_MEMORY.md 同时间条目为权威详细证据；本轮新一级回滚目标必须是切换前实际 live，历史旧 SubNexus 仅保留为二级资料。
+
+## 2026-09-10 v0.2.4 前置完成，尚未切换
+
+全量生产快照恢复、新版/重启/旧版/新版同库读写验证通过，compat Gate SHA=`0485384ea5ea8daaa020eba25d5d4a0fe1f232f0740cfd54ee1575bcda1e93c8`。正式 run=`/srv/subnexus-migration/cutover/20260909171117-2439922`，全新备份和最终审计通过；manifest SHA=`7c3559f16226abe2cbd1634a12e97a194b23d7eb06a489b5305677bf256dcfdf`，仍为 `prepared/prepared/no`。线上 app/PG/Redis 未停止或重启；本地和公网 health/home 均 HTTP 200。第 15.3 节两条单行命令为唯一当前交接。切换成功后保留当前 live 为新回滚目标，默认应用回滚不恢复数据库。此前“尚待准备”的记录仅为历史进度。
+
+## 2026-09-11 分组模型表现监控（本地）
+
+已新增默认关闭的分组模型表现监控：每任务独立配置分组/HTTPS URL/Key/请求模型/协议/间隔/保留策略，定时生成固定提示词的 HTML；用户按既有分组权限查看历史及放大动画。独立迁移 `9014_subnexus_model_evaluations.sql` 不更改旧表；任务全局并发 2、最多 100 项、每任务最多 200 条，前端最多同时播放 2 个预览。后台 `/admin/model-evaluations`，用户 `/model-evaluations`，开关 `subnexus_model_evaluation_enabled=false`。
+
+实现和操作说明见 `docs/model-evaluation-monitor.md`，具体验证/隔离边界见 `SUBNEXUS_CHANGE_MEMORY.md` 同日条目。本轮仅本地开发，未部署；先前 v0.2.4 手册第 15.3 节发布制品不包含此功能，也没有新生产切换证据。保留已有未提交部署文档；下次上线必须重新构建并执行发布门禁。

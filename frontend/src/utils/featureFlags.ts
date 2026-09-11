@@ -100,6 +100,11 @@ function defineFlag<K extends keyof PublicSettings>(
  * public-settings-driven switch; see the "Adding a new flag" checklist above.
  */
 export const FeatureFlags = {
+  modelEvaluations: defineFlag({
+    key: 'subnexus_model_evaluation_enabled',
+    mode: 'opt-in',
+    label: 'Model Output Monitor',
+  }),
   channelMonitor: defineFlag({
     key: 'channel_monitor_enabled',
     mode: 'opt-out',

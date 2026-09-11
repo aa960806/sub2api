@@ -435,6 +435,7 @@ type PublicSettings struct {
 	SubNexusActivityCenterEnabled         bool   `json:"subnexus_activity_center_enabled"`
 	SubNexusMarqueeEnabled                bool   `json:"subnexus_marquee_enabled"`
 	SubNexusCheckInEnabled                bool   `json:"subnexus_checkin_enabled"`
+	ModelEvaluationEnabled                bool   `json:"subnexus_model_evaluation_enabled"`
 	SubNexusLeaderboardEnabled            bool   `json:"subnexus_leaderboard_enabled"`
 	SubNexusInviteActivitiesEnabled       bool   `json:"subnexus_invite_activities_enabled"`
 	SubNexusInviteLotteryEnabled          bool   `json:"subnexus_invite_lottery_enabled"`

@@ -54,6 +54,7 @@ describe('feature flag registry', () => {
 
   it('registers every staged public migration switch as opt-in', () => {
     const stagedFlags = [
+      ['modelEvaluations', 'subnexus_model_evaluation_enabled'],
       ['activityCenter', 'subnexus_activity_center_enabled'],
       ['marquee', 'subnexus_marquee_enabled'],
       ['checkIn', 'subnexus_checkin_enabled'],

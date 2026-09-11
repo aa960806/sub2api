@@ -43,6 +43,7 @@ type AdminHandlers struct {
 	ScheduledTest            *admin.ScheduledTestHandler
 	Channel                  *admin.ChannelHandler
 	ChannelMonitor           *admin.ChannelMonitorHandler
+	ModelEvaluation          *admin.ModelEvaluationHandler
 	ChannelMonitorTemplate   *admin.ChannelMonitorRequestTemplateHandler
 	ContentModeration        *admin.ContentModerationHandler
 	PromptAudit              *securityaudit.PromptAdminHandler
@@ -71,6 +72,7 @@ type Handlers struct {
 	BattlePass               *BattlePassHandler
 	Invoice                  *InvoiceHandler
 	ChannelMonitor           *ChannelMonitorUserHandler
+	ModelEvaluation          *ModelEvaluationUserHandler
 	ChannelMonitorV2         *ChannelMonitorV2Handler
 	Admin                    *AdminHandlers
 	Gateway                  *GatewayHandler

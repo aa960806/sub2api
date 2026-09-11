@@ -11,6 +11,7 @@ import leaderboard from './leaderboard'
 import battlePass from './battlePass'
 import marquee from './marquee'
 import inviteActivities from './inviteActivities'
+import modelEvaluations from './modelEvaluations'
 
 export default {
   ...landing,
@@ -26,4 +27,5 @@ export default {
   ...battlePass,
   ...marquee,
   ...inviteActivities,
+  ...modelEvaluations,
 }

@@ -1,0 +1,116 @@
+package service
+
+import (
+	"context"
+	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+)
+
+const (
+	SettingKeyModelEvaluationEnabled = "subnexus_model_evaluation_enabled"
+	ModelEvaluationPrompt            = "生成html，内容是svg绘制鹈鹕骑自行车2D动画，不用进行测试。"
+	ModelEvaluationMaxTasks          = 100
+	ModelEvaluationMaxHTMLBytes      = 512 * 1024
+	ModelEvaluationMaxResponseBytes  = 2 * 1024 * 1024
+)
+
+var (
+	ErrModelEvaluationNotFound           = infraerrors.NotFound("MODEL_EVALUATION_NOT_FOUND", "model evaluation not found")
+	ErrModelEvaluationDisabled           = infraerrors.Forbidden("MODEL_EVALUATION_DISABLED", "model evaluation monitoring is disabled")
+	ErrModelEvaluationInvalid            = infraerrors.BadRequest("MODEL_EVALUATION_INVALID", "invalid model evaluation configuration")
+	ErrModelEvaluationBusy               = infraerrors.Conflict("MODEL_EVALUATION_BUSY", "model evaluation is running or worker capacity is full")
+	ErrModelEvaluationLimit              = infraerrors.BadRequest("MODEL_EVALUATION_LIMIT", "model evaluation task limit reached")
+	ErrModelEvaluationCredentialRequired = infraerrors.BadRequest("MODEL_EVALUATION_CREDENTIAL_REQUIRED", "changing the endpoint, API format or group requires re-entering the API Key")
+)
+
+type ModelEvaluationConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type ModelEvaluationTaskInput struct {
+	Name            string `json:"name"`
+	GroupID         int64  `json:"group_id"`
+	Endpoint        string `json:"endpoint"`
+	APIFormat       string `json:"api_format"`
+	APIKey          string `json:"api_key"`
+	Model           string `json:"model"`
+	Enabled         bool   `json:"enabled"`
+	IntervalSeconds int    `json:"interval_seconds"`
+	RetentionDays   int    `json:"retention_days"`
+	MaxRecords      int    `json:"max_records"`
+}
+
+type ModelEvaluationTask struct {
+	ID              int64      `json:"id"`
+	Name            string     `json:"name"`
+	GroupID         int64      `json:"group_id"`
+	GroupName       string     `json:"group_name"`
+	Endpoint        string     `json:"endpoint"`
+	APIFormat       string     `json:"api_format"`
+	Model           string     `json:"model"`
+	Enabled         bool       `json:"enabled"`
+	IntervalSeconds int        `json:"interval_seconds"`
+	RetentionDays   int        `json:"retention_days"`
+	MaxRecords      int        `json:"max_records"`
+	HasAPIKey       bool       `json:"has_api_key"`
+	NextRunAt       *time.Time `json:"next_run_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	APIKeyEncrypted string     `json:"-"`
+	Revision        int64      `json:"-"`
+	LeaseToken      string     `json:"-"`
+}
+
+type ModelEvaluationGroup struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+type ModelEvaluationResult struct {
+	ID           int64     `json:"id"`
+	TaskID       int64     `json:"task_id"`
+	GroupID      int64     `json:"group_id"`
+	GroupName    string    `json:"group_name"`
+	TaskName     string    `json:"task_name"`
+	Model        string    `json:"model"`
+	Status       string    `json:"status"`
+	DurationMS   int64     `json:"duration_ms"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	HTML         string    `json:"html,omitempty"`
+}
+
+// Admin is set only by an authenticated administrator handler. Empty permitted
+// groups deny every user result; nil never means unrestricted user access.
+type ModelEvaluationListParams struct {
+	Admin           bool
+	AllowedGroupIDs []int64
+	GroupID         int64
+	TaskID          int64
+	Page            int
+	PageSize        int
+}
+
+type ModelEvaluationCleanupParams struct {
+	TaskID int64 `json:"task_id"`
+	All    bool  `json:"all"`
+}
+
+type ModelEvaluationRepository interface {
+	SetEnabled(context.Context, bool) error
+	ListTasks(context.Context) ([]*ModelEvaluationTask, error)
+	GetTask(context.Context, int64) (*ModelEvaluationTask, error)
+	CreateTask(context.Context, *ModelEvaluationTask) error
+	UpdateTask(context.Context, *ModelEvaluationTask) error
+	DeleteTask(context.Context, int64) error
+	ListGroups(context.Context, []int64) ([]ModelEvaluationGroup, error)
+	ListResults(context.Context, ModelEvaluationListParams) ([]*ModelEvaluationResult, int64, error)
+	GetResult(context.Context, int64, ModelEvaluationListParams) (*ModelEvaluationResult, error)
+	DeleteResult(context.Context, int64) error
+	Cleanup(context.Context, ModelEvaluationCleanupParams) (int64, error)
+	Claim(context.Context, int64, bool) (*ModelEvaluationTask, error)
+	LeaseCurrent(context.Context, *ModelEvaluationTask) (bool, error)
+	Complete(context.Context, *ModelEvaluationTask, *ModelEvaluationResult) (bool, error)
+	Release(context.Context, *ModelEvaluationTask) error
+}

@@ -7,7 +7,7 @@ set -Eeuo pipefail
 # orchestration below differ.
 readonly full_controller_sha='19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65'
 readonly full_ui_sha='8fdfc8253020d61c1e5f0b13b49c340295e0713f552763c66603d32ae949e38d'
-readonly full_base_commit='bf5aae07bb30b380cb1be154c49149c9c64cc7f7'
+readonly full_base_commit='890828afe0f726abb363029f147e04087fed2bca'
 readonly full_required_commit='890828afe0f726abb363029f147e04087fed2bca'
 full_target=''
 full_tree=''

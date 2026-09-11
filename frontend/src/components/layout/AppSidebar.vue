@@ -691,6 +691,7 @@ const ChevronDownIcon = {
 // which handles the opt-in vs opt-out fallback when settings haven't loaded
 // yet. Admin-only flags (not in public settings) stay inline below.
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
+const flagModelEvaluations = makeSidebarFlag(FeatureFlags.modelEvaluations)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
@@ -760,6 +761,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
+    { path: '/model-evaluations', label: t('modelEvaluations.title'), icon: SignalIcon, featureFlag: flagModelEvaluations },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -830,6 +832,7 @@ const adminNavItems = computed((): NavItem[] => {
       ],
     },
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
+    { path: '/admin/model-evaluations', label: t('modelEvaluations.title'), icon: SignalIcon },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },

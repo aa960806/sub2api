@@ -185,6 +185,9 @@ func RegisterUserRoutes(
 		}
 
 		// 渠道监控（用户只读）
+		registerModelEvaluationUserRoutes(authenticated, h, panelRateLimiter)
+
+		// 渠道监控（用户只读）
 		monitors := authenticated.Group("/channel-monitors")
 		{
 			monitors.GET("", h.ChannelMonitor.List)

@@ -102,8 +102,9 @@ if (
 git clone -q --shared --no-checkout "$script_dir/../.." "$root/source"
 git -C "$root/source" -c core.autocrlf=false checkout -q --detach "$full_target"
 full_assert_source "$root/source" "$full_base_commit" "$full_target"
-if (full_assert_source "$root/source" "$full_required_commit" "$full_target") >/dev/null 2>&1; then test_fail 'wrong live base accepted'; fi
-if (full_assert_source "$root/source" "$full_base_commit" "$full_base_commit") >/dev/null 2>&1; then test_fail 'wrong target accepted'; fi
+wrong_commit="$(git -C "$root/source" rev-parse "$full_base_commit^")"
+if (full_assert_source "$root/source" "$wrong_commit" "$full_target") >/dev/null 2>&1; then test_fail 'wrong live base accepted'; fi
+if (full_assert_source "$root/source" "$full_base_commit" "$wrong_commit") >/dev/null 2>&1; then test_fail 'wrong target accepted'; fi
 good_tree="$full_tree"
 full_tree="$(printf '4%.0s' {1..40})"
 if (full_assert_source "$root/source" "$full_base_commit" "$full_target") >/dev/null 2>&1; then test_fail 'wrong target tree accepted'; fi

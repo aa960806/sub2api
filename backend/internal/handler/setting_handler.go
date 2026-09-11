@@ -121,6 +121,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		SubNexusFirstRechargeEnabled:          settings.SubNexusFirstRechargeEnabled,
 		SubNexusStudentRechargeBenefitEnabled: settings.SubNexusStudentRechargeBenefitEnabled,
 		SubNexusCheckInEnabled:                settings.SubNexusCheckInEnabled,
+		ModelEvaluationEnabled:                settings.ModelEvaluationEnabled,
 		SubNexusLeaderboardEnabled:            settings.SubNexusLeaderboardEnabled,
 		BattlePassEnabled:                     settings.BattlePassEnabled,
 		InvoiceEnabled:                        settings.InvoiceEnabled,

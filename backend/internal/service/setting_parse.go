@@ -212,6 +212,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeySubNexusMarqueeEnabled: "false",
 		// SubNexus check-in is independently gated and defaults to disabled.
 		SettingKeySubNexusCheckInEnabled: "false",
+		SettingKeyModelEvaluationEnabled: "false",
 		// SubNexus leaderboard is independently gated and defaults to disabled.
 		SettingKeySubNexusLeaderboardEnabled: "false",
 		// Invite/recharge reward activities are independently opt-in and

@@ -28,6 +28,7 @@ const appStore = vi.hoisted(() => ({
     subnexus_activity_center_enabled?: boolean
     subnexus_leaderboard_enabled?: boolean
     battle_pass_enabled?: boolean
+    subnexus_model_evaluation_enabled?: boolean
     custom_menu_items?: []
   },
   fetchPublicSettings: vi.fn(),
@@ -109,6 +110,29 @@ function runGuard(meta: Record<string, unknown>, path: string) {
 }
 
 describe('feature route guard', () => {
+  it('hides model evaluations when the opt-in flag is absent', async () => {
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = {}
+    const { navigation, next } = runGuard({ requiresModelEvaluations: true }, '/model-evaluations')
+    await navigation
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('allows model evaluations after explicitly enabled settings load', async () => {
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = { subnexus_model_evaluation_enabled: true }
+    const { navigation, next } = runGuard({ requiresModelEvaluations: true }, '/model-evaluations')
+    await navigation
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it('keeps model evaluations closed after settings load failure', async () => {
+    appStore.cachedPublicSettings = { subnexus_model_evaluation_enabled: true }
+    appStore.fetchPublicSettings.mockRejectedValueOnce(new Error('offline'))
+    const { navigation, next } = runGuard({ requiresModelEvaluations: true }, '/model-evaluations')
+    await navigation
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
   beforeAll(async () => {
     await import('@/router')
   })

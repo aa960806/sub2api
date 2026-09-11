@@ -73,6 +73,8 @@ declare module 'vue-router' {
 
     /** Whether this route requires the independent Battle Pass opt-in flag. */
     requiresBattlePass?: boolean
+    /** Independent opt-in flag for group model output monitoring. */
+    requiresModelEvaluations?: boolean
 
     /**
      * Independent public flag for one migrated invite activity. The route

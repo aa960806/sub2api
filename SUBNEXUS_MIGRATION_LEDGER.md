@@ -374,3 +374,17 @@
 ## 2026-09-09 23:00 发布前更新
 
 实际线上为 bf5aae07... / b9de08a4...；本次应用候选为 890828afe... / image 44e8dcf0...。构建、服务器候选 Gate、全新生产快照已完成；生产备份完整下载/隔离 new-old-new Gate、正式 prepare/probe 和最终审计尚待完成，目前不可切换。以 SUBNEXUS_CHANGE_MEMORY.md 同时间条目为权威详细证据；本轮新一级回滚目标必须是切换前实际 live，历史旧 SubNexus 仅保留为二级资料。
+
+## 2026-09-10 v0.2.4 前置验收通过
+
+- 完整生产快照同库 new/restart/old/new、迁移账本和 API 写入 Gate：通过，SHA=`0485384ea5ea8daaa020eba25d5d4a0fe1f232f0740cfd54ee1575bcda1e93c8`。
+- 正式 prepare：通过，run=`20260909171117-2439922`，manifest=`state=prepared/ui_state=prepared/ui_commit_intent=no`；PG/catalog/Redis/app 备份及哈希通过。
+- never-started probe、身份/设置/备份核对和公网 health/home：通过；最终 evidence SHA=`e448ccc554b7f088c306f768c4a2ac0372c397e0abe5b9382f39ecfbcbdf40e0`，facts SHA=`36462811ffc980329321b41da1a2265f71ad5583e6e648accf1aa4a3e5bc80fe`。生产状态未改变。
+- 最终 switch/rollback：未执行，仅交付切换手册第 15.3 节命令；本轮新回滚目标为实际 live b9de08a4... / image db1f6f23...，成功切换后保留。
+
+## 2026-09-11 分组模型表现监控本地批次
+
+- 用户授权：定时向指定分组对应 URL/Key/模型发送固定鹈鹕 HTML 提示词，多任务、用户分组权限、历史预览/放大、后台清理。
+- 结构：独立 service/repository/handlers，新增迁移 9014 和默认关闭开关；原监控、支付、网关与认证逻辑未修改。请求模型配置、三协议、加密 Key、两容量租约、失效写回隔离、数量/时间双保留及安全预览均已实现。
+- 本地验收：完整前端 316 文件/2203 测试通过；后端全部默认包结果通过（启动测试补齐参数后单独复验）、vet/build 和新功能定向测试通过；真实隔离 PostgreSQL 与桌面/移动/明暗浏览器交互验收通过。详细证据及预览边界见同日变更记忆与 docs/model-evaluation-monitor.md。
+- 发布：尚未提交、推送、构建生产候选或访问线上；该新功能不属于旧 890828afe... v0.2.4 交接制品。保留以前发布历史，不把本地通过误记为线上完成。

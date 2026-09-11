@@ -272,6 +272,7 @@ export interface PublicSettings {
   account_quota_notify_enabled: boolean
   balance_low_notify_threshold: number
   channel_monitor_enabled: boolean
+  subnexus_model_evaluation_enabled?: boolean
   /** Exclusive mode: v1 active probes, v2 passive UI, or v3 passive UI. Default v1. */
   channel_monitor_mode?: 'v1' | 'v2' | 'v3'
   channel_monitor_default_interval_seconds: number

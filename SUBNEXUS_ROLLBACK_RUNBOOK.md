@@ -1,8 +1,8 @@
 # SubNexus 回滚手册
 
-> 当前权威状态：2026-09-09（Asia/Shanghai）。第 8 节保留历史发布事实；本轮用户端视觉性能与显示修复在最终 `switch` 时把切换前 live 以唯一名称保留为 stopped 容器，后续 rollback 只恢复该目标。`bf5aae07...` 旧候选的发布证据与命令已撤回，新候选、run 和命令尚待重新生成，以第 9 节和切换手册第 15.2 节为唯一现行交接。
+> 当前权威状态：2026-09-10（Asia/Shanghai）。本次 v0.2.4 完整发布前置已通过、尚未切换，唯一入口为切换手册第 15.3 节 full-release wrapper/run `20260909171117-2439922`。新一级回滚目标为切换前 live `b9de08a4...` / image `db1f6f23...`，切换时保留为 `subnexus-cutover-ui-prior-20260909171117-2439922`。已用完整生产快照验证新旧版本同库读写兼容，rollback 默认不恢复数据库。历史旧 SubNexus 不承担本轮正常 rollback。
 
-回滚按风险从低到高执行，默认只回滚应用或关闭功能，不恢复数据库。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只使用切换手册第 15 节最终登记的同一 UI wrapper/run；不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、新回滚目标和依赖身份校验。
+回滚默认只恢复应用，不恢复数据库、不改功能开关。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮只使用切换手册第 15.3 节最终登记的同一 full-release wrapper/run；不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、新回滚目标和依赖身份校验。
 
 本次线上应用数据目录的已审核 owner 是 `1000:1000`、叶目录 mode `0755`。执行 `prepare`、`switch` 或 `rollback` 时，只有在实时 `stat` 与 prepared manifest 一致的前提下，才同时传入以下三项环境变量；不得通过 `chown` 来“修复”不一致：
 

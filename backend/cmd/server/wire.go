@@ -124,6 +124,7 @@ func provideCleanup(
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
+	modelEvaluation *service.ModelEvaluationService,
 	channelMonitorV2Aggregator *service.ChannelMonitorV2Aggregator,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
@@ -387,6 +388,12 @@ func provideCleanup(
 			{"ChannelMonitorRunner", func() error {
 				if channelMonitorRunner != nil {
 					channelMonitorRunner.Stop()
+				}
+				return nil
+			}},
+			{"ModelEvaluation", func() error {
+				if modelEvaluation != nil {
+					modelEvaluation.Stop()
 				}
 				return nil
 			}},
