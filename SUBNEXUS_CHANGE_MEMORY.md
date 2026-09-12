@@ -1739,3 +1739,11 @@
 - 本地完整快照 SHA256 校验后删除两份本轮重复下载临时文件；隔离测试容器、卷和网络已清理，辅助文件系统已卸载，专用 Docker daemon 和 WSL 已停止。专用 ext4.vhdx 停机压缩成功，62781390848→19507707904 bytes，回收 43273682944 bytes 空闲块，F 盘空闲恢复至 67200880640 bytes。先前被自动审批拒绝删除的 70 GiB ext4 文件继续保留，没有更换方式删除。
 - 用户明确要求任何用户数据不得受影响。准备阶段仅备份和读取生产；不执行生产 SQL 迁移、重启、切换或数据库恢复。9015 的 ADD COLUMN/CREATE INDEX 仅在维护者手动启动新版本时执行，保留原记录；应用回滚也不恢复旧数据库或历史设置。
 - 正式备份体积小于早前兼容快照，追加只读核对确认 1604 项完整备份目录完全一致。生产已有系统日志清理审计（UTC 16:23:51 删除 45359722 条、16:24:35 删除 3914 条），均早于本次 16:30:46 正式 prepare；未调查操作者身份，不将该既有后台操作归因为发布流程。本流程没有执行生产表清理。
+
+## 2026-09-12 — model evaluation reliability pre-switch completion
+
+- Candidate application commit `065d6419f58f3889eb55219b618ebd9b89fc0dbd`, tree `6180c029e05b771ff4c6f90bde9a2a8856e6a5a3`, image `sha256:6e8b4f965f97770d4ffec9c7a5db8f2d3fa50f2718ed02765b9cc00beb3746d8`, archive SHA256 `580fb4aaca77db59aee1b8bba5371f6a2a259e3b23114bca8f4049dc4f3b924e`.
+- Deployment controller was updated to accept Docker's actual `AttachStdout/AttachStderr=false` defaults and reproduce a live container's multi-network `NetworkMode`; controller SHA `841174af2353729e95b953cd90cde8ad03cff13c4c5e65722d77b017b9ff9444`, UI library SHA `c4f0a47ddcba3972903761c45857bc2268d0a3f36998ca0b79658fd444cb66d8`, retained wrapper SHA `c52e69b48775f5597b0078cb422322d404a396a192d325dcbbe4d2f0e2acc173`.
+- Formal no-schema retained prepare run `/srv/subnexus-migration/cutover/20260912020559-3645138` completed with `state=prepared`, `ui_state=prepared`, `ui_commit_intent=no`, empty candidate container identity, and existing rollback target retained. Final read-only audit evidence `/srv/subnexus-migration/diagnostics/model-eval-065d6419f58f-final-audit.evidence` SHA256 `d97ae28db41fc9c8ad2386de2b3e99c2222c17f862d018c2f68f5f5f77de05d9`; `FINAL_PRE_SWITCH_AUDIT=passed`, `FINAL_SWITCH_EXECUTED=false`.
+- Due to capacity, only three superseded switched-run PostgreSQL dump files and their checksum sidecars were removed; current production data, current snapshot, fixed rollback target, and candidate archive were preserved. Cleanup evidence SHA256 `1aa58fbbb81e01766d836bfbf5215813ac16cbc9f3b1742f04fe7c88b875b166`.
+- No production switch, rollback, SQL migration, database restore, or feature toggle was executed. Manual switch/rollback commands are bound to run `20260912020559-3645138` and wrapper `no-schema-cutover-065d6419f58f-r2.sh`.
