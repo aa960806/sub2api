@@ -1900,6 +1900,9 @@ for network,data in sorted(value.items()):
     } > "$reordered_networks"
     chmod 600 "$reordered_networks"
     mv -f -- "$reordered_networks" "$run_dir/networks.txt"
+    # Refresh the in-memory list after reordering; candidate creation uses
+    # app_networks[0] as Docker's primary NetworkMode.
+    mapfile -t app_networks < "$run_dir/networks.txt"
   fi
   chmod 600 "$run_dir/network-identities.txt"
   mapfile -t app_network_ids < <(cut -d'|' -f2 "$run_dir/network-identities.txt")
