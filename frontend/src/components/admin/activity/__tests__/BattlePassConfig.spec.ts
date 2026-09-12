@@ -212,6 +212,69 @@ describe('BattlePassConfig', () => {
     expect(wrapper.text()).not.toContain('[object Object]')
   })
 
+  it('interprets datetime-local values in the season timezone when saving', async () => {
+    createSeason.mockResolvedValue({
+      id: 20,
+      name: '纽约赛季',
+      description: '',
+      status: 'draft',
+      runtime_status: 'draft',
+      timezone: 'America/New_York',
+      start_at: '2035-01-01T17:00:00Z',
+      end_at: '2035-02-01T17:00:00Z',
+      premium_price: 9.9,
+      max_level: 1,
+    })
+    const wrapper = mount(BattlePassConfig, {
+      global: { stubs: { TotpStepUpDialog: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('input[aria-label="赛季名称"]').setValue('纽约赛季')
+    await wrapper.get('input[aria-label="赛季时区"]').setValue('America/New_York')
+    await wrapper.get('input[aria-label="开始时间"]').setValue('2035-01-01T12:00')
+    await wrapper.get('input[aria-label="结束时间"]').setValue('2035-02-01T12:00')
+    await wrapper.get('[data-testid="battle-pass-save-draft"]').trigger('click')
+    await flushPromises()
+
+    expect(createSeason).toHaveBeenCalledOnce()
+    const saved = createSeason.mock.calls[0][0]
+    expect(saved.start_at).toBe('2035-01-01T17:00:00.000Z')
+    expect(saved.end_at).toBe('2035-02-01T17:00:00.000Z')
+    expect(saved.timezone).toBe('America/New_York')
+  })
+
+  it('renders loaded instants as wall time in the season timezone', async () => {
+    const season = {
+      id: 21,
+      name: '纽约赛季',
+      description: '',
+      status: 'draft',
+      runtime_status: 'draft',
+      timezone: 'America/New_York',
+      start_at: '2035-01-01T17:00:00Z',
+      end_at: '2035-02-01T17:00:00Z',
+      premium_price: 9.9,
+      max_level: 1,
+    }
+    listSeasons.mockResolvedValue([season])
+    getSeason.mockResolvedValue({
+      ...season,
+      levels: [{ level: 1, required_exp: 0 }],
+      tasks: [{ name: '请求', description: '', task_type: 'request_count', period_type: 'daily', target_value: 1, exp_reward: 1, filter_scope: 'all', filter_values: [], display_order: 0, enabled: true }],
+      rewards: [{ level: 1, track: 'free', reward_type: 'balance', payload: { amount: 1 } }, { level: 1, track: 'premium', reward_type: 'balance', payload: { amount: 2 } }],
+    })
+    const wrapper = mount(BattlePassConfig, {
+      global: { stubs: { TotpStepUpDialog: true } },
+    })
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().includes('纽约赛季'))!.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.get('input[aria-label="开始时间"]').element as HTMLInputElement).value).toBe('2035-01-01T12:00')
+    expect((wrapper.get('input[aria-label="结束时间"]').element as HTMLInputElement).value).toBe('2035-02-01T12:00')
+  })
+
   it('enables validation and publishing after a draft is created', async () => {
     const saved = {
       id: 10,

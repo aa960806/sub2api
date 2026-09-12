@@ -742,13 +742,72 @@ func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID 
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
+	battlePassCodes, battlePassTotal, err := s.listBattlePassBalanceHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	codes := mergeBalanceHistoryCodes(append(redeemCodes, battlePassCodes...), affiliateCodes, params)
 
 	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+	return codes, redeemTotal + affiliateTotal + battlePassTotal, totalRecharged, nil
+}
+
+// listBattlePassBalanceHistoryForMerge exposes battle-pass balance credits in
+// the same admin history stream as redeem and affiliate credits. These rows
+// are written atomically with the reward grant and use a synthetic redeem
+// code identifier so existing UI contracts remain unchanged.
+func (s *adminServiceImpl) listBattlePassBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if s == nil || s.entClient == nil || userID <= 0 || needed <= 0 {
+		return nil, 0, nil
+	}
+	rows, err := s.entClient.QueryContext(ctx, `
+SELECT id, amount::double precision, note, created_at
+FROM activity_reward_logs
+WHERE user_id = $1 AND source = 'battle_pass'
+ORDER BY created_at DESC, id DESC
+LIMIT $2`, userID, needed)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	codes := make([]RedeemCode, 0, needed)
+	for rows.Next() {
+		var id int64
+		var amount float64
+		var note string
+		var createdAt time.Time
+		if err := rows.Scan(&id, &amount, &note, &createdAt); err != nil {
+			return nil, 0, err
+		}
+		usedBy := userID
+		usedAt := createdAt
+		codes = append(codes, RedeemCode{ID: -id, Code: fmt.Sprintf("BP-%d", id), Type: RedeemTypeBalance, Value: amount, Status: StatusUsed, UsedBy: &usedBy, UsedAt: &usedAt, Notes: note, CreatedAt: createdAt})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	var total int64
+	countRows, err := s.entClient.QueryContext(ctx, `SELECT COUNT(*) FROM activity_reward_logs WHERE user_id = $1 AND source = 'battle_pass'`, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if countRows.Next() {
+		if err := countRows.Scan(&total); err != nil {
+			_ = countRows.Close()
+			return nil, 0, err
+		}
+	}
+	if err := countRows.Err(); err != nil {
+		_ = countRows.Close()
+		return nil, 0, err
+	}
+	if err := countRows.Close(); err != nil {
+		return nil, 0, err
+	}
+	return codes, total, nil
 }
 
 func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {

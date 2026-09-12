@@ -515,6 +515,16 @@ func applyBattlePassRewardTx(ctx context.Context, tx *sql.Tx, grant battlePassGr
 		if err != nil {
 			return "", nil, false, err
 		}
+		// Keep balance rewards in the shared activity ledger so the credit is
+		// visible to admin balance-history/audit tooling. Insert only after the
+		// user update succeeds to avoid phantom history rows for ineligible users.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO activity_reward_logs (user_id, source, period, rank, amount, note)
+			VALUES ($1, 'battle_pass', $2, 0, $3, $4)
+			ON CONFLICT (source, period, user_id) DO NOTHING
+		`, grant.UserID, fmt.Sprintf("grant:%d", grant.ID), amount, "battle pass reward"); err != nil {
+			return "", nil, false, err
+		}
 		return "granted", map[string]any{"balance_before": before, "balance_after": after, "amount": amount}, true, nil
 	case "concurrency":
 		amount := int(grant.Payload["amount"].(float64))

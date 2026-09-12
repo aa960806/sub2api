@@ -171,8 +171,8 @@ func TestBattlePassPaymentScannerPersistsNetContributionAndCursor(t *testing.T) 
 	completedAt := now.Add(-26 * time.Hour)
 	mock.ExpectQuery("SELECT po.id, po.user_id, po.order_type, po.status").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "user_id", "order_type", "status", "pay_amount", "refund_amount", "updated_at", "completed_at", "eligible",
-		}).AddRow(44, 99, "balance", "PARTIALLY_REFUNDED", 50.0, 5.0, updatedAt, completedAt, true))
+			"id", "user_id", "order_type", "status", "pay_amount", "refund_amount", "updated_at", "completed_at", "eligible", "paused",
+		}).AddRow(44, 99, "balance", "PARTIALLY_REFUNDED", 50.0, 5.0, updatedAt, completedAt, true, false))
 	expectBattlePassSourceContributionNoPrevious(mock, season.ID, 7, 99, "payment_order", 44, 45.0)
 	mock.ExpectExec("UPDATE battle_pass_source_cursors").
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -183,6 +183,21 @@ func TestBattlePassPaymentScannerPersistsNetContributionAndCursor(t *testing.T) 
 	require.Equal(t, 1, processed)
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestBattlePassPaymentContributionForOrderSkipsPausedCompletion(t *testing.T) {
+	order := battlePassPaymentOrder{
+		Status:       "COMPLETED",
+		PayAmount:    25,
+		RefundAmount: 0,
+		Paused:       true,
+	}
+	require.Zero(t, battlePassPaymentContributionForOrder("recharge_amount", order))
+	require.Zero(t, battlePassPaymentContributionForOrder("recharge_count", order))
+
+	order.Paused = false
+	require.Equal(t, 25.0, battlePassPaymentContributionForOrder("recharge_amount", order))
+	require.Equal(t, 1.0, battlePassPaymentContributionForOrder("recharge_count", order))
 }
 
 func TestBattlePassAffiliateScannerPersistsEligibleInviteContribution(t *testing.T) {

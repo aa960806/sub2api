@@ -150,6 +150,10 @@ type battlePassPaymentOrder struct {
 	UpdatedAt    time.Time
 	CompletedAt  sql.NullTime
 	EligibleUser bool
+	// Paused is true when the order's completion timestamp falls inside a
+	// pause window. Orders completed before a pause must remain eligible so
+	// later refunds can reconcile their prior contribution.
+	Paused bool
 }
 
 type battlePassAffiliateRelation struct {
@@ -617,6 +621,17 @@ func battlePassPaymentContribution(taskType, status string, payAmount, refundAmo
 	return 0
 }
 
+// battlePassPaymentContributionForOrder applies the pause-window boundary to
+// the order's completion event. An order updated during a pause can still be
+// reconciled when it completed before the pause (for example, after a
+// refund), so callers must use the completion timestamp-derived Paused flag.
+func battlePassPaymentContributionForOrder(taskType string, order battlePassPaymentOrder) float64 {
+	if order.Paused {
+		return 0
+	}
+	return battlePassPaymentContribution(taskType, order.Status, order.PayAmount, order.RefundAmount)
+}
+
 func (s *BattlePassService) scanPaymentOrdersTx(ctx context.Context, tx *sql.Tx, season BattlePassSeason, now time.Time) (int, error) {
 	tasks, err := loadBattlePassRuntimeTasks(ctx, tx, season.ID)
 	if err != nil {
@@ -651,13 +666,19 @@ func (s *BattlePassService) scanPaymentOrdersTx(ctx context.Context, tx *sql.Tx,
 	cutoff := now.Add(-battlePassPaymentConfirmationDelay)
 	rows, err := tx.QueryContext(ctx, `
 		SELECT po.id, po.user_id, po.order_type, po.status, po.pay_amount, po.refund_amount, po.updated_at, po.completed_at,
-		       (u.id IS NOT NULL)
+		       (u.id IS NOT NULL),
+		       EXISTS (
+			SELECT 1 FROM battle_pass_pause_windows w
+			WHERE w.season_id=$6 AND po.completed_at IS NOT NULL
+			  AND w.paused_at <= po.completed_at
+			  AND (w.resumed_at IS NULL OR w.resumed_at > po.completed_at)
+		)
 		FROM payment_orders po
 		LEFT JOIN users u ON u.id=po.user_id AND u.status='active' AND u.deleted_at IS NULL
 		WHERE po.order_type='balance' AND po.updated_at <= $1 AND po.updated_at >= $2
 		  AND ($3::timestamptz IS NULL OR po.updated_at > $3 OR (po.updated_at = $3 AND po.id > $4))
 		ORDER BY po.updated_at ASC, po.id ASC LIMIT $5
-	`, cutoff, statisticsStart, nullTimeArg(lastUpdated), lastID, battlePassUsageBatchSize)
+	`, cutoff, statisticsStart, nullTimeArg(lastUpdated), lastID, battlePassUsageBatchSize, season.ID)
 	if err != nil {
 		return 0, infraerrors.InternalServer("BATTLE_PASS_DB_UNAVAILABLE", "failed to read payment orders for battle pass")
 	}
@@ -667,17 +688,20 @@ func (s *BattlePassService) scanPaymentOrdersTx(ctx context.Context, tx *sql.Tx,
 	maxID := lastID
 	for rows.Next() {
 		var order battlePassPaymentOrder
-		if err := rows.Scan(&order.ID, &order.UserID, &order.OrderType, &order.Status, &order.PayAmount, &order.RefundAmount, &order.UpdatedAt, &order.CompletedAt, &order.EligibleUser); err != nil {
+		if err := rows.Scan(&order.ID, &order.UserID, &order.OrderType, &order.Status, &order.PayAmount, &order.RefundAmount, &order.UpdatedAt, &order.CompletedAt, &order.EligibleUser, &order.Paused); err != nil {
 			return 0, infraerrors.InternalServer("BATTLE_PASS_DB_UNAVAILABLE", "failed to scan payment order for battle pass")
 		}
 		for _, task := range tasks {
 			if task.TaskType != "recharge_count" && task.TaskType != "recharge_amount" || task.PeriodType != "season" {
 				continue
 			}
-			value := battlePassPaymentContribution(task.TaskType, order.Status, order.PayAmount, order.RefundAmount)
+			value := battlePassPaymentContributionForOrder(task.TaskType, order)
 			if !order.EligibleUser || !order.CompletedAt.Valid || order.CompletedAt.Time.Before(statisticsStart) || !order.CompletedAt.Time.Before(season.EndAt) {
 				value = 0
 			}
+			// A recharge completed while the season was paused must not grant
+			// experience. Keep processing the order, however, so an order that
+			// completed before the pause can still be reconciled after a refund.
 			if err := s.applyBattlePassSourceContributionTx(ctx, tx, season, task, order.UserID, "payment_order", order.ID, order.UpdatedAt, value); err != nil {
 				return 0, err
 			}
@@ -729,12 +753,18 @@ func (s *BattlePassService) scanAffiliateRelationsTx(ctx context.Context, tx *sq
 		       EXISTS (SELECT 1 FROM payment_orders po WHERE po.user_id=ua.user_id AND po.order_type='balance'
 		           AND po.status IN ('COMPLETED','PARTIALLY_REFUNDED','REFUNDED')
 		           AND po.completed_at >= GREATEST($1, ua.created_at) AND po.completed_at < $2 AND po.updated_at <= $3
+		           AND NOT EXISTS (SELECT 1 FROM battle_pass_pause_windows w
+		                           WHERE w.season_id=$4 AND w.paused_at <= po.completed_at
+		                             AND (w.resumed_at IS NULL OR w.resumed_at > po.completed_at))
 		           AND GREATEST(po.pay_amount - GREATEST(po.refund_amount, 0), 0) > 0)
 		FROM user_affiliates ua
 		LEFT JOIN users invitee ON invitee.id=ua.user_id AND invitee.status='active' AND invitee.deleted_at IS NULL
 		JOIN users inviter ON inviter.id=ua.inviter_id AND inviter.status='active' AND inviter.deleted_at IS NULL
 		WHERE ua.inviter_id IS NOT NULL AND ua.created_at >= $1 AND ua.created_at < $2
-	`, statisticsStart, season.EndAt, cutoff)
+		  AND NOT EXISTS (SELECT 1 FROM battle_pass_pause_windows w
+		                  WHERE w.season_id=$4 AND w.paused_at <= ua.created_at
+		                    AND (w.resumed_at IS NULL OR w.resumed_at > ua.created_at))
+	`, statisticsStart, season.EndAt, cutoff, season.ID)
 	if err != nil {
 		return 0, infraerrors.InternalServer("BATTLE_PASS_DB_UNAVAILABLE", "failed to read affiliate relations for battle pass")
 	}

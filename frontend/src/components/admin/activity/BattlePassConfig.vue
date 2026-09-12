@@ -253,18 +253,81 @@ const actionHint = computed(() => {
 
 function emptyDraft(): BattlePassSeasonDraft {
   const start = new Date(Date.now() + 3600_000); const end = new Date(Date.now() + 31 * 86400_000)
-  return { name: '', description: '', timezone: 'Asia/Shanghai', start_at: toLocalInput(start), end_at: toLocalInput(end), premium_price: 9.9, max_level: 1, levels: [{ level: 1, required_exp: 0 }], tasks: [{ name: '', description: '', task_type: 'request_count', period_type: 'daily', target_value: 1, exp_reward: 10, filter_scope: 'all', filter_values: [], display_order: 0, enabled: true }], rewards: [{ level: 1, track: 'free', reward_type: 'balance', payload: { amount: 0.2 } }, { level: 1, track: 'premium', reward_type: 'balance', payload: { amount: 1 } }] }
+  const timezone = 'Asia/Shanghai'
+  return { name: '', description: '', timezone, start_at: toLocalInput(start, timezone), end_at: toLocalInput(end, timezone), premium_price: 9.9, max_level: 1, levels: [{ level: 1, required_exp: 0 }], tasks: [{ name: '', description: '', task_type: 'request_count', period_type: 'daily', target_value: 1, exp_reward: 10, filter_scope: 'all', filter_values: [], display_order: 0, enabled: true }], rewards: [{ level: 1, track: 'free', reward_type: 'balance', payload: { amount: 0.2 } }, { level: 1, track: 'premium', reward_type: 'balance', payload: { amount: 1 } }] }
 }
-function toLocalInput(value: Date) { const offset = value.getTimezoneOffset(); return new Date(value.getTime() - offset * 60000).toISOString().slice(0, 16) }
-function toRFC3339(value: string) { return new Date(value).toISOString() }
+/**
+ * datetime-local contains a wall-clock value without an offset.  Battle pass
+ * seasons interpret that value in the season's IANA timezone, so never let
+ * the browser timezone decide the instant sent to the API.
+ */
+function timeZoneParts(value: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+  const parts = formatter.formatToParts(value)
+  const result: Record<string, number> = {}
+  for (const part of parts) if (part.type !== 'literal') result[part.type] = Number(part.value)
+  return result
+}
+function zonedOffsetMs(value: Date, timeZone: string) {
+  const parts = timeZoneParts(value, timeZone)
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - value.getTime()
+}
+function parseWallTime(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value)
+  if (!match) return null
+  const [, year, month, day, hour, minute, second = '0'] = match
+  const timestamp = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second))
+  const check = new Date(timestamp)
+  if (check.getUTCFullYear() !== Number(year) || check.getUTCMonth() !== Number(month) - 1 || check.getUTCDate() !== Number(day) || check.getUTCHours() !== Number(hour) || check.getUTCMinutes() !== Number(minute) || check.getUTCSeconds() !== Number(second)) return null
+  return timestamp
+}
+function zonedDateTimeToDate(value: string, timeZone: string): Date | null {
+  const wallTimestamp = parseWallTime(value)
+  if (wallTimestamp === null) return null
+  try {
+    // Apply the offset twice to handle DST transitions around the initial guess.
+    const first = new Date(wallTimestamp - zonedOffsetMs(new Date(wallTimestamp), timeZone))
+    const second = new Date(wallTimestamp - zonedOffsetMs(first, timeZone))
+    return second
+  } catch {
+    // Invalid IANA zone names make Intl.DateTimeFormat throw RangeError.
+    return null
+  }
+}
+function isValidTimeZone(timeZone: string) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format()
+    return true
+  } catch {
+    return false
+  }
+}
+function toLocalInput(value: Date, timeZone = draft.timezone || 'UTC') {
+  try {
+    const parts = timeZoneParts(value, timeZone)
+    return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`
+  } catch {
+    // Keep the form usable while the user is correcting an invalid timezone.
+    const offset = value.getTimezoneOffset()
+    return new Date(value.getTime() - offset * 60000).toISOString().slice(0, 16)
+  }
+}
+function toRFC3339(value: string, timeZone: string) { return zonedDateTimeToDate(value, timeZone)?.toISOString() || '' }
 function localizeValidationMessage(value: string) { return validationMessageMap[value.trim()] || value }
 function battlePassErrorMessage(err: unknown, fallback: string) { return localizeValidationMessage(extractApiErrorMessage(err, fallback)) }
 function startNewDraft() { selectedId.value = null; testState.value = null; Object.assign(draft, emptyDraft()); error.value = ''; message.value = '' }
 function draftSaveIssue() {
   if (!draft.name.trim()) return '请填写赛季名称。'
   if (!draft.timezone.trim()) return '请填写赛季时区，例如 Asia/Shanghai。'
-  const start = new Date(draft.start_at).getTime()
-  const end = new Date(draft.end_at).getTime()
+  if (!isValidTimeZone(draft.timezone.trim())) return '赛季时区无效，请填写例如 Asia/Shanghai。'
+  const startDate = zonedDateTimeToDate(draft.start_at, draft.timezone.trim())
+  const endDate = zonedDateTimeToDate(draft.end_at, draft.timezone.trim())
+  const start = startDate?.getTime() ?? Number.NaN
+  const end = endDate?.getTime() ?? Number.NaN
   if (!Number.isFinite(start)) return '请选择有效的开始时间。'
   if (!Number.isFinite(end)) return '请选择有效的结束时间。'
   if (start <= Date.now()) return '开始时间必须晚于当前时间。'
@@ -272,7 +335,7 @@ function draftSaveIssue() {
   if (!Number.isFinite(Number(draft.premium_price)) || Number(draft.premium_price) <= 0) return '高级战令价格必须大于 0。'
   return ''
 }
-function payload(): BattlePassSeasonDraft { return { ...draft, start_at: toRFC3339(draft.start_at), end_at: toRFC3339(draft.end_at), max_level: draft.levels.length, levels: draft.levels, tasks: draft.tasks.map((task, index) => ({ ...task, display_order: index, enabled: task.enabled !== false })), rewards: draft.rewards } }
+function payload(): BattlePassSeasonDraft { return { ...draft, timezone: draft.timezone.trim(), start_at: toRFC3339(draft.start_at, draft.timezone.trim()), end_at: toRFC3339(draft.end_at, draft.timezone.trim()), max_level: draft.levels.length, levels: draft.levels, tasks: draft.tasks.map((task, index) => ({ ...task, display_order: index, enabled: task.enabled !== false })), rewards: draft.rewards } }
 function syncLevels() { draft.levels.forEach((level, index) => { level.level = index + 1 }); draft.max_level = draft.levels.length }
 function addLevel() { const last = draft.levels.at(-1); draft.levels.push({ level: draft.levels.length + 1, required_exp: (last?.required_exp ?? 0) + 100 }); syncLevels() }
 function removeLevel(index: number) { if (draft.levels.length <= 1) return; const removedLevel = draft.levels[index].level; draft.levels.splice(index, 1); draft.rewards = draft.rewards.filter((reward) => reward.level !== removedLevel).map((reward) => ({ ...reward, level: reward.level > removedLevel ? reward.level - 1 : reward.level })); syncLevels(); message.value = `已删除 Lv. ${removedLevel}，并同步移除该等级的奖励。` }
@@ -390,7 +453,7 @@ async function saveDraft() {
     message.value = '草稿已保存。现在可以校验草稿，校验通过后再发布赛季。'
   } catch (err) { error.value = battlePassErrorMessage(err, '保存草稿失败。') } finally { saving.value = false }
 }
-async function loadSeason(id: number) { error.value = ''; message.value = ''; testState.value = null; try { const detail = await getBattlePassSeason(id); selectedId.value = detail.id; Object.assign(draft, { name: detail.name, description: detail.description, timezone: detail.timezone, start_at: toLocalInput(new Date(detail.start_at)), end_at: toLocalInput(new Date(detail.end_at)), premium_price: detail.premium_price, max_level: detail.max_level, levels: detail.levels || [], tasks: detail.tasks || [], rewards: detail.rewards || [] }); syncLevels(); if (testToolsEnabled.value && detail.status !== 'draft' && detail.status !== 'archived') await loadTestState() } catch (err) { error.value = battlePassErrorMessage(err, '加载赛季失败。') } }
+async function loadSeason(id: number) { error.value = ''; message.value = ''; testState.value = null; try { const detail = await getBattlePassSeason(id); selectedId.value = detail.id; Object.assign(draft, { name: detail.name, description: detail.description, timezone: detail.timezone, start_at: toLocalInput(new Date(detail.start_at), detail.timezone), end_at: toLocalInput(new Date(detail.end_at), detail.timezone), premium_price: detail.premium_price, max_level: detail.max_level, levels: detail.levels || [], tasks: detail.tasks || [], rewards: detail.rewards || [] }); syncLevels(); if (testToolsEnabled.value && detail.status !== 'draft' && detail.status !== 'archived') await loadTestState() } catch (err) { error.value = battlePassErrorMessage(err, '加载赛季失败。') } }
 async function loadTestState() {
   if (!selectedId.value || testUserId.value <= 0 || testPending.value) return
   testPending.value = 'load'; error.value = ''
