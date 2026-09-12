@@ -351,11 +351,11 @@ func (r *modelEvaluationRepository) claim(ctx context.Context, id int64, force b
 	}
 	task.LeaseToken = uuid.NewString()
 	task.LeaseIsTest = isTest
-	if _, err = tx.ExecContext(ctx, `UPDATE subnexus_model_evaluation_slots SET lease_token=$2,lease_until=NOW()+INTERVAL '240 seconds' WHERE id=$1`, slotID, task.LeaseToken); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE subnexus_model_evaluation_slots SET lease_token=$2,lease_until=NOW()+$3*INTERVAL '1 second' WHERE id=$1`, slotID, task.LeaseToken, service.ModelEvaluationLeaseTimeoutSeconds); err != nil {
 		return nil, err
 	}
-	if err = tx.QueryRowContext(ctx, `UPDATE subnexus_model_evaluation_tasks SET lease_token=$2,lease_until=NOW()+INTERVAL '240 seconds',next_run_at=NOW()+interval_seconds*INTERVAL '1 second',lease_is_test=$3,revision=revision+1,
-published=CASE WHEN $3 THEN FALSE ELSE published END,test_status=CASE WHEN $3 THEN 'running' ELSE test_status END,test_error=CASE WHEN $3 THEN '' ELSE test_error END,last_tested_at=CASE WHEN $3 THEN NULL ELSE last_tested_at END WHERE id=$1 RETURNING revision,published,test_status,test_error,last_tested_at`, task.ID, task.LeaseToken, isTest).Scan(&task.Revision, &task.Published, &task.TestStatus, &task.TestError, &task.LastTestedAt); err != nil {
+	if err = tx.QueryRowContext(ctx, `UPDATE subnexus_model_evaluation_tasks SET lease_token=$2,lease_until=NOW()+$4*INTERVAL '1 second',next_run_at=NOW()+interval_seconds*INTERVAL '1 second',lease_is_test=$3,revision=revision+1,
+published=CASE WHEN $3 THEN FALSE ELSE published END,test_status=CASE WHEN $3 THEN 'running' ELSE test_status END,test_error=CASE WHEN $3 THEN '' ELSE test_error END,last_tested_at=CASE WHEN $3 THEN NULL ELSE last_tested_at END WHERE id=$1 RETURNING revision,published,test_status,test_error,last_tested_at`, task.ID, task.LeaseToken, isTest, service.ModelEvaluationLeaseTimeoutSeconds).Scan(&task.Revision, &task.Published, &task.TestStatus, &task.TestError, &task.LastTestedAt); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(); err != nil {

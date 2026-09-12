@@ -20,7 +20,7 @@ export default {
       key: 'API Key', keySaved: '已保存；留空保持不变', keyNew: '输入此分组对应的 API Key',
       keyBindingChanged: '分组、请求地址或协议已更改，请重新填写对应的 API Key。', keyRequired: '请填写此请求对应的 API Key。',
       model: '请求模型', modelHelp: '填写接口支持的完整模型 ID，按原值发送。',
-      reasoningEffort: '思考强度（可选）', reasoningEffortDefault: '使用模型默认值', reasoningEffortHelp: '调整私下测试和定时请求的思考深度；例如 gpt-6-astra 可选择 high、xhigh、max 或 ultra。',
+      reasoningEffort: '思考强度（可选）', reasoningEffortDefault: '使用模型默认值', reasoningEffortHelp: '可选值由上游模型决定，实际以后台测试结果为准。', reasoningEffortLegacyUltra: '旧配置 ultra 已兼容映射为 max，保存后将按 max 发送。',
       interval: '检测间隔（秒）', retention: '保留天数', maxRecords: '每个任务最多保留记录数',
       retentionHelp: '自动删除超出保留天数或记录上限的历史，成功和失败记录均计入上限。',
       taskEnabled: '启用此任务', nextRun: '下次检测', paused: '已暂停',

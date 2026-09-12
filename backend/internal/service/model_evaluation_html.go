@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"unicode/utf8"
@@ -14,7 +15,7 @@ import (
 // comment as another document. Explanations around that document are discarded.
 func extractModelEvaluationHTML(content string) (string, string) {
 	if len(content) > ModelEvaluationMaxResponseBytes {
-		return "", "上游响应超过 2 MiB 限制"
+		return "", fmt.Sprintf("上游响应超过 %d MiB 限制", ModelEvaluationMaxResponseBytes/(1024*1024))
 	}
 	if !utf8.ValidString(content) || strings.ContainsRune(content, 0) {
 		return "", "HTML 编码无效"

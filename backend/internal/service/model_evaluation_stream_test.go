@@ -11,6 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type modelEvaluationTerminalThenErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *modelEvaluationTerminalThenErrorReader) Read(p []byte) (int, error) {
+	if !r.done {
+		r.done = true
+		n := copy(p, r.data)
+		return n, nil
+	}
+	return 0, io.ErrUnexpectedEOF
+}
+
 func evaluationSSE(t *testing.T, value any) string {
 	t.Helper()
 	raw, err := json.Marshal(value)
@@ -78,6 +92,39 @@ func TestModelEvaluationStreamRejectsPartialAndProviderErrors(t *testing.T) {
 	}
 }
 
+func TestModelEvaluationStreamReturnsOnCompletionBeforeEOF(t *testing.T) {
+	event := evaluationSSE(t, map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{
+			"status": "completed",
+			"output": []any{map[string]any{
+				"type": "message", "role": "assistant",
+				"content": []any{map[string]string{"type": "output_text", "text": evaluationTestHTML}},
+			}},
+		},
+	})
+	content, reason := readModelEvaluationStream("responses", &modelEvaluationTerminalThenErrorReader{data: []byte(event)})
+	require.Empty(t, reason)
+	require.Equal(t, evaluationTestHTML, content)
+}
+
+func TestModelEvaluationStreamAllowsWirePayloadsAboveTwoMiB(t *testing.T) {
+	comments := strings.Repeat(": keepalive\n\n", (2*1024*1024)/12+512)
+	event := evaluationSSE(t, map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{
+			"status": "completed",
+			"output": []any{map[string]any{
+				"type": "message", "role": "assistant",
+				"content": []any{map[string]string{"type": "output_text", "text": evaluationTestHTML}},
+			}},
+		},
+	})
+	content, reason := readModelEvaluationStream("responses", strings.NewReader(comments+event))
+	require.Empty(t, reason)
+	require.Equal(t, evaluationTestHTML, content)
+}
+
 func TestModelEvaluationStreamBoundsWireAndText(t *testing.T) {
 	for name, events := range map[string]string{
 		"oversized delta":    evaluationSSE(t, map[string]any{"type": "response.output_text.delta", "delta": strings.Repeat("x", ModelEvaluationMaxHTMLBytes+1)}),
@@ -101,5 +148,22 @@ func TestModelEvaluationHTTPTimeoutClassification(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	require.Equal(t, "请求已取消", modelEvaluationRequestError(ctx, ctx.Err()))
-	require.Contains(t, modelEvaluationRequestError(context.Background(), context.DeadlineExceeded), "180 秒")
+	require.Contains(t, modelEvaluationRequestError(context.Background(), context.DeadlineExceeded), "600 秒")
+}
+
+func TestModelEvaluationOutboundEffortMapsLegacyUltra(t *testing.T) {
+	require.Equal(t, "max", normalizeModelEvaluationOutboundEffort("ultra"))
+	require.Equal(t, "xhigh", normalizeModelEvaluationOutboundEffort("xhigh"))
+	require.True(t, isRetryableModelEvaluationStatus(500))
+	require.True(t, isRetryableModelEvaluationStatus(429))
+	require.False(t, isRetryableModelEvaluationStatus(400))
+}
+
+func TestModelEvaluationProviderErrorDetailIsBoundedAndRedacted(t *testing.T) {
+	raw := []byte(`{"error":{"code":"invalid_value","param":"reasoning.effort","type":"invalid_request_error","message":"Invalid value ultra for ` + ModelEvaluationPrompt + ` key-secret"}}`)
+	detail := modelEvaluationProviderErrorDetail(raw, "key-secret")
+	require.Contains(t, detail, "code=invalid_value")
+	require.Contains(t, detail, "param=reasoning.effort")
+	require.NotContains(t, detail, "key-secret")
+	require.NotContains(t, detail, ModelEvaluationPrompt)
 }

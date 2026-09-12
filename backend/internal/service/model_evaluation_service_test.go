@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -192,6 +193,7 @@ func TestModelEvaluationProtocolsPreservePromptModelAndHTML(t *testing.T) {
 				} else if format == "responses" {
 					reasoning := body["reasoning"].(map[string]any)
 					require.Equal(t, "high", reasoning["effort"])
+					require.Equal(t, float64(32768), body["max_output_tokens"])
 				} else {
 					thinking := body["thinking"].(map[string]any)
 					require.Equal(t, "enabled", thinking["type"])
@@ -230,6 +232,63 @@ func TestModelEvaluationProtocolsPreservePromptModelAndHTML(t *testing.T) {
 			require.Equal(t, evaluationTestHTML, result.HTML)
 		})
 	}
+}
+
+func TestModelEvaluationRetriesOnlyTransientHTTPFailures(t *testing.T) {
+	svc := NewModelEvaluationService(nil, nil, nil, evaluationTestEncryptor{})
+	defer svc.Stop()
+	var attempts atomic.Int32
+	svc.client.Transport = evaluationTestTransport(func(req *http.Request) (*http.Response, error) {
+		n := attempts.Add(1)
+		if n < 2 {
+			return &http.Response{StatusCode: http.StatusTooManyRequests, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"rate_limit"}}`)), Header: http.Header{}}, nil
+		}
+		body, _ := json.Marshal(map[string]any{"status": "completed", "output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]string{"type": "output_text", "text": evaluationTestHTML}}}}})
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}}, nil
+	})
+	result := svc.execute(context.Background(), &ModelEvaluationTask{Endpoint: "https://provider.test/v1/responses", APIFormat: "responses", Model: "model", APIKeyEncrypted: "encrypted:key"})
+	require.Equal(t, int32(2), attempts.Load())
+	require.Equal(t, "success", result.Status)
+}
+
+func TestModelEvaluationRetriesTransientStreamFailure(t *testing.T) {
+	svc := NewModelEvaluationService(nil, nil, nil, evaluationTestEncryptor{})
+	defer svc.Stop()
+	var attempts atomic.Int32
+	svc.client.Transport = evaluationTestTransport(func(req *http.Request) (*http.Response, error) {
+		n := attempts.Add(1)
+		if n == 1 {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": {"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")),
+			}, nil
+		}
+		body, _ := json.Marshal(map[string]any{"status": "completed", "output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]string{"type": "output_text", "text": evaluationTestHTML}}}}})
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}}, nil
+	})
+	result := svc.execute(context.Background(), &ModelEvaluationTask{Endpoint: "https://provider.test/v1/responses", APIFormat: "responses", Model: "model", APIKeyEncrypted: "encrypted:key"})
+	require.Equal(t, int32(2), attempts.Load())
+	require.Equal(t, "success", result.Status)
+	require.Equal(t, evaluationTestHTML, result.HTML)
+}
+
+func TestModelEvaluationDoesNotRetryExplicitIncompleteStream(t *testing.T) {
+	svc := NewModelEvaluationService(nil, nil, nil, evaluationTestEncryptor{})
+	defer svc.Stop()
+	var attempts atomic.Int32
+	svc.client.Transport = evaluationTestTransport(func(req *http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(evaluationSSE(t, map[string]any{"type": "response.incomplete", "response": map[string]any{"status": "incomplete"}}))),
+		}, nil
+	})
+	result := svc.execute(context.Background(), &ModelEvaluationTask{Endpoint: "https://provider.test/v1/responses", APIFormat: "responses", Model: "model", APIKeyEncrypted: "encrypted:key"})
+	require.Equal(t, int32(1), attempts.Load())
+	require.Equal(t, "error", result.Status)
+	require.Contains(t, result.ErrorMessage, "未完整结束")
 }
 
 func TestModelEvaluationRejectsTruncatedMalformedAndOversizedOutput(t *testing.T) {

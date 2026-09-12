@@ -39,7 +39,7 @@ type modelEvaluationActiveRun struct {
 func NewModelEvaluationService(repo ModelEvaluationRepository, settings SettingRepository, groups GroupRepository, encryptor SecretEncryptor) *ModelEvaluationService {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ModelEvaluationService{repo: repo, settings: settings, groups: groups, encryptor: encryptor, ctx: ctx, cancel: cancel, tickInterval: 5 * time.Second, active: make(map[int64]modelEvaluationActiveRun), client: &http.Client{
-		Timeout:       180 * time.Second,
+		Timeout:       time.Duration(ModelEvaluationRequestTimeoutSeconds) * time.Second,
 		Transport:     &http.Transport{Proxy: nil, DialContext: modelEvaluationSafeDialContext, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 170 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirects are disabled") },
 	}}
@@ -417,7 +417,7 @@ func (s *ModelEvaluationService) launch(task *ModelEvaluationTask) error {
 		_ = s.repo.Release(ctx, task)
 		return ErrModelEvaluationDisabled
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, 180*time.Second)
+	ctx, cancel := context.WithTimeout(s.ctx, time.Duration(ModelEvaluationTotalTimeoutSeconds)*time.Second)
 	s.active[task.ID] = modelEvaluationActiveRun{token: task.LeaseToken, cancel: cancel, isTest: task.LeaseIsTest}
 	s.wg.Add(1)
 	s.mu.Unlock()

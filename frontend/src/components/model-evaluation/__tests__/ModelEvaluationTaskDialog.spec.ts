@@ -36,6 +36,19 @@ describe('model evaluation task editor', () => {
     wrapper.unmount()
   })
 
+  it('maps legacy ultra configurations to max and never offers ultra', async () => {
+    const legacyTask = { ...task, reasoning_effort: 'ultra' as const }
+    const wrapper = mount(ModelEvaluationTaskDialog, { props: { show: true, task: legacyTask, groups: [{ id: 7, name: 'Group' }] }, global: { stubs: { BaseDialog: Dialog } } })
+    const select = wrapper.find<HTMLSelectElement>('[name="reasoning_effort"]')
+    expect(select.element.value).toBe('max')
+    expect(select.find('option[value="ultra"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('modelEvaluations.admin.reasoningEffortLegacyUltra')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(api.update).toHaveBeenCalledWith(4, expect.objectContaining({ reasoning_effort: 'max' }))
+    wrapper.unmount()
+  })
+
   it('clears a newly entered key when the editor closes', async () => {
     const wrapper = mount(ModelEvaluationTaskDialog, { props: { show: true, task: null, groups: [] }, global: { stubs: { BaseDialog: Dialog } } })
     await wrapper.find('[name="api_key"]').setValue('test-key')

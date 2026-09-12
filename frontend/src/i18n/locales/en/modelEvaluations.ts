@@ -20,7 +20,7 @@ export default {
       key: 'API key', keySaved: 'Saved; leave blank to keep unchanged', keyNew: 'Enter the API key for this group',
       keyBindingChanged: 'The group, endpoint or protocol changed. Enter the API key for the new configuration.', keyRequired: 'Enter the API key for this request.',
       model: 'Requested model', modelHelp: 'Enter the exact model ID supported by the endpoint.',
-      reasoningEffort: 'Reasoning effort (optional)', reasoningEffortDefault: 'Use model default', reasoningEffortHelp: 'Controls the reasoning depth for private tests and scheduled requests; for example, gpt-6-astra supports high, xhigh, max and ultra.',
+      reasoningEffort: 'Reasoning effort (optional)', reasoningEffortDefault: 'Use model default', reasoningEffortHelp: 'Supported values depend on the upstream model; verify the setting with the private test.', reasoningEffortLegacyUltra: 'Legacy ultra was mapped to max for compatibility and will be sent as max after saving.',
       interval: 'Check interval (seconds)', retention: 'Retention (days)', maxRecords: 'Maximum records per task',
       retentionHelp: 'History beyond either retention limit is deleted automatically, including successful and failed records.',
       taskEnabled: 'Enable this task', nextRun: 'Next check', paused: 'Paused',

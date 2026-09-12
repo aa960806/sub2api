@@ -2,7 +2,10 @@ package service
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -132,7 +135,7 @@ func readModelEvaluationStream(format string, body io.Reader) (string, string) {
 	}
 	for scanner.Scan() {
 		if limited.N <= 0 {
-			return "", "上游响应超过 2 MiB 限制"
+			return "", fmt.Sprintf("上游响应超过 %d MiB 限制", ModelEvaluationMaxResponseBytes/(1024*1024))
 		}
 		line := scanner.Text()
 		if line == "" {
@@ -151,15 +154,18 @@ func readModelEvaluationStream(format string, body io.Reader) (string, string) {
 		}
 	}
 	if limited.N <= 0 {
-		return "", "上游响应超过 2 MiB 限制"
+		return "", fmt.Sprintf("上游响应超过 %d MiB 限制", ModelEvaluationMaxResponseBytes/(1024*1024))
 	}
 	if scanner.Err() != nil {
-		return "", "读取上游流式响应失败，请检查网络与上游超时设置"
+		if errors.Is(scanner.Err(), context.DeadlineExceeded) || strings.Contains(strings.ToLower(scanner.Err().Error()), "timeout") {
+			return "", modelEvaluationTransientStreamTimeout
+		}
+		return "", modelEvaluationTransientStreamFailure
 	}
 	// Tolerate a missing final blank line only when a complete terminal event is
 	// present; EOF alone never confirms a successful generation.
 	if done, content, reason := process(); done {
 		return content, reason
 	}
-	return "", "上游流式响应中断或未完整结束，结果未保存"
+	return "", modelEvaluationTransientStreamFailure
 }

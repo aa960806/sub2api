@@ -12,11 +12,16 @@ const (
 	ModelEvaluationPrompt            = "生成html，内容是svg绘制鹈鹕骑自行车2D动画，不用进行测试。"
 	ModelEvaluationMaxTasks          = 100
 	ModelEvaluationMaxHTMLBytes      = 512 * 1024
-	ModelEvaluationMaxResponseBytes  = 2 * 1024 * 1024
+	// Request timeout is the provider HTTP budget; the worker and DB lease add
+	// room for retries, backoff, and final persistence.
+	ModelEvaluationRequestTimeoutSeconds = 600
+	ModelEvaluationTotalTimeoutSeconds   = 660
+	ModelEvaluationLeaseTimeoutSeconds   = 720
+	ModelEvaluationMaxResponseBytes      = 16 * 1024 * 1024
 )
 
-// ModelEvaluationReasoningEfforts is the portable set accepted by OpenAI
-// compatible reasoning controls. An empty value leaves the provider default.
+// ModelEvaluationReasoningEfforts is the set accepted by the monitoring UI;
+// the selected value remains subject to the configured upstream contract.
 var ModelEvaluationReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
 
 func IsValidModelEvaluationReasoningEffort(value string) bool {
@@ -109,6 +114,9 @@ type ModelEvaluationResult struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	HTML         string    `json:"html,omitempty"`
+	// transientStreamFailure is internal retry metadata and is never persisted
+	// or returned to clients.
+	transientStreamFailure string
 }
 
 // Admin is set only by an authenticated administrator handler. Empty permitted

@@ -2,7 +2,8 @@ import { apiClient } from './client'
 
 export const MODEL_EVALUATION_PROMPT = '生成html，内容是svg绘制鹈鹕骑自行车2D动画，不用进行测试。'
 export type ModelEvaluationAPIFormat = 'chat_completions' | 'responses' | 'messages'
-export type ModelEvaluationReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+export type ModelEvaluationReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ModelEvaluationLegacyReasoningEffort = 'ultra'
 export interface ModelEvaluationGroup { id: number; name: string }
 export interface ModelEvaluationTaskInput {
   name: string
@@ -18,7 +19,9 @@ export interface ModelEvaluationTaskInput {
   retention_days: number
   max_records: number
 }
-export interface ModelEvaluationTask extends Omit<ModelEvaluationTaskInput, 'api_key'> {
+export interface ModelEvaluationTask extends Omit<ModelEvaluationTaskInput, 'api_key' | 'reasoning_effort'> {
+  /** Legacy servers may return ultra; the editor maps it to max before saving. */
+  reasoning_effort?: ModelEvaluationReasoningEffort | '' | ModelEvaluationLegacyReasoningEffort
   id: number
   group_name: string
   has_api_key: boolean

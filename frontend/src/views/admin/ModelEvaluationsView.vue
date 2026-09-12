@@ -82,7 +82,10 @@ let taskGeneration = 0
 let disposed = false
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let pollCount = 0
-const MAX_STATUS_POLLS = 120
+// Backend leases permit requests up to 660s (plus a small persistence margin).
+// Poll for 12 minutes at 2s intervals so long-running tests remain visibly
+// pending instead of appearing complete; hidden/unmounted cancellation remains unchanged.
+const MAX_STATUS_POLLS = 360
 const monitoredGroups = computed(() => [...new Map(tasks.value.map(task => [task.group_id, { id: task.group_id, name: task.group_name }])).values()])
 function testStatusKey(task: ModelEvaluationTask) {
   const status = task.test_status
