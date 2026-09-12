@@ -3726,10 +3726,17 @@ create_candidate_container() {
   while IFS='|' read -r type source name destination mode writable propagation; do
     [[ -n "$destination" ]] || continue
     if [[ "$type" == bind ]]; then
-      mount_spec="type=bind,src=$source,dst=$destination"
-      [[ "$writable" == true && "$mode" != ro ]] || mount_spec+=',readonly'
-      [[ -z "$propagation" || "$propagation" == rprivate ]] || mount_spec+=",bind-propagation=$propagation"
-      args+=(--mount "$mount_spec")
+      # Use the legacy -v form so Docker preserves HostConfig.Binds exactly
+      # as reported by the live container. --mount produces equivalent
+      # Mounts metadata but leaves Binds empty on Docker 29, changing the
+      # runtime contract hash.
+      mount_spec="$source:$destination"
+      if [[ "$writable" != true || "$mode" == ro ]]; then
+        mount_spec+=":ro"
+      elif [[ -n "$propagation" && "$propagation" != rprivate ]]; then
+        mount_spec+=":rw,$propagation"
+      fi
+      args+=(-v "$mount_spec")
     else
       mount_spec="type=volume,src=$name,dst=$destination"
       [[ "$writable" == true && "$mode" != ro ]] || mount_spec+=',readonly'
