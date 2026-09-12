@@ -1390,10 +1390,35 @@ if command -v python3 >/dev/null 2>&1 && python3 -c 'import json' >/dev/null 2>&
     trap 'rm -rf -- "$fixture_root"' EXIT
     fixture_json="$fixture_root/inspect.json"
     cat >"$fixture_json" <<'JSON'
-{"Id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Tty":false},"HostConfig":{"Binds":["/srv/subnexus-migration/runtime/subnexus-data:/app/data:rw"],"ConsoleSize":[49,202],"LogConfig":{"Type":"json-file","Config":{"max-file":"5","max-size":"20m"}}},"Mounts":[{"Type":"bind","Source":"/srv/subnexus-migration/runtime/subnexus-data","Destination":"/app/data","Mode":"rw","RW":true,"Propagation":"rprivate"}],"NetworkSettings":{"Networks":{"sub2api-net":{"NetworkID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}}
+{"Id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Config":{"Tty":false,"AttachStdout":false,"AttachStderr":false},"HostConfig":{"Binds":["/srv/subnexus-migration/runtime/subnexus-data:/app/data:rw"],"ConsoleSize":[49,202],"LogConfig":{"Type":"json-file","Config":{"max-file":"5","max-size":"20m"}}},"Mounts":[{"Type":"bind","Source":"/srv/subnexus-migration/runtime/subnexus-data","Destination":"/app/data","Mode":"rw","RW":true,"Propagation":"rprivate"}],"NetworkSettings":{"Networks":{"sub2api-net":{"NetworkID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}}
 JSON
     app_id='fixture-app'
     docker_rpc() { [[ "$1" == inspect ]] || return 98; cat "$fixture_json"; }
+    validate_runtime_contract_supported
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["Config"]["AttachStdout"] = True
+path.write_text(json.dumps(data))
+PY
+    if (
+      fail() { return 77; }
+      validate_runtime_contract_supported >/dev/null 2>&1
+    ); then
+      fail 'AttachStdout=true was accepted'
+    fi
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["Config"]["AttachStdout"] = False
+path.write_text(json.dumps(data))
+PY
     validate_runtime_contract_supported
     FIXTURE_JSON="$fixture_json" python3 - <<'PY'
 import json

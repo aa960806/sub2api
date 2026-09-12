@@ -403,7 +403,7 @@ bash "$0" --timeout prepare
 for phase in switch rollback recover; do
   if bash "$0" --timeout "$phase" >/dev/null 2>&1; then test_fail "$phase accepted a prepare-only Docker timeout"; fi
 done
-[[ "$(sha256sum "$controller" | awk '{print $1}')" == 19824a87e3e1de5659cb30664750b71c5c10d374f25bda7f52e6524fe477ee65 ]] || test_fail 'approved migration controller changed'
+[[ "$(sha256sum "$controller" | awk '{print $1}')" == 307fe13b1260af226ffa2ded52df5aba5d6a2285fa5d35bad2f0fee69eab823c ]] || test_fail 'approved migration controller changed'
 if grep -n $'\r' "$subject"; then test_fail 'UI controller must use LF'; fi
 for forbidden in 'docker commit' 'docker build' 'docker image save' 'docker image tag' 'docker system prune' 'nginx -s'; do
   if grep -Fq "$forbidden" "$subject"; then test_fail "forbidden UI controller operation: $forbidden"; fi

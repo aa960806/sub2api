@@ -1110,8 +1110,14 @@ def reject(condition, label):
 # custom value would require an explicit create flag that this controller does
 # not issue.
 reject(config.get("AttachStdin") not in (None, False), "Config.AttachStdin")
-reject(config.get("AttachStdout") not in (None, True), "Config.AttachStdout")
-reject(config.get("AttachStderr") not in (None, True), "Config.AttachStderr")
+# Docker container create defaults both stream attachment flags to false.
+# Older live containers may report null (API omitted the field), while some
+# engines normalize the omitted value to false.  The controller does not pass
+# `--attach` flags, so both representations are safely reproduced; accepting
+# true would be unsafe because the candidate could not recreate an attached
+# stdout/stderr stream without changing the create arguments.
+reject(config.get("AttachStdout") not in (None, False), "Config.AttachStdout")
+reject(config.get("AttachStderr") not in (None, False), "Config.AttachStderr")
 reject(config.get("OpenStdin") not in (None, False), "Config.OpenStdin")
 reject(config.get("StdinOnce") not in (None, False), "Config.StdinOnce")
 reject(config.get("Tty") not in (None, False), "Config.Tty")
@@ -1265,9 +1271,14 @@ if log_options:
 network_names = sorted(str(name) for name in networks)
 reject(not network_names, "NetworkSettings.Networks(empty)")
 network_mode = host.get("NetworkMode")
-first_network = network_names[0] if network_names else ""
-first_id = str((networks.get(first_network) or {}).get("NetworkID") or "")
-reject(network_mode not in (None, "", first_network, first_id), "HostConfig.NetworkMode")
+network_ids = {str(name): str((networks.get(name) or {}).get("NetworkID") or "")
+               for name in network_names}
+# Docker may report any attached network as HostConfig.NetworkMode.  The
+# replacement explicitly attaches all networks, so accept a mode matching
+# one of the captured names or IDs; capture_runtime_metadata subsequently
+# places this primary network first for deterministic recreation.
+allowed_network_modes = {None, ""} | set(network_names) | {value for value in network_ids.values() if value}
+reject(network_mode not in allowed_network_modes, "HostConfig.NetworkMode")
 
 for mount in obj.get("Mounts") or []:
     if not isinstance(mount, dict):
@@ -1783,7 +1794,7 @@ sys.stdout.write("".join(arg + "\n" for arg in value))
 }
 
 capture_runtime_metadata() {
-  local env_file="$run_dir/container.env" entrypoint_line cmd_line security_line network_id metadata_file
+  local env_file="$run_dir/container.env" entrypoint_line cmd_line security_line network_id metadata_file network_mode preferred_network reordered_networks
   docker_rpc inspect --format '{{.Id}}' "$live_app_ref" > /dev/null || fail "live application container not found: $live_app_ref"
   app_id="$(docker_rpc inspect --format '{{.Id}}' "$live_app_ref")" || fail 'cannot identify live application container'
   app_id="${app_id#sha256:}"
@@ -1810,6 +1821,7 @@ print(json.dumps(obj, sort_keys=True, separators=(",", ":")))
  ' > "$run_dir/live-app.inspect.json"
   capture_environment_metadata "$app_id" "$env_file" "$run_dir/environment-duplicates.tsv" prepare
   docker_rpc inspect --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$app_id" | sed '/^[[:space:]]*$/d' > "$run_dir/networks.txt"
+  network_mode="$(docker_rpc inspect --format '{{.HostConfig.NetworkMode}}' "$app_id")"
   docker_rpc inspect --format '{{range .HostConfig.SecurityOpt}}{{println .}}{{end}}' "$app_id" | sed '/^[[:space:]]*$/d' > "$run_dir/security-opt.txt"
   validate_security_options_file "$run_dir/security-opt.txt"
   docker_rpc inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$app_id" > "$run_dir/restart-policy.txt"
@@ -1869,6 +1881,26 @@ for network,data in sorted(value.items()):
     valid_container_ref "$network_id" || fail "network ID is invalid: $network"
     printf '%s|%s\n' "$network" "$network_id" >> "$run_dir/network-identities.txt"
   done < "$run_dir/networks.txt"
+  # Docker's network map iteration is lexical, which can differ from the
+  # primary network recorded in HostConfig.NetworkMode.  Put that network
+  # first so `docker create --network` reproduces the same mode while the
+  # remaining attachments are connected afterward.
+  preferred_network=''
+  while IFS='|' read -r network network_id; do
+    if [[ -n "$network_mode" && ( "$network" == "$network_mode" || "$network_id" == "$network_mode" ) ]]; then
+      preferred_network="$network"
+      break
+    fi
+  done < "$run_dir/network-identities.txt"
+  if [[ -n "$preferred_network" ]]; then
+    reordered_networks="$run_dir/.networks.reordered"
+    {
+      printf '%s\n' "$preferred_network"
+      awk -v preferred="$preferred_network" '$0 != preferred { print }' "$run_dir/networks.txt"
+    } > "$reordered_networks"
+    chmod 600 "$reordered_networks"
+    mv -f -- "$reordered_networks" "$run_dir/networks.txt"
+  fi
   chmod 600 "$run_dir/network-identities.txt"
   mapfile -t app_network_ids < <(cut -d'|' -f2 "$run_dir/network-identities.txt")
   capture_ports_and_select_health_port
