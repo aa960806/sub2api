@@ -1493,7 +1493,15 @@ contract = {
     "Networks": networks,
 }
 contract["Config"]["Healthcheck"] = normalize_healthcheck(config.get("Healthcheck"))
+# Docker 29 defaults attach flags to true for containers created through the
+# CLI even when the live container records false. Attachment only controls
+# stream plumbing and is not an application runtime contract difference.
+contract["Config"]["AttachStdout"] = False
+contract["Config"]["AttachStderr"] = False
 contract["HostConfig"]["Binds"] = contract_bind_mounts
+for network in contract["Networks"].values():
+    if network.get("DriverOpts") == {}:
+        network["DriverOpts"] = None
 if config.get("Tty") in (None, False):
     contract["HostConfig"]["ConsoleSize"] = [0, 0]
 # Docker may serialize an omitted log driver/type as null while `docker
