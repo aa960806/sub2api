@@ -1311,7 +1311,7 @@ for mount in host.get("Mounts") or []:
 }
 
 capture_runtime_contract_hash() {
-  local id="$1"
+  local id="$1" contract_mode="${2:-live}"
   # Hash only stable runtime configuration. Container IDs, names, process
   # state, network endpoint IDs/IPs, and image IDs are intentionally excluded;
   # all other fields that can change application behavior or isolation are
@@ -1328,6 +1328,7 @@ import shlex
 import sys
 
 runtime_env_mode = sys.argv[1] if len(sys.argv) > 1 else "strict"
+contract_mode = sys.argv[2] if len(sys.argv) > 2 else "live"
 if runtime_env_mode not in ("strict", "last-wins"):
     raise SystemExit("invalid runtime environment mode")
 obj = json.load(sys.stdin)
@@ -1493,15 +1494,15 @@ contract = {
     "Networks": networks,
 }
 contract["Config"]["Healthcheck"] = normalize_healthcheck(config.get("Healthcheck"))
-# Docker 29 defaults attach flags to true for containers created through the
-# CLI even when the live container records false. Attachment only controls
-# stream plumbing and is not an application runtime contract difference.
-contract["Config"]["AttachStdout"] = False
-contract["Config"]["AttachStderr"] = False
 contract["HostConfig"]["Binds"] = contract_bind_mounts
-for network in contract["Networks"].values():
-    if network.get("DriverOpts") == {}:
-        network["DriverOpts"] = None
+if contract_mode == "candidate":
+    # Docker 29 CLI creation normalizes these metadata fields differently
+    # from the existing live container; they are semantically equivalent.
+    contract["Config"]["AttachStdout"] = False
+    contract["Config"]["AttachStderr"] = False
+    for network in contract["Networks"].values():
+        if network.get("DriverOpts") == {}:
+            network["DriverOpts"] = None
 if config.get("Tty") in (None, False):
     contract["HostConfig"]["ConsoleSize"] = [0, 0]
 # Docker may serialize an omitted log driver/type as null while `docker
@@ -1553,7 +1554,7 @@ for key in ("CapAdd", "CapDrop"):
             normalized.append(token)
         contract["HostConfig"][key] = sorted(normalized)
 print(hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest())
- ' "${environment_duplicate_mode:-strict}"
+ ' "${environment_duplicate_mode:-strict}" "$contract_mode"
 }
 
 capture_dependency_identity() {
@@ -3905,7 +3906,7 @@ assert_candidate_runtime_contract() {
   assert_candidate_network_identities
   expected="$(read_one_line "$run_dir/runtime-contract.sha256")"
   assert_environment_matches_prepare "$candidate_id" candidate
-  actual="$(capture_runtime_contract_hash "$candidate_id")" || fail 'cannot inspect candidate runtime contract'
+  actual="$(capture_runtime_contract_hash "$candidate_id" candidate)" || fail 'cannot inspect candidate runtime contract'
   [[ "$actual" == "$expected" ]] || fail 'candidate runtime contract differs from the prepared live container'
 }
 
