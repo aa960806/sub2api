@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # Application-only refresh. The migration controller supplies its existing
 # runtime/backup checks, but never its switch, gate-writing, or rollback path.
-readonly ui_controller_sha='546eb40253bea0f7277c625cc62487a09691d97c022cffd53649b0291b211205'
+readonly ui_controller_sha='9ca8cb4930c857e99f594643ab4063cf7e3c89f5d46696b7962be197740e1ed5'
 ui_entry_path=''
 ui_controller_path=''
 ui_anchor_validation=0
