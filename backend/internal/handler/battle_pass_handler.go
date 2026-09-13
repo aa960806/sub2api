@@ -230,5 +230,10 @@ func (h *BattlePassHandler) requireService(c *gin.Context) bool {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("BATTLE_PASS_UNAVAILABLE", "battle pass service is unavailable"))
 		return false
 	}
+	// Propagate administrator status into the service context so the
+	// admin-only visibility switch is enforced by every endpoint.
+	if role, ok := middleware.GetUserRoleFromContext(c); ok {
+		c.Request = c.Request.WithContext(service.WithBattlePassAdmin(c.Request.Context(), role == service.RoleAdmin))
+	}
 	return true
 }

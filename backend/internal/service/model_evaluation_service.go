@@ -39,8 +39,12 @@ type modelEvaluationActiveRun struct {
 func NewModelEvaluationService(repo ModelEvaluationRepository, settings SettingRepository, groups GroupRepository, encryptor SecretEncryptor) *ModelEvaluationService {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ModelEvaluationService{repo: repo, settings: settings, groups: groups, encryptor: encryptor, ctx: ctx, cancel: cancel, tickInterval: 5 * time.Second, active: make(map[int64]modelEvaluationActiveRun), client: &http.Client{
-		Timeout:       time.Duration(ModelEvaluationRequestTimeoutSeconds) * time.Second,
-		Transport:     &http.Transport{Proxy: nil, DialContext: modelEvaluationSafeDialContext, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 170 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second},
+		Timeout: time.Duration(ModelEvaluationRequestTimeoutSeconds) * time.Second,
+		// A provider may spend several minutes queueing a large HTML generation
+		// before it sends SSE headers. Keep the header budget aligned with the
+		// request budget; the previous 170s limit caused false timeout samples
+		// even though the documented per-request limit is 600s.
+		Transport:     &http.Transport{Proxy: nil, DialContext: modelEvaluationSafeDialContext, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: time.Duration(ModelEvaluationRequestTimeoutSeconds) * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirects are disabled") },
 	}}
 }

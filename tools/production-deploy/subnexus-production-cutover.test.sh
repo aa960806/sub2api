@@ -1221,6 +1221,60 @@ JSON
     true_oom_runtime_hash="$(capture_runtime_contract_hash fixture)"
     [[ "$true_oom_runtime_hash" != "$false_oom_runtime_hash" ]] ||
       fail 'true OomKillDisable value was hidden by runtime normalization'
+
+    # Regression for the production Docker 29 contract: live containers may
+    # report AttachStdout/Stderr=true and mixed {} / null DriverOpts. Candidate
+    # mode must hash the same stable contract; candidate-only rewriting would
+    # make these equal containers fail before startup.
+    cat >"$runtime_json" <<'JSON'
+{"Id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","Name":"/subnexus","Config":{"AttachStdout":true,"AttachStderr":true,"Tty":false,"Env":["APP_MODE=production"]},"HostConfig":{"LogConfig":{"Type":"json-file","Config":{}},"PortBindings":{"3000/tcp":[{"HostIp":"","HostPort":"3000"}]},"Memory":0,"MemorySwap":0,"MemoryReservation":0,"NanoCpus":0,"PidsLimit":0,"OomKillDisable":false},"Mounts":[],"NetworkSettings":{"Networks":{"cpa-stack_default":{"Aliases":["subnexus"],"DriverOpts":{}},"sub2api-net":{"Aliases":["subnexus"],"DriverOpts":null}}}}
+JSON
+    production_runtime_hash="$(capture_runtime_contract_hash fixture live)"
+    candidate_runtime_hash="$(capture_runtime_contract_hash fixture candidate)"
+    [[ "$production_runtime_hash" == "$candidate_runtime_hash" ]] ||
+      fail 'candidate-only stream/network normalization changed an equivalent runtime contract'
+    FIXTURE_JSON="$runtime_json" python3 - <<'PY'
+import json, os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["Config"]["Env"] = ["APP_MODE=staging"]
+path.write_text(json.dumps(data))
+PY
+    [[ "$(capture_runtime_contract_hash fixture candidate)" != "$candidate_runtime_hash" ]] ||
+      fail 'environment contract change was not detected'
+    FIXTURE_JSON="$runtime_json" python3 - <<'PY'
+import json, os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["Config"]["Env"] = ["APP_MODE=production"]
+data["HostConfig"]["PortBindings"]["3000/tcp"][0]["HostPort"] = "3001"
+path.write_text(json.dumps(data))
+PY
+    [[ "$(capture_runtime_contract_hash fixture candidate)" != "$candidate_runtime_hash" ]] ||
+      fail 'port contract change was not detected'
+    FIXTURE_JSON="$runtime_json" python3 - <<'PY'
+import json, os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["HostConfig"]["Memory"] = 4096
+path.write_text(json.dumps(data))
+PY
+    [[ "$(capture_runtime_contract_hash fixture candidate)" != "$candidate_runtime_hash" ]] ||
+      fail 'resource contract change was not detected'
+    FIXTURE_JSON="$runtime_json" python3 - <<'PY'
+import json, os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["HostConfig"]["Memory"] = 0
+data["NetworkSettings"]["Networks"]["cpa-stack_default"]["DriverOpts"] = {"com.example": "changed"}
+path.write_text(json.dumps(data))
+PY
+    [[ "$(capture_runtime_contract_hash fixture candidate)" != "$candidate_runtime_hash" ]] ||
+      fail 'network driver options change was not detected'
   )
 else
   printf 'subnexus duplicate environment fixtures skipped (requires usable python3)\n'
@@ -1404,12 +1458,19 @@ data = json.loads(path.read_text())
 data["Config"]["AttachStdout"] = True
 path.write_text(json.dumps(data))
 PY
-    if (
-      fail() { return 77; }
-      validate_runtime_contract_supported >/dev/null 2>&1
-    ); then
-      fail 'AttachStdout=true was accepted'
-    fi
+    # Existing production containers may have true stream attachment flags.
+    # They are safe because the candidate preserves the same contract fields.
+    validate_runtime_contract_supported
+    FIXTURE_JSON="$fixture_json" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+path = Path(os.environ["FIXTURE_JSON"])
+data = json.loads(path.read_text())
+data["Config"]["AttachStderr"] = True
+path.write_text(json.dumps(data))
+PY
+    validate_runtime_contract_supported
     FIXTURE_JSON="$fixture_json" python3 - <<'PY'
 import json
 import os

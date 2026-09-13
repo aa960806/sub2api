@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BattlePassConfig from '../BattlePassConfig.vue'
+import { createBattlePassThirtyLevelPreset } from '../battlePassPresets'
 
 const getSettings = vi.hoisted(() => vi.fn())
 const updateSettings = vi.hoisted(() => vi.fn())
@@ -103,7 +104,7 @@ describe('BattlePassConfig', () => {
     await toggle.setValue(true)
     await flushPromises()
 
-    expect(updateSettings).toHaveBeenCalledWith({ enabled: true })
+    expect(updateSettings).toHaveBeenCalledWith({ enabled: true, admin_only: false })
     expect((toggle.element as HTMLInputElement).checked).toBe(false)
     expect(wrapper.text()).toContain('save failed')
   })
@@ -160,6 +161,32 @@ describe('BattlePassConfig', () => {
       'video_count', 'recharge_count', 'recharge_amount', 'valid_invite_count', 'invitee_recharge_count',
     ])
     expect(wrapper.text()).not.toContain('暂不可发布')
+  })
+
+  it('fills the production 30-level preset without saving or publishing', async () => {
+    const preset = createBattlePassThirtyLevelPreset()
+    expect(preset.levels).toHaveLength(30)
+    expect(preset.levels[0]?.required_exp).toBe(0)
+    expect(preset.levels.at(-1)?.required_exp).toBe(2320)
+    expect(preset.tasks).toHaveLength(10)
+    expect(preset.rewards).toHaveLength(60)
+    expect(preset.rewards.filter((reward) => reward.track === 'free')).toHaveLength(30)
+    expect(preset.rewards.filter((reward) => reward.track === 'premium')).toHaveLength(30)
+
+    const wrapper = mount(BattlePassConfig, {
+      global: { stubs: { TotpStepUpDialog: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="battle-pass-fill-30-level-preset"]').trigger('click')
+
+    expect(wrapper.findAll('button[title^="删除等级"]').length).toBe(30)
+    expect(wrapper.findAll('[data-testid="battle-pass-task-type"]').length).toBe(10)
+    expect(wrapper.findAll('[data-testid="battle-pass-reward-type"]').length).toBe(60)
+    expect(wrapper.text()).toContain('已填充30级活动预设')
+    expect(createSeason).not.toHaveBeenCalled()
+    expect(updateSeason).not.toHaveBeenCalled()
+    expect(publishSeason).not.toHaveBeenCalled()
   })
 
   it('selects subscription rewards by active subscription group name and explains cosmetic effects', async () => {

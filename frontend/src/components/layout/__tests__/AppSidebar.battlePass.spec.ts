@@ -7,7 +7,8 @@ const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..
 
 describe('AppSidebar Battle Pass integration', () => {
   it('gates the user entry with the opt-in flag', () => {
-    expect(source).toContain('const flagBattlePass = makeSidebarFlag(FeatureFlags.battlePass)')
+    expect(source).toContain('const flagBattlePassBase = makeSidebarFlag(FeatureFlags.battlePass)')
+    expect(source).toContain("appStore.cachedPublicSettings?.battle_pass_admin_only !== true")
     expect(source).toContain("{ path: '/battle-pass', label: t('battlePass.title'), icon: TicketIcon, hideInSimpleMode: true, featureFlag: flagBattlePass }")
   })
 

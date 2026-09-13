@@ -407,6 +407,7 @@ export const useAppStore = defineStore('app', () => {
         subnexus_recharge_wheel_enabled: false,
         subnexus_invite_milestone_enabled: false,
         battle_pass_enabled: false,
+        battle_pass_admin_only: false,
         subnexus_first_recharge_enabled: false,
         subnexus_student_recharge_benefit_enabled: false,
         allow_user_view_error_requests: false,

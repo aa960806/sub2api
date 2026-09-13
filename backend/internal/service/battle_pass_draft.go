@@ -341,6 +341,10 @@ func (s *BattlePassService) requireUserAccess(ctx context.Context, now time.Time
 	if err := s.requireEnabled(ctx); err != nil {
 		return err
 	}
+	adminOnly, _ := s.IsAdminOnly(ctx)
+	if adminOnly && !battlePassAdminContext(ctx) {
+		return infraerrors.NotFound("BATTLE_PASS_DISABLED", "battle pass is not available")
+	}
 	return nil
 }
 

@@ -1110,14 +1110,11 @@ def reject(condition, label):
 # custom value would require an explicit create flag that this controller does
 # not issue.
 reject(config.get("AttachStdin") not in (None, False), "Config.AttachStdin")
-# Docker container create defaults both stream attachment flags to false.
-# Older live containers may report null (API omitted the field), while some
-# engines normalize the omitted value to false.  The controller does not pass
-# `--attach` flags, so both representations are safely reproduced; accepting
-# true would be unsafe because the candidate could not recreate an attached
-# stdout/stderr stream without changing the create arguments.
-reject(config.get("AttachStdout") not in (None, False), "Config.AttachStdout")
-reject(config.get("AttachStderr") not in (None, False), "Config.AttachStderr")
+# Docker versions report different defaults for stream attachment metadata.
+# Permit boolean values here, then require the created candidate to reproduce
+# the live values in the full runtime contract before starting it.
+reject(config.get("AttachStdout") not in (None, False, True), "Config.AttachStdout")
+reject(config.get("AttachStderr") not in (None, False, True), "Config.AttachStderr")
 reject(config.get("OpenStdin") not in (None, False), "Config.OpenStdin")
 reject(config.get("StdinOnce") not in (None, False), "Config.StdinOnce")
 reject(config.get("Tty") not in (None, False), "Config.Tty")
@@ -1495,14 +1492,9 @@ contract = {
 }
 contract["Config"]["Healthcheck"] = normalize_healthcheck(config.get("Healthcheck"))
 contract["HostConfig"]["Binds"] = contract_bind_mounts
-if contract_mode == "candidate":
-    # Docker 29 CLI creation normalizes these metadata fields differently
-    # from the existing live container; they are semantically equivalent.
-    contract["Config"]["AttachStdout"] = False
-    contract["Config"]["AttachStderr"] = False
-    for network in contract["Networks"].values():
-        if network.get("DriverOpts") == {}:
-            network["DriverOpts"] = None
+# Compare the same stable fields for live and candidate. Candidate-only
+# rewriting of AttachStdout/Stderr or DriverOpts breaks equal contracts.
+# The default live hash remains unchanged for retained historical anchors.
 if config.get("Tty") in (None, False):
     contract["HostConfig"]["ConsoleSize"] = [0, 0]
 # Docker may serialize an omitted log driver/type as null while `docker

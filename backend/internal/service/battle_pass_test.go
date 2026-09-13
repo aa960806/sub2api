@@ -209,6 +209,21 @@ func TestBattlePassUserAccessUsesIndependentGate(t *testing.T) {
 	}
 }
 
+func TestBattlePassUserAccessHonorsAdminOnlyVisibility(t *testing.T) {
+	settings := &battlePassSettingRepoStub{values: map[string]string{
+		SettingKeyBattlePassEnabled:   "true",
+		SettingKeyBattlePassAdminOnly: "true",
+	}}
+	svc := NewBattlePassService(nil, settings)
+
+	err := svc.requireUserAccess(WithBattlePassAdmin(context.Background(), false), time.Now())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "BATTLE_PASS_DISABLED")
+
+	err = svc.requireUserAccess(WithBattlePassAdmin(context.Background(), true), time.Now())
+	require.NoError(t, err)
+}
+
 func TestBattlePassEligibilityAllowsAnyActiveAccountRole(t *testing.T) {
 	for _, role := range []string{"user", "admin"} {
 		t.Run(role, func(t *testing.T) {

@@ -8,6 +8,7 @@ export default {
     adminEnabledHint: '用户访问已显式开启，已发布且进行中的赛季可以展示。',
     adminDisabledHint: '用户访问已关闭，仍可配置草稿赛季。',
     userSideSwitch: '开启用户访问',
+    adminOnlySwitch: '仅管理员可见',
     seasonName: '赛季名称',
     seasonDesc: '赛季说明',
     levels: '等级',

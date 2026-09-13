@@ -908,10 +908,9 @@ async function queryKey() {
 
 function initTheme() {
   const savedTheme = localStorage.getItem('theme')
-  if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  }
+  const shouldUseDark = savedTheme !== 'light'
+  isDark.value = shouldUseDark
+  document.documentElement.classList.toggle('dark', shouldUseDark)
 }
 
 function formatResetTime(resetAt: string | null | undefined): string {

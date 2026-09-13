@@ -1747,3 +1747,48 @@
 - Formal no-schema retained prepare run `/srv/subnexus-migration/cutover/20260912020559-3645138` completed with `state=prepared`, `ui_state=prepared`, `ui_commit_intent=no`, empty candidate container identity, and existing rollback target retained. Final read-only audit evidence `/srv/subnexus-migration/diagnostics/model-eval-065d6419f58f-final-audit.evidence` SHA256 `d97ae28db41fc9c8ad2386de2b3e99c2222c17f862d018c2f68f5f5f77de05d9`; `FINAL_PRE_SWITCH_AUDIT=passed`, `FINAL_SWITCH_EXECUTED=false`.
 - Due to capacity, only three superseded switched-run PostgreSQL dump files and their checksum sidecars were removed; current production data, current snapshot, fixed rollback target, and candidate archive were preserved. Cleanup evidence SHA256 `1aa58fbbb81e01766d836bfbf5215813ac16cbc9f3b1742f04fe7c88b875b166`.
 - No production switch, rollback, SQL migration, database restore, or feature toggle was executed. Manual switch/rollback commands are bound to run `20260912020559-3645138` and wrapper `no-schema-cutover-065d6419f58f-r2.sh`.
+
+## 2026-09-13 — 赛季战令切换校验修复，全部前置完成
+
+- 当前有效交接为 `docs/deployment-battlepass-20260913.md`，候选应用 `044e13fffb5a7a987f4bad241c1818bcae703383` / image `sha256:2f96efc46e3ff0e871106602e1b6793a140430a2dad63c45c55f03a094b70c50`。此前两个失败切换 run 已恢复原服务，不得复用其命令。
+- 根因是部署 controller 仅在 candidate 侧强制 AttachStdout/Stderr=false 并改写空 DriverOpts，导致本来一致的运行合同校验失败。现删除单向改写、接受生产真实 boolean 值；最终候选仍须在启动前通过完整运行合同校验，历史 live/anchor 算法未变。本地静态、故障注入和新增合同回归全部通过。
+- 服务器工具 SHA：controller `2ac370026cb1c33fdb0ee954a0b257fc8668e93142630de9eaa90d1eff219e9d`，UI `cd5fa18bf88113db341015ca80cea0f61dd26ce93332a4194d2e7115622f228d`，retained wrapper `b63b22b1f1154062a25d58f656c431efc79da332e7e14cd2766348d2d68c91fa`。本地 controller 另修正文档注释，实际逻辑与部署工具一致。
+- 正式 run `/srv/subnexus-migration/cutover/20260913035915-79960`，prepare 成功退出 0，state/ui_state/ui_commit_intent=`prepared/prepared/no`，READY/UI_READY/RETAINED_READY 完整、无 candidate ID 或临时容器。manifest SHA `27e2d0bcc46a727522045add81d554392adae5ff7e6e75e69fd2a9ec04813911`。
+- 最终真实 Docker probe 始终 `created|false|0|0001-01-01T00:00:00Z` 且已删除。live/default candidate/candidate-mode 合同 SHA 均为 `d03a6fa8064ffc8ff6f97b9586f64d538f198e1553ec81581691c271679382c8`。所有 stop 前门禁通过，审计退出 0，证据 `/srv/subnexus-migration/diagnostics/battlepass-contractfix-final-20260913035915-79960.evidence` SHA `f5520e0759bbefde092d21d36d3272b611217e2ef73caaada0b3af2c5bcdff07`。
+- 当前线上仍为 `99cb2f68...` / image `6e8b4f96...`，healthy/restart=0；PostgreSQL/Redis 的身份、启动时间、restart count 未变。独立 READ ONLY 检查无执行中结算任务或 schema DDL。没有执行生产切换、回滚、迁移、数据恢复或用户数据修改。
+- 本轮不新建永久回滚目标，继续保留 `e389b3b1...` / image `44e8dcf0...`；历史 anchor manifest SHA `7d54698f11485ce35c538fab46e9844327eaffc3e65dc5d37de3ae43faa86659` 未改。正常回滚只恢复应用容器，不还原数据库。最终命令 Docker timeout 必须为 `120`（switch/rollback 上限 600，不能使用 prepare 的 1800）。完整单行命令见本条交接文档，留给用户手动执行。
+
+### 2026-09-13 — 用户已执行切换
+
+- 用户执行最终 retained switch 成功，服务器输出 `RETAINED_RELEASE_SWITCH_COMPLETED=/srv/subnexus-migration/cutover/20260913035915-79960`。
+- 切换后线上容器 ID=`663f2878b9ebf59b7cb4275bee208ffb520d077575458a0d0c2aa49d6a61b782`，镜像=`sha256:2f96efc46e3ff0e871106602e1b6793a140430a2dad63c45c55f03a094b70c50`，running/healthy/restart=0；健康检查 HTTP 200。
+- 既有回滚目标 `subnexus-cutover-ui-prior-20260911130706-3232923` 保持 stopped；PostgreSQL 和 Redis 未被切换流程重启或恢复。用户数据、计费、余额、订单、订阅和用量未执行数据库写入。
+
+### 2026-09-13 — 模型能力监控预览与超时修复（本地待发布）
+
+- 用户反馈模型能力测试历史中部分成功结果默认没有画面，只有悬停才加载。`ModelEvaluationGallery` 现对所有当前视口内的成功卡片加载并显示缩略动画；继续使用 IntersectionObserver 限制离屏 iframe，悬停放大和点击弹窗行为保持不变。无 IntersectionObserver 时显示本页全部结果。
+- 后端原 `ResponseHeaderTimeout=170s` 早于文案所称单次 600 秒，模型在排队生成 HTML 时会被提前判定超时。现与 `ModelEvaluationRequestTimeoutSeconds` 对齐为 600 秒，并新增预算一致性测试；整体上下文、流式完成事件、大小限制、重试次数和错误脱敏规则保持不变。
+- 上游 HTTP 401/403（例如“Upstream access forbidden / Your request was blocked”）属于 Key、模型权限或上游访问策略拒绝，不是等待超时；仍按后台可诊断、用户端通用失败文案处理，不通过重试绕过权限。
+- 定向验证：`go test ./internal/service -run 'TestModelEvaluation' -count=1` 通过；前端 Preview/Gallery 共 12 项测试通过；`pnpm run typecheck` 通过；`git diff --check` 通过。尚未构建或发布到服务器。
+
+## 2026-09-13 — 战令管理员可见开关与 30 级活动预设（本地修改）
+
+- 新增 `battle_pass_admin_only` 设置，默认关闭。管理员后台可单独开启“仅管理员可见”；开启后普通用户的战令导航、路由和全部用户端战令 API 均隐藏并返回统一不可用（404 风格）响应，管理员仍可访问。公共设置注入该开关供前端路由/侧栏 fail-closed 判断，原有 `battle_pass_enabled`、权限和业务逻辑保持不变。
+- 管理员配置页新增可见性复选框，保存失败会恢复已持久化状态；后端通过请求角色上下文再次校验，不能仅靠前端绕过。设置写入保留原有启用快照与停用 epoch 保护。
+- 新增“30级活动预设”按钮，仅填充当前编辑草稿，不自动创建、保存、校验或发布。预设包含 30 个连续等级（每级 80 EXP，Lv.30 为 2320）、10 项兼容现有运行时的任务，以及免费/高级各 30 项奖励（共 60 项）；奖励使用余额和并发额度，不依赖订阅分组。管理员需检查赛季时间和价格后按现有流程保存草稿、校验并发布。
+- 定向验证通过：BattlePassConfig/AppSidebar/BattlePassView 共 30 项 Vitest；相关 Go service/handler/routes 测试通过；`go vet`、`pnpm run typecheck`、`git diff --check` 通过。未连接或修改生产环境，未写入生产数据库。
+
+### 2026-09-13 — 默认暗色主题与 Cyber Session 403 范围修复（本地修改）
+
+- 默认主题已统一为暗色：无 `localStorage.theme` 时使用 dark；用户显式保存 `light` 仍保持浅色。初始化入口、首页、侧栏和 Key 用量页逻辑一致。
+- 403 根因：上游返回 `cyber_policy` 后，网关原先无条件写入 Cyber Session Block；即使分组未纳入内容审计范围，也会污染会话屏蔽表，后续请求因此收到本地 403。
+- 修复后仅当风险控制已启用且当前分组/模型命中内容审计 scope 时写入会话屏蔽；范围外请求不再产生该副作用。首轮没有 assistant/model/tool 历史时不使用 transcript 作为会话屏蔽依据，避免相同 one-shot prompt 污染新会话；显式 session block 与 transcript 溢出 fail-closed 行为保留。
+- 已存在的 Redis 会话屏蔽键仍按原 TTL 自然过期，部署后短时间内可能继续命中；本轮未连接生产，也未删除线上数据。
+- 验证：后端 Cyber/ContentModeration/SecurityAudit 定向 service+handler 测试通过；前端主题、战令与视图定向 45 项 Vitest 通过；i18n 3 项、`pnpm run typecheck`、`pnpm run build`、`git diff --check` 通过。未执行线上部署或数据库操作。
+
+### 2026-09-13 — 用户决定撤回 Cyber Session 403 修复
+
+- 用户明确要求不要针对 403 问题修改代码，保持与原作者代码一致，并由用户引导受影响用户新建对话。此前本节所述 Cyber Session Block 范围修复、首轮 transcript 保护及其配套测试改动均按用户要求撤回，不得作为后续发布候选或部署依据。
+- 后续实现和发布流程必须保留原作者的会话安全策略逻辑；遇到该 403 时按上游/会话策略处理，引导用户新建会话，不再引入本地范围判断或额外放行逻辑。
+- 默认暗色主题修改继续保留；此前战令管理员可见开关、30 级活动预设、模型能力监控及其他既有修改继续保留，除非用户另行要求。此前章节内容保持不变。
+- 已将 7 个 403 相关源文件和测试文件精确恢复至原作者版本，`git diff` 确认这些文件无本轮改动；原有 Cyber/ContentModeration/SecurityAudit service 与 handler 定向测试恢复后通过。默认暗色主题的 4 处改动仍保留。

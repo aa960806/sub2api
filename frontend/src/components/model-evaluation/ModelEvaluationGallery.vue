@@ -100,8 +100,13 @@ const previewTitle = computed(() => {
   const selected = results.value.find(result => result.id === pinnedId.value)
   return selected ? `${selected.group_name} · ${selected.model}` : t('modelEvaluations.preview')
 })
+// Keep a thumbnail animation mounted for every successful card that is
+// currently visible.  Previously this was capped to the first two cards,
+// which left the remaining cards blank until the user hovered or opened them.
+// Visibility is still tracked with IntersectionObserver so off-screen cards
+// do not create iframe/animation work.
 const smallActiveIds = computed(() => new Set(documentVisible.value && !pinnedId.value && !hoverId.value
-  ? results.value.filter(result => result.status === 'success' && visibleIds.value.has(result.id)).slice(0, 2).map(result => result.id)
+  ? results.value.filter(result => result.status === 'success' && visibleIds.value.has(result.id)).map(result => result.id)
   : []))
 
 function formatTime(value: string) { return new Date(value).toLocaleString(locale.value) }
@@ -137,7 +142,9 @@ async function loadResults() {
     if (current === generation) {
       loading.value = false
       await nextTick()
-      if (!observer) visibleIds.value = new Set(results.value.slice(0, 2).map(result => result.id))
+      // Without IntersectionObserver we cannot know which cards are on-screen;
+      // render all result thumbnails so every card has a usable default preview.
+      if (!observer) visibleIds.value = new Set(results.value.map(result => result.id))
     }
   }
 }

@@ -40,7 +40,7 @@ func (h *BattlePassHandler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	settings, err := h.battlePassService.SetEnabled(c.Request.Context(), req.Enabled)
+	settings, err := h.battlePassService.SetSettings(c.Request.Context(), req.Enabled, req.AdminOnly)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -61,6 +61,18 @@ func TestModelEvaluationConfigFailsClosedAndNoRequest(t *testing.T) {
 	}
 }
 
+func TestModelEvaluationHTTPBudgetsAreAligned(t *testing.T) {
+	svc := NewModelEvaluationService(nil, nil, nil, nil)
+	defer svc.Stop()
+	require.Equal(t, time.Duration(ModelEvaluationRequestTimeoutSeconds)*time.Second, svc.client.Timeout)
+	transport, ok := svc.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	// Waiting for response headers must not fail before the documented
+	// per-request budget. This is especially important for providers that
+	// queue a long generation before opening an SSE stream.
+	require.Equal(t, svc.client.Timeout, transport.ResponseHeaderTimeout)
+}
+
 func TestModelEvaluationSchedulerDisabledDoesNotClaimOrCleanup(t *testing.T) {
 	// A nil repository panics if the loop touches any task/cleanup operation.
 	svc := NewModelEvaluationService(nil, evaluationTestSettings{value: "false"}, nil, nil)

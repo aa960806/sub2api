@@ -24,9 +24,8 @@ function initIOSViewportZoomFix() {
 
 function initThemeClass() {
   const savedTheme = localStorage.getItem('theme')
-  const shouldUseDark =
-    savedTheme === 'dark' ||
-    (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  // Dark is the product default. A previously persisted light choice remains respected.
+  const shouldUseDark = savedTheme !== 'light'
   document.documentElement.classList.toggle('dark', shouldUseDark)
 }
 

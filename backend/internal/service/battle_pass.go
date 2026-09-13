@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	SettingKeyBattlePassEnabled = "battle_pass_enabled"
-	ActivitySourceBattlePass    = "battle_pass"
+	SettingKeyBattlePassEnabled   = "battle_pass_enabled"
+	SettingKeyBattlePassAdminOnly = "battle_pass_admin_only"
+	ActivitySourceBattlePass      = "battle_pass"
 
 	BattlePassStatusDraft     = "draft"
 	BattlePassStatusScheduled = "scheduled"
@@ -26,6 +27,20 @@ const (
 type battlePassSettings interface {
 	GetValue(ctx context.Context, key string) (string, error)
 	Set(ctx context.Context, key, value string) error
+}
+
+type battlePassAdminContextKey struct{}
+
+// WithBattlePassAdmin marks a request as authenticated administrator access.
+// The marker is kept in request context so all service entry points enforce
+// the admin-only switch consistently.
+func WithBattlePassAdmin(ctx context.Context, isAdmin bool) context.Context {
+	return context.WithValue(ctx, battlePassAdminContextKey{}, isAdmin)
+}
+
+func battlePassAdminContext(ctx context.Context) bool {
+	v, _ := ctx.Value(battlePassAdminContextKey{}).(bool)
+	return v
 }
 
 type BattlePassService struct {
@@ -77,6 +92,17 @@ func (s *BattlePassService) IsEnabled(ctx context.Context) (bool, error) {
 	return raw == "true", nil
 }
 
+func (s *BattlePassService) IsAdminOnly(ctx context.Context) (bool, error) {
+	if s == nil || s.settings == nil {
+		return false, nil
+	}
+	raw, err := s.settings.GetValue(ctx, SettingKeyBattlePassAdminOnly)
+	if err != nil {
+		return false, nil
+	}
+	return raw == "true", nil
+}
+
 func (s *BattlePassService) requireEnabled(ctx context.Context) error {
 	enabled, err := s.IsEnabled(ctx)
 	if err != nil {
@@ -117,7 +143,27 @@ func (s *BattlePassService) GetSettings(ctx context.Context) (BattlePassSettings
 	if err != nil {
 		return BattlePassSettings{}, err
 	}
-	return BattlePassSettings{Enabled: enabled, TestToolsEnabled: BattlePassTestToolsEnabled()}, nil
+	adminOnly, _ := s.IsAdminOnly(ctx)
+	return BattlePassSettings{Enabled: enabled, AdminOnly: adminOnly, TestToolsEnabled: BattlePassTestToolsEnabled()}, nil
+}
+
+// SetSettings updates both rollout switches from the admin endpoint. The
+// enable switch keeps its existing snapshot/epoch safeguards; the visibility
+// switch is persisted immediately afterwards and is fail-closed on read.
+func (s *BattlePassService) SetSettings(ctx context.Context, enabled, adminOnly bool) (BattlePassSettings, error) {
+	result, err := s.SetEnabled(ctx, enabled)
+	if err != nil {
+		return result, err
+	}
+	value := "false"
+	if adminOnly {
+		value = "true"
+	}
+	if err := s.settings.Set(ctx, SettingKeyBattlePassAdminOnly, value); err != nil {
+		return BattlePassSettings{}, infraerrors.InternalServer("BATTLE_PASS_SAVE_SWITCH_FAILED", "failed to save battle pass visibility switch")
+	}
+	result.AdminOnly = adminOnly
+	return result, nil
 }
 
 func (s *BattlePassService) SetEnabled(ctx context.Context, enabled bool) (BattlePassSettings, error) {
@@ -178,6 +224,7 @@ func (s *BattlePassService) bumpActiveSeasonEpoch(ctx context.Context) error {
 
 type BattlePassSettings struct {
 	Enabled          bool `json:"enabled"`
+	AdminOnly        bool `json:"admin_only"`
 	TestToolsEnabled bool `json:"test_tools_enabled"`
 }
 

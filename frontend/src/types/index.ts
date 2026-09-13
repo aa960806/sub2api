@@ -308,6 +308,8 @@ export interface PublicSettings {
   subnexus_invite_milestone_enabled?: boolean
   /** Battle Pass is independently opt-in; missing values must remain disabled. */
   battle_pass_enabled?: boolean
+  /** Battle Pass remains available to administrators only when enabled. */
+  battle_pass_admin_only?: boolean
   /** First-recharge offer is independently opt-in and fail-closed. */
   subnexus_first_recharge_enabled?: boolean
   /** Student recharge benefit is independently opt-in and fail-closed. */

@@ -409,6 +409,7 @@ type PublicSettings struct {
 	SubNexusFirstRechargeEnabled          bool   `json:"subnexus_first_recharge_enabled"`
 	SubNexusStudentRechargeBenefitEnabled bool   `json:"subnexus_student_recharge_benefit_enabled"`
 	BattlePassEnabled                     bool   `json:"battle_pass_enabled"`
+	BattlePassAdminOnly                   bool   `json:"battle_pass_admin_only"`
 	InvoiceEnabled                        bool   `json:"invoice_enabled"`
 
 	// Grok model mapping policy (admin settings).

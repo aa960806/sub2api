@@ -9,6 +9,10 @@
         <input v-model="enabled" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" type="checkbox" @change="saveEnabled" />
         {{ t('battlePass.userSideSwitch') }}
       </label>
+      <label class="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700 dark:text-dark-200">
+        <input v-model="adminOnly" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" type="checkbox" @change="saveVisibility" />
+        {{ t('battlePass.adminOnlySwitch') }}
+      </label>
     </header>
 
     <p class="text-sm text-gray-500 dark:text-dark-400">
@@ -63,6 +67,7 @@
           <div><h3 class="text-base font-semibold text-gray-900 dark:text-white">任务</h3><p class="mt-1 text-xs text-gray-500 dark:text-dark-400">完成任务会自动获得 EXP；每日任务按赛季时区每日重置。</p></div>
           <div class="flex flex-wrap gap-2">
             <button class="btn btn-secondary btn-sm" type="button" title="填充完整验收配置" :disabled="!isDraftEditable" data-testid="battle-pass-fill-all-tasks" @click="fillAllTaskTypes"><Icon name="refresh" size="sm" /><span class="ml-1">全流程预设</span></button>
+            <button class="btn btn-secondary btn-sm" type="button" title="填充30级活动配置" :disabled="!isDraftEditable" data-testid="battle-pass-fill-30-level-preset" @click="fillThirtyLevelPreset"><Icon name="sparkles" size="sm" /><span class="ml-1">30级活动预设</span></button>
             <button class="btn btn-secondary btn-sm" type="button" title="新增任务" :disabled="!isDraftEditable" @click="addTask"><Icon name="plus" size="sm" /><span class="ml-1">新增</span></button>
           </div>
         </div>
@@ -188,6 +193,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { getAll as getAllGroups } from '@/api/admin/groups'
 import { useAppStore } from '@/stores/app'
 import type { AdminGroup } from '@/types'
+import { createBattlePassThirtyLevelPreset } from './battlePassPresets'
 import {
   activateBattlePassSeasonForTest, completeBattlePassTasksForTest, createBattlePassSeason, endBattlePassSeason,
   getBattlePassSeason, getBattlePassSettings, getBattlePassTestState, listBattlePassSeasons,
@@ -200,6 +206,8 @@ const { t } = useI18n()
 const stepUp = useStepUp()
 const appStore = useAppStore()
 const enabled = ref(false)
+const adminOnly = ref(false)
+const persistedAdminOnly = ref(false)
 const persistedEnabled = ref(false)
 const testToolsEnabled = ref(false)
 const testUserId = ref(1)
@@ -366,6 +374,14 @@ function fillAllTaskTypes() {
   syncLevels()
   message.value = '已填充 3 个等级、全部 10 类任务和 6 项双轨奖励；每项任务奖励 25 EXP。'
 }
+function fillThirtyLevelPreset() {
+  const preset = createBattlePassThirtyLevelPreset()
+  draft.levels = preset.levels.map((level) => ({ ...level }))
+  draft.tasks = preset.tasks.map((task) => ({ ...task, filter_values: [...task.filter_values] }))
+  draft.rewards = preset.rewards.map((reward) => ({ ...reward, payload: { ...reward.payload } }))
+  syncLevels()
+  message.value = '已填充30级活动预设（10项任务、双轨里程碑奖励）。请检查赛季时间和价格后保存草稿，再校验并发布。'
+}
 function removeTask(index: number) { if (draft.tasks.length > 1) draft.tasks.splice(index, 1) }
 function addReward() { draft.rewards.push({ level: 1, track: draft.rewards.some((reward) => reward.track === 'free') ? 'premium' : 'free', reward_type: 'balance', payload: { amount: 0.1 } }) }
 function canRemoveReward(reward: BattlePassRewardInput) { return draft.rewards.filter((item) => item.track === reward.track).length > 1 }
@@ -397,6 +413,11 @@ function syncPublicFlag(value: boolean) {
   }
   try { window.dispatchEvent(new CustomEvent('battle-pass-config-changed')) } catch { /* non-browser test runtime */ }
 }
+function syncAdminOnlyFlag(value: boolean) {
+  if (appStore.cachedPublicSettings) {
+    appStore.cachedPublicSettings = { ...appStore.cachedPublicSettings, battle_pass_admin_only: value }
+  }
+}
 onMounted(() => { void reload() })
 async function loadSubscriptionGroups() {
   subscriptionGroupsError.value = ''
@@ -412,13 +433,20 @@ async function reload() {
   try {
     const [settings, seasonList] = await Promise.all([getBattlePassSettings(), listBattlePassSeasons(), loadSubscriptionGroups()])
     const confirmedEnabled = settings.enabled === true
+    const confirmedAdminOnly = settings.admin_only === true
     enabled.value = confirmedEnabled
+    adminOnly.value = confirmedAdminOnly
+    persistedAdminOnly.value = confirmedAdminOnly
+    syncAdminOnlyFlag(confirmedAdminOnly)
     persistedEnabled.value = confirmedEnabled
     syncPublicFlag(confirmedEnabled)
     testToolsEnabled.value = settings.test_tools_enabled === true
     seasons.value = seasonList
   } catch (err) {
     enabled.value = false
+    adminOnly.value = false
+    persistedAdminOnly.value = false
+    syncAdminOnlyFlag(false)
     persistedEnabled.value = false
     testToolsEnabled.value = false
     seasons.value = []
@@ -430,14 +458,30 @@ async function saveEnabled() {
   error.value = ''
   const desired = enabled.value === true
   try {
-    const saved = await stepUp.run(() => updateBattlePassSettings({ enabled: desired }))
+    const saved = await stepUp.run(() => updateBattlePassSettings({ enabled: desired, admin_only: adminOnly.value === true }))
     const confirmedEnabled = saved.enabled === true
     enabled.value = confirmedEnabled
     persistedEnabled.value = confirmedEnabled
+    adminOnly.value = saved.admin_only === true
+    persistedAdminOnly.value = adminOnly.value
+    syncAdminOnlyFlag(adminOnly.value)
     syncPublicFlag(confirmedEnabled)
   } catch (err) {
     enabled.value = persistedEnabled.value
     error.value = battlePassErrorMessage(err, '保存参与开关失败。')
+  }
+}
+async function saveVisibility() {
+  error.value = ''
+  try {
+    const saved = await stepUp.run(() => updateBattlePassSettings({ enabled: enabled.value === true, admin_only: adminOnly.value === true }))
+    adminOnly.value = saved.admin_only === true
+    persistedAdminOnly.value = adminOnly.value
+    syncAdminOnlyFlag(adminOnly.value)
+  } catch (err) {
+    adminOnly.value = persistedAdminOnly.value
+    syncAdminOnlyFlag(persistedAdminOnly.value)
+    error.value = battlePassErrorMessage(err, '保存可见性开关失败。')
   }
 }
 async function saveDraft() {

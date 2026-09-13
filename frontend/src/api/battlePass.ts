@@ -2,6 +2,7 @@ import { apiClient } from './client'
 
 export interface BattlePassSettings {
   enabled: boolean
+  admin_only?: boolean
   test_tools_enabled?: boolean
 }
 

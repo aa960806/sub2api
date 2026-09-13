@@ -8,6 +8,7 @@ export default {
     adminEnabledHint: 'User access is explicitly enabled. Published active seasons can now be shown.',
     adminDisabledHint: 'User access is off. Draft seasons can still be configured.',
     userSideSwitch: 'Enable user access',
+    adminOnlySwitch: 'Admin-only visibility',
     seasonName: 'Season name',
     seasonDesc: 'Season description',
     levels: 'Levels',

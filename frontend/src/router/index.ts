@@ -1210,7 +1210,8 @@ router.beforeEach(async (to, _from, next) => {
     }
     if (
       !appStore.publicSettingsLoaded ||
-      appStore.cachedPublicSettings?.battle_pass_enabled !== true
+      appStore.cachedPublicSettings?.battle_pass_enabled !== true ||
+      (appStore.cachedPublicSettings?.battle_pass_admin_only === true && !authStore.isAdmin)
     ) {
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return

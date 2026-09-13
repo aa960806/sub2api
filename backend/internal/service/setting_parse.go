@@ -219,7 +219,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// fail closed until an administrator saves a validated policy.
 		SettingKeySubNexusInviteActivitiesEnabled: "false",
 		// Battle Pass is independently gated and defaults to disabled.
-		SettingKeyBattlePassEnabled: "false",
+		SettingKeyBattlePassEnabled:   "false",
+		SettingKeyBattlePassAdminOnly: "false",
 		// Invoice workflow is independently gated; the legacy JSON setting is
 		// retained only for parameters and rollback compatibility.
 		SettingKeySubNexusInvoiceEnabled: "false",

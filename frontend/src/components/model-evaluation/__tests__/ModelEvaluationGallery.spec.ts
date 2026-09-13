@@ -24,19 +24,19 @@ describe('model evaluation gallery', () => {
   })
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
-  it('fetches HTML only for two active previews and suspends them while enlarged', async () => {
+  it('fetches HTML for visible previews and suspends thumbnails while enlarged', async () => {
     const wrapper = render()
     await flushPromises()
-    expect(api.result).toHaveBeenCalledTimes(2)
-    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(2)
+    expect(api.result).toHaveBeenCalledTimes(4)
+    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(4)
     await wrapper.findAll('article > button')[2].trigger('click')
     await flushPromises()
-    expect(api.result).toHaveBeenCalledTimes(3)
+    expect(api.result).toHaveBeenCalledTimes(4)
     expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="dialog"]').text()).toContain('<html>3</html>')
     await wrapper.find('[data-testid="close"]').trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(4)
     wrapper.unmount()
   })
 
@@ -50,7 +50,7 @@ describe('model evaluation gallery', () => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: false })
     document.dispatchEvent(new Event('visibilitychange'))
     await nextTick()
-    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(4)
     wrapper.unmount()
   })
 
@@ -67,7 +67,7 @@ describe('model evaluation gallery', () => {
     await wrapper.findAll('article > button')[0].trigger('mouseleave')
     await nextTick()
     expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="animation"]')).toHaveLength(4)
     wrapper.unmount()
   })
 

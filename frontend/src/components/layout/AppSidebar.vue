@@ -699,7 +699,11 @@ const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagPluginManagement = makeSidebarFlag(FeatureFlags.pluginManagement)
 const flagActivityCenter = makeSidebarFlag(FeatureFlags.activityCenter)
 const flagLeaderboard = makeSidebarFlag(FeatureFlags.leaderboard)
-const flagBattlePass = makeSidebarFlag(FeatureFlags.battlePass)
+const flagBattlePassBase = makeSidebarFlag(FeatureFlags.battlePass)
+// An admin-only Battle Pass remains available to administrators while its
+// public navigation entry is hidden from ordinary users.
+const flagBattlePass = () => flagBattlePassBase()
+  && (isAdmin.value || appStore.cachedPublicSettings?.battle_pass_admin_only !== true)
 const flagInviteLottery = () => isInviteActivitySettingsEnabled(
   appStore.publicSettingsLoaded,
   appStore.cachedPublicSettings,
@@ -990,13 +994,9 @@ function handleGroupClick(item: NavItem) {
 
 // Initialize theme
 const savedTheme = localStorage.getItem('theme')
-if (
-  savedTheme === 'dark' ||
-  (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-) {
-  isDark.value = true
-  document.documentElement.classList.add('dark')
-}
+const shouldUseDark = savedTheme !== 'light'
+isDark.value = shouldUseDark
+document.documentElement.classList.toggle('dark', shouldUseDark)
 
 // Fetch admin settings (for feature-gated nav items like Ops).
 watch(

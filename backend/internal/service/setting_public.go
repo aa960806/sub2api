@@ -254,6 +254,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySubNexusStudentRechargeBenefitEnabled,
 		SettingKeyStudentRechargeBenefitConfig,
 		SettingKeyBattlePassEnabled,
+		SettingKeyBattlePassAdminOnly,
 		SettingKeyInvoiceConfig,
 		SettingKeySubNexusInvoiceEnabled,
 		SettingKeyAvailableChannelsEnabled,
@@ -411,6 +412,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SubNexusFirstRechargeEnabled:          firstRechargeEnabled,
 		SubNexusStudentRechargeBenefitEnabled: studentRechargeBenefitEnabled,
 		BattlePassEnabled:                     settings[SettingKeyBattlePassEnabled] == "true",
+		BattlePassAdminOnly:                   settings[SettingKeyBattlePassAdminOnly] == "true",
 		InvoiceEnabled:                        publicInvoiceConfigEnabled(settings[SettingKeyInvoiceConfig], settings[SettingKeySubNexusInvoiceEnabled]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
@@ -710,6 +712,7 @@ type PublicSettingsInjectionPayload struct {
 	SubNexusFirstRechargeEnabled          bool `json:"subnexus_first_recharge_enabled"`
 	SubNexusStudentRechargeBenefitEnabled bool `json:"subnexus_student_recharge_benefit_enabled"`
 	BattlePassEnabled                     bool `json:"battle_pass_enabled"`
+	BattlePassAdminOnly                   bool `json:"battle_pass_admin_only"`
 	InvoiceEnabled                        bool `json:"invoice_enabled"`
 	AvailableChannelsEnabled              bool `json:"available_channels_enabled"`
 	ModelPlazaEnabled                     bool `json:"model_plaza_enabled"`
@@ -808,6 +811,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		SubNexusFirstRechargeEnabled:          settings.SubNexusFirstRechargeEnabled,
 		SubNexusStudentRechargeBenefitEnabled: settings.SubNexusStudentRechargeBenefitEnabled,
 		BattlePassEnabled:                     settings.BattlePassEnabled,
+		BattlePassAdminOnly:                   settings.BattlePassAdminOnly,
 		InvoiceEnabled:                        settings.InvoiceEnabled,
 		AvailableChannelsEnabled:              settings.AvailableChannelsEnabled,
 		ModelPlazaEnabled:                     settings.ModelPlazaEnabled,
