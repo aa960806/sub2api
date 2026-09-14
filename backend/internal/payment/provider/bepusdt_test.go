@@ -98,6 +98,31 @@ func TestBepusdtCreatePaymentMatchesUpstreamProtocol(t *testing.T) {
 	require.Equal(t, "https://pay.example/pay/checkout/trade-1", resp.PayURL)
 }
 
+func TestBepusdtCreatePaymentSelectsNetworkFromPaymentType(t *testing.T) {
+	for _, tc := range []struct {
+		paymentType string
+		tradeType   string
+	}{
+		{payment.TypeBepusdtBEP20, "usdt.bep20"},
+		{payment.TypeBepusdtTRC20, "usdt.trc20"},
+	} {
+		t.Run(tc.paymentType, func(t *testing.T) {
+			provider := bepTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				var payload map[string]any
+				require.NoError(t, json.Unmarshal(body, &payload))
+				require.Equal(t, tc.tradeType, payload["trade_type"])
+				_, _ = io.WriteString(w, `{"status_code":200,"data":{"trade_id":"trade-network","payment_url":"https://pay.example/pay/trade-network"}}`)
+			})
+			req := bepCreateRequest()
+			req.PaymentType = tc.paymentType
+			_, err := provider.CreatePayment(context.Background(), req)
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestBepusdtRejectsInvalidRequestsWithoutContactingUpstream(t *testing.T) {
 	provider := bepTestProvider(t, func(http.ResponseWriter, *http.Request) {
 		t.Error("invalid payment request reached upstream")

@@ -19,6 +19,11 @@ const (
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
 	TypeBepusdt      PaymentType = "bepusdt"
+	// TypeBepusdtBEP20 and TypeBepusdtTRC20 select the network used by the
+	// BEpusdt instance. The legacy "bepusdt" type remains supported and uses
+	// the instance's configured tradeType.
+	TypeBepusdtBEP20 PaymentType = "bepusdt_bep20"
+	TypeBepusdtTRC20 PaymentType = "bepusdt_trc20"
 )
 
 // Order status constants shared across payment and service layers.
@@ -86,6 +91,8 @@ const ConfigKeyPublishableKey = "publishableKey"
 // For example, "alipay_direct" -> "alipay".
 func GetBasePaymentType(t string) string {
 	switch {
+	case t == TypeBepusdtBEP20 || t == TypeBepusdtTRC20:
+		return TypeBepusdt
 	case t == TypeEasyPay:
 		return TypeEasyPay
 	case t == TypeAirwallex:

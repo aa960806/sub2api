@@ -392,6 +392,12 @@ func InstanceSupportsType(supportedTypes string, target PaymentType) bool {
 
 func normalizeVisibleMethodSupportType(paymentType PaymentType) PaymentType {
 	switch strings.TrimSpace(paymentType) {
+	case TypeBepusdt, TypeBepusdtBEP20, TypeBepusdtTRC20,
+		"usdt_bep20", "usdt_trc20":
+		// Legacy instances commonly advertise only "bepusdt". Treat the
+		// network variants as the same provider capability for selection while
+		// preserving the requested variant for CreatePayment trade_type routing.
+		return TypeBepusdt
 	case TypeAlipay, TypeAlipayDirect:
 		return TypeAlipay
 	case TypeWxpay, TypeWxpayDirect:

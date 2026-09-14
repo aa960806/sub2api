@@ -55,9 +55,11 @@ func NewBepusdt(instanceID string, config map[string]string) (*Bepusdt, error) {
 	}
 	return &Bepusdt{instanceID: instanceID, config: cfg, client: &http.Client{Timeout: 20 * time.Second}}, nil
 }
-func (b *Bepusdt) Name() string                          { return "BEpusdt" }
-func (b *Bepusdt) ProviderKey() string                   { return "bepusdt" }
-func (b *Bepusdt) SupportedTypes() []payment.PaymentType { return []payment.PaymentType{"bepusdt"} }
+func (b *Bepusdt) Name() string        { return "BEpusdt" }
+func (b *Bepusdt) ProviderKey() string { return "bepusdt" }
+func (b *Bepusdt) SupportedTypes() []payment.PaymentType {
+	return []payment.PaymentType{payment.TypeBepusdt, payment.TypeBepusdtBEP20, payment.TypeBepusdtTRC20}
+}
 func (b *Bepusdt) MerchantIdentityMetadata() map[string]string {
 	return map[string]string{"apiBase": b.config["apiBase"]}
 }
@@ -70,7 +72,16 @@ func (b *Bepusdt) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 	if strings.TrimSpace(req.OrderID) == "" {
 		return nil, fmt.Errorf("bepusdt create missing order_id")
 	}
+	// A network-specific visible payment type takes precedence over the
+	// instance's legacy tradeType setting. Legacy "bepusdt" requests retain
+	// the configured tradeType (or the historical TRC20 default).
 	tradeType := b.config["tradeType"]
+	switch strings.ToLower(strings.TrimSpace(req.PaymentType)) {
+	case payment.TypeBepusdtBEP20:
+		tradeType = "usdt.bep20"
+	case payment.TypeBepusdtTRC20:
+		tradeType = "usdt.trc20"
+	}
 	if tradeType == "" {
 		tradeType = "usdt.trc20"
 	}

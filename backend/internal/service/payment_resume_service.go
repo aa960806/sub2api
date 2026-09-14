@@ -115,7 +115,16 @@ func (s *PaymentResumeService) ensureSigningKey() error {
 }
 
 func NormalizeVisibleMethod(method string) string {
-	return payment.GetBasePaymentType(strings.TrimSpace(method))
+	method = strings.TrimSpace(strings.ToLower(method))
+	// Preserve BEpusdt network variants for the checkout selector. The base
+	// payment helper intentionally collapses these variants for lifecycle and
+	// provider fallback code.
+	switch method {
+	case payment.TypeBepusdtBEP20, payment.TypeBepusdtTRC20:
+		return method
+	default:
+		return payment.GetBasePaymentType(method)
+	}
 }
 
 func NormalizeVisibleMethods(methods []string) []string {
