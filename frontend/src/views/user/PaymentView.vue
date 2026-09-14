@@ -912,6 +912,12 @@ const bepusdtNetworkOptions = computed<PaymentMethodOption[]>(() =>
     }),
 )
 
+watch(bepusdtNetworkOptions, (options) => {
+  if (options.length > 0 && !options.some((option) => option.type === selectedBepusdtNetwork.value)) {
+    selectedBepusdtNetwork.value = options[0].type
+  }
+}, { immediate: true })
+
 const canSubmitSubscription = computed(() =>
   selectedPlan.value !== null
     && amountFitsMethod(subTotalAmount.value, selectedMethod.value)
@@ -920,6 +926,11 @@ const canSubmitSubscription = computed(() =>
 
 // Auto-switch to first available method when current selection can't handle the amount
 watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) => {
+  if (method === 'bepusdt' && amt > 0 && !amountFitsMethod(amt, method)) {
+    const availableNetwork = bepusdtNetworkOptions.value.find((option) => option.available)
+    if (availableNetwork) selectedBepusdtNetwork.value = availableNetwork.type
+    return
+  }
   if (amt <= 0 || amountFitsMethod(amt, method)) return
   const available = enabledMethods.value.find((m) => amountFitsMethod(amt, m))
   if (available) selectedMethod.value = available
