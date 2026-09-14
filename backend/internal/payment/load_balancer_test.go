@@ -85,6 +85,18 @@ func TestInstanceSupportsType(t *testing.T) {
 			target:         "alipay",
 			expected:       true,
 		},
+		{
+			name:           "legacy BEpusdt supports explicit BSC network",
+			supportedTypes: TypeBepusdt,
+			target:         TypeBepusdtBEP20,
+			expected:       true,
+		},
+		{
+			name:           "explicit BSC does not claim TRC20",
+			supportedTypes: TypeBepusdtBEP20,
+			target:         TypeBepusdtTRC20,
+			expected:       false,
+		},
 	}
 
 	for _, tt := range tests {
