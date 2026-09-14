@@ -18,6 +18,8 @@ const VISIBLE_METHOD_ALIASES = {
   airwallex: 'airwallex',
 } as const
 
+const BEPUSDT_NETWORK_PAYMENT_TYPES = ['bepusdt_bep20', 'bepusdt_trc20'] as const
+
 export type VisiblePaymentMethod = 'alipay' | 'wxpay' | 'stripe' | 'airwallex'
 export type StripeVisibleMethod = 'alipay' | 'wechat_pay'
 export type PaymentLaunchKind =
@@ -103,6 +105,22 @@ export function normalizeVisibleMethod(method: string): VisiblePaymentMethod | '
   return normalized ?? ''
 }
 
+/** Composite BEpusdt types retain their network in API requests while sharing
+ * one visual payment method in the selector. */
+export function isBepusdtNetworkPaymentType(method: string): boolean {
+  return (BEPUSDT_NETWORK_PAYMENT_TYPES as readonly string[]).includes(method.trim())
+}
+
+export function normalizePaymentRequestType(method: string): string {
+  const trimmed = method.trim()
+  if (isBepusdtNetworkPaymentType(trimmed)) return trimmed
+  return normalizeVisibleMethod(trimmed) || trimmed
+}
+
+function visibleMethodForFlow(method: string): string {
+  return isBepusdtNetworkPaymentType(method) ? 'bepusdt' : (normalizeVisibleMethod(method) || method)
+}
+
 export function getVisibleMethods(methods: Record<string, MethodLimit>): Record<string, MethodLimit> {
   const visible: Record<string, MethodLimit> = {}
 
@@ -121,7 +139,7 @@ export function getVisibleMethods(methods: Record<string, MethodLimit>): Record<
 }
 
 export function buildCreateOrderPayload(input: BuildCreateOrderPayloadInput): CreateOrderRequest {
-  const visibleMethod = normalizeVisibleMethod(input.paymentType) || input.paymentType.trim()
+  const visibleMethod = normalizePaymentRequestType(input.paymentType)
   const normalizedOrigin = (input.origin || '').trim().replace(/\/+$/, '')
   // When forceQRCode is enabled for alipay, always tell the backend this is not a mobile
   // request so it generates a QR code instead of a mobile-redirect URL.
@@ -155,7 +173,7 @@ export function decidePaymentLaunch(
   result: CreateOrderFlowResult,
   context: PaymentLaunchContext,
 ): PaymentLaunchDecision {
-  const visibleMethod = normalizeVisibleMethod(context.visibleMethod) || context.visibleMethod
+  const visibleMethod = visibleMethodForFlow(context.visibleMethod)
   const baseState = createPaymentRecoverySnapshot({
     orderId: result.order_id,
     amount: result.amount,

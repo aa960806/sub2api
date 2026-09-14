@@ -59,6 +59,29 @@ describe('PaymentMethodSelector', () => {
     expect(wrapper.findAll('[data-testid="payment-method-label"]').every(label => label.classes().includes('truncate'))).toBe(true)
   })
 
+  it('shows BSC and TRC20 choices only after selecting USDT', async () => {
+    const wrapper = mount(PaymentMethodSelector, {
+      props: {
+        selected: 'alipay',
+        methods: [
+          { type: 'alipay', display_name: 'Alipay', fee_rate: 0, available: true },
+          { type: 'bepusdt', display_name: 'USDT', fee_rate: 0, available: true },
+        ],
+        selectedNetwork: 'bepusdt_bep20',
+        networkOptions: [
+          { type: 'bepusdt_bep20', display_name: 'BSC (BEP20)', fee_rate: 0, available: true },
+          { type: 'bepusdt_trc20', display_name: 'TRC20', fee_rate: 0, available: true },
+        ],
+      },
+    })
+    expect(wrapper.find('[data-testid="bepusdt-network-selector"]').exists()).toBe(false)
+    await wrapper.get('button[title="USDT"]').trigger('click')
+    await wrapper.setProps({ selected: 'bepusdt' })
+    expect(wrapper.find('[data-testid="bepusdt-network-selector"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="bepusdt-network-bepusdt_trc20"]').trigger('click')
+    expect(wrapper.emitted('selectNetwork')).toEqual([['bepusdt_trc20']])
+  })
+
   it('shows the configured display name for custom EasyPay methods', () => {
     const wrapper = mount(PaymentMethodSelector, {
       props: {

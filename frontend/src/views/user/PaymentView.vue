@@ -116,7 +116,10 @@
               <PaymentMethodSelector
                 :methods="methodOptions"
                 :selected="selectedMethod"
+                :selected-network="selectedBepusdtNetwork"
+                :network-options="bepusdtNetworkOptions"
                 @select="selectedMethod = $event"
+                @select-network="selectedBepusdtNetwork = $event"
               />
             </div>
             <div v-if="validAmount > 0" class="card p-6">
@@ -219,7 +222,10 @@
                 <PaymentMethodSelector
                   :methods="subMethodOptions"
                   :selected="selectedMethod"
+                  :selected-network="selectedBepusdtNetwork"
+                  :network-options="bepusdtNetworkOptions"
                   @select="selectedMethod = $event"
+                  @select-network="selectedBepusdtNetwork = $event"
                 />
               </div>
               <div v-if="feeRate > 0 && selectedPlan.price > 0" class="card p-6">
@@ -354,6 +360,7 @@ import {
   decidePaymentLaunch,
   getVisibleMethods,
   normalizeVisibleMethod,
+  normalizePaymentRequestType,
   readPaymentRecoverySnapshot,
   type PaymentRecoverySnapshot,
   writePaymentRecoverySnapshot,
@@ -413,6 +420,9 @@ const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
+// BEpusdt exposes one visual method with an explicit network choice. Keep the
+// composite value separate so existing method/limit handling remains intact.
+const selectedBepusdtNetwork = ref('bepusdt_bep20')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
 const firstRechargeGift = ref<FirstRechargeGiftStatus>({
@@ -644,7 +654,24 @@ const tabs = computed(() => {
 })
 
 const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
-const enabledMethods = computed(() => Object.keys(visibleMethods.value))
+const BEPUSDT_NETWORK_TYPES = ['bepusdt_bep20', 'bepusdt_trc20'] as const
+function isBepusdtNetwork(type: string): boolean {
+  return (BEPUSDT_NETWORK_TYPES as readonly string[]).includes(type)
+}
+function methodLimitKey(type: string): string {
+  if (type === 'bepusdt') return visibleMethods.value[selectedBepusdtNetwork.value]
+    ? selectedBepusdtNetwork.value
+    : visibleMethods.value.bepusdt
+      ? 'bepusdt'
+      : selectedBepusdtNetwork.value
+  return type
+}
+const enabledMethods = computed(() => {
+  const keys = Object.keys(visibleMethods.value)
+  const hasBepusdt = keys.some((type) => type === 'bepusdt' || isBepusdtNetwork(type))
+  const baseKeys = keys.filter((type) => !isBepusdtNetwork(type))
+  return hasBepusdt && !baseKeys.includes('bepusdt') ? [...baseKeys, 'bepusdt'] : baseKeys
+})
 const validAmount = computed(() => amount.value ?? 0)
 const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
@@ -702,7 +729,7 @@ const planGridClass = computed(() => {
 // Check if an amount fits a method's [min, max]. 0 = no limit.
 function amountFitsMethod(amt: number, methodType: string): boolean {
   if (amt <= 0) return true
-  const ml = visibleMethods.value[methodType]
+  const ml = visibleMethods.value[methodLimitKey(methodType)]
   if (!ml) return false
   if (ml.single_min > 0 && amt < ml.single_min) return false
   if (ml.single_max > 0 && amt > ml.single_max) return false
@@ -724,7 +751,7 @@ const globalMaxAmount = computed(() => {
 })
 
 // Selected method's limits (for validation and error messages)
-const selectedLimit = computed(() => visibleMethods.value[selectedMethod.value])
+const selectedLimit = computed(() => visibleMethods.value[methodLimitKey(selectedMethod.value)])
 const selectedCurrency = computed(() => normalizePaymentCurrency(selectedLimit.value?.currency))
 const localeCode = computed(() => {
   const raw = i18n.locale as unknown
@@ -774,7 +801,7 @@ function formatSelectedSubscriptionPaymentAmount(value: number): string {
 
 const methodOptions = computed<PaymentMethodOption[]>(() =>
   enabledMethods.value.map((type) => {
-    const ml = visibleMethods.value[type]
+    const ml = visibleMethods.value[methodLimitKey(type)] || visibleMethods.value[type]
     return {
       type,
       display_name: ml?.display_name,
@@ -859,7 +886,7 @@ function subscriptionTotalAmountForCurrency(value: number, currency: string): nu
 const subMethodOptions = computed<PaymentMethodOption[]>(() => {
   const price = selectedPlan.value?.price ?? 0
   return enabledMethods.value.map((type) => {
-    const ml = visibleMethods.value[type]
+    const ml = visibleMethods.value[methodLimitKey(type)] || visibleMethods.value[type]
     const currency = normalizePaymentCurrency(ml?.currency)
     return {
       type,
@@ -869,6 +896,20 @@ const subMethodOptions = computed<PaymentMethodOption[]>(() => {
     }
   })
 })
+
+const bepusdtNetworkOptions = computed<PaymentMethodOption[]>(() =>
+  BEPUSDT_NETWORK_TYPES
+    .filter((type) => visibleMethods.value[type] || (type === 'bepusdt_bep20' && visibleMethods.value.bepusdt))
+    .map((type) => {
+      const ml = visibleMethods.value[type] || visibleMethods.value.bepusdt
+      return {
+        type,
+        display_name: type === 'bepusdt_bep20' ? 'BSC (BEP20)' : 'TRC20',
+        fee_rate: ml?.fee_rate ?? 0,
+        available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
+      }
+    }),
+)
 
 const canSubmitSubscription = computed(() =>
   selectedPlan.value !== null
@@ -976,7 +1017,8 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
   submitting.value = true
   errorMessage.value = ''
   errorHintMessage.value = ''
-  const requestType = normalizeVisibleMethod(options.paymentType || selectedMethod.value) || options.paymentType || selectedMethod.value
+  const selectedRequestMethod = options.paymentType || (selectedMethod.value === 'bepusdt' ? selectedBepusdtNetwork.value : selectedMethod.value)
+  const requestType = normalizePaymentRequestType(selectedRequestMethod)
   // Never allow a resume or caller to attach the marker to subscriptions or
   // first-recharge gifts. The backend enforces the same invariant.
   try {
@@ -1442,10 +1484,12 @@ onMounted(async () => {
       if (restored) {
         paymentState.value = restored
         paymentPhase.value = 'paying'
-        const restoredMethod = normalizeVisibleMethod(restored.paymentType)
-          || (visibleMethods.value[restored.paymentType] ? restored.paymentType : '')
+        const restoredPaymentType = restored.paymentType
+        const restoredMethod = normalizeVisibleMethod(restoredPaymentType)
+          || (isBepusdtNetwork(restoredPaymentType) ? 'bepusdt' : visibleMethods.value[restoredPaymentType] ? restoredPaymentType : '')
         if (restoredMethod) {
           selectedMethod.value = restoredMethod
+          if (isBepusdtNetwork(restoredPaymentType)) selectedBepusdtNetwork.value = restoredPaymentType
         }
       } else {
         removeRecoverySnapshot()

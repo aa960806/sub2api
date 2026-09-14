@@ -39,6 +39,33 @@
         </span>
       </button>
     </div>
+    <div
+      v-if="selected === 'bepusdt' && networkOptions?.length"
+      data-testid="bepusdt-network-selector"
+      class="mt-4"
+    >
+      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('payment.network', '支付网络') }}</label>
+      <div class="grid grid-cols-2 gap-3">
+        <button
+          v-for="network in networkOptions"
+          :key="network.type"
+          type="button"
+          :disabled="!network.available"
+          :data-testid="`bepusdt-network-${network.type}`"
+          :class="[
+            'relative flex min-h-[56px] items-center justify-center rounded-lg border px-3 text-sm font-semibold transition-all',
+            !network.available
+              ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-50 dark:border-dark-700 dark:bg-dark-800/50'
+              : selectedNetwork === network.type
+                ? 'border-primary-500 bg-primary-50 text-gray-900 shadow-sm dark:bg-primary-950 dark:text-gray-100'
+                : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:border-dark-500',
+          ]"
+          @click="network.available && emit('selectNetwork', network.type)"
+        >
+          {{ network.display_name || network.type }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -62,13 +89,17 @@ export interface PaymentMethodOption {
 const props = defineProps<{
   methods: PaymentMethodOption[]
   selected: string
+  selectedNetwork?: string
+  networkOptions?: PaymentMethodOption[]
 }>()
 
 const emit = defineEmits<{
   select: [type: string]
+  selectNetwork: [type: string]
 }>()
 
 const { t } = useI18n()
+const selectedNetwork = computed(() => props.selectedNetwork || 'bepusdt_bep20')
 
 const METHOD_ICONS: Record<string, string> = {
   alipay: alipayIcon,

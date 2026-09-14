@@ -934,7 +934,7 @@ describe('PaymentView BEpusdt checkout', () => {
       expect(createOrder).toHaveBeenCalledOnce()
       expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
         amount: orderType === 'subscription' ? 128 : 10,
-        payment_type: 'bepusdt',
+        payment_type: 'bepusdt_bep20',
         order_type: orderType,
         ...(orderType === 'subscription' ? { plan_id: 7 } : {}),
         return_url: 'http://localhost/payment/result',
