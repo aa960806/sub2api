@@ -730,6 +730,7 @@ const planGridClass = computed(() => {
 function amountFitsMethod(amt: number, methodType: string): boolean {
   if (amt <= 0) return true
   const ml = visibleMethods.value[methodLimitKey(methodType)]
+    || (isBepusdtNetwork(methodType) ? visibleMethods.value.bepusdt : undefined)
   if (!ml) return false
   if (ml.single_min > 0 && amt < ml.single_min) return false
   if (ml.single_max > 0 && amt > ml.single_max) return false
