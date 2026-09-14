@@ -1866,3 +1866,9 @@
 - 已从本地及 OVH 服务器只读验证 `eth_chainId=0x38`、最新区块、交易回执，以及 BSC USDT Transfer 日志；10 区块扫描批次和 100 区块回溯请求均成功。更大范围受供应商策略限制，但 BEpusdt 默认每批 10 区块，满足扫描要求。
 - 已通过受限 BEpusdt 管理接口更新 `rpc_endpoint_bsc`。更新前后容器启动时间不变、重启次数仍为 0，订单表仅做只读核对（20 条）；未修改用户余额、订单、钱包地址或数据库结构。
 - 服务器审计记录写入 `/srv/subnexus-migration/payment-bepusdt-20260914/rpc-repair-*.json`，生产 BEpusdt 现可继续查询 BSC 链上 USDT 转账并触发原有回调流程。历史链下转账编号仍无法作为链上 TxID 识别。
+
+### 2026-09-15 — USDT 网络选择（本地，待发布）
+
+- 在现有充值/订阅页面的 USDT 方式下增加 BSC（BEP20）与 TRC20 子选项，保留原有支付宝、微信、订单、余额和回调流程。
+- 后端新增 `bepusdt_bep20` / `bepusdt_trc20` 请求类型；兼容旧 `bepusdt`，由 BEpusdt Provider 将网络类型映射为 `usdt.bep20` / `usdt.trc20`。无需数据库迁移，不改变历史订单。
+- 前端默认 BSC，恢复支付订单时保留网络选择；无可用网络时沿用原支付不可用状态。定向后端测试、前端 51 项支付测试及 typecheck 通过；当前仅提交本地代码，尚未部署线上。
