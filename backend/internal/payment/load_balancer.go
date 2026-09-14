@@ -262,6 +262,13 @@ func getInstanceChannelLimits(inst *dbent.PaymentProviderInstance, paymentType P
 	if cl, ok := limits[lookupKey]; ok {
 		return cl
 	}
+	// Preserve limits configured under the legacy BEpusdt key when a network
+	// specific payment type is selected.
+	if (paymentType == TypeBepusdtBEP20 || paymentType == TypeBepusdtTRC20) && lookupKey != TypeBepusdt {
+		if cl, ok := limits[TypeBepusdt]; ok {
+			return cl
+		}
+	}
 	if aliasKey := legacyVisibleMethodAlias(lookupKey); aliasKey != "" {
 		if cl, ok := limits[aliasKey]; ok {
 			return cl
@@ -380,10 +387,23 @@ func InstanceSupportsType(supportedTypes string, target PaymentType) bool {
 	if supportedTypes == "" {
 		return true
 	}
+	target = PaymentType(strings.TrimSpace(target))
 	normalizedTarget := normalizeVisibleMethodSupportType(target)
 	for _, t := range strings.Split(supportedTypes, ",") {
 		supported := strings.TrimSpace(t)
-		if supported == target || normalizeVisibleMethodSupportType(supported) == normalizedTarget {
+		if supported == target {
+			return true
+		}
+		// Legacy instances advertise only "bepusdt"; allow them to serve
+		// either explicit network while retaining network-specific isolation
+		// when the instance advertises one variant explicitly.
+		if (target == TypeBepusdtBEP20 || target == TypeBepusdtTRC20) && supported == TypeBepusdt {
+			return true
+		}
+		if target == TypeBepusdt && (supported == TypeBepusdtBEP20 || supported == TypeBepusdtTRC20) {
+			return true
+		}
+		if normalizeVisibleMethodSupportType(supported) == normalizedTarget {
 			return true
 		}
 	}
@@ -392,12 +412,10 @@ func InstanceSupportsType(supportedTypes string, target PaymentType) bool {
 
 func normalizeVisibleMethodSupportType(paymentType PaymentType) PaymentType {
 	switch strings.TrimSpace(paymentType) {
-	case TypeBepusdt, TypeBepusdtBEP20, TypeBepusdtTRC20,
-		"usdt_bep20", "usdt_trc20":
-		// Legacy instances commonly advertise only "bepusdt". Treat the
-		// network variants as the same provider capability for selection while
-		// preserving the requested variant for CreatePayment trade_type routing.
-		return TypeBepusdt
+	case "usdt_bep20":
+		return TypeBepusdtBEP20
+	case "usdt_trc20":
+		return TypeBepusdtTRC20
 	case TypeAlipay, TypeAlipayDirect:
 		return TypeAlipay
 	case TypeWxpay, TypeWxpayDirect:
