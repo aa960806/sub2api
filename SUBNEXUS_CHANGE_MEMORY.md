@@ -1834,3 +1834,13 @@
 - 对照实际部署的 BEpusdt v1.24.2 协议修正查询法币金额字段、回调数值签名及订单状态映射，补齐金额、交易号、币种、URL 和异常响应校验。仅已支付状态可到账，无数据库迁移。
 - 后端支付 provider/handler/service 定向测试通过；前端全量 317 文件、2224 测试及 typecheck 通过。商户密钥仅放受限部署配置文件，不进入源码、文档或发布日志。
 - 本轮停在人工切换前，不创建新的回滚镜像、容器或 tag，沿用既有保留目标。当前线上提交已确认为 `1a6563940c6e87230135e8bdcacaa578354c8612`；生产支付配置尚未启用 BEpusdt，待发布流程完成后记录最终命令。
+
+### 2026-09-14 — BEpusdt BSC 全部前置完成（待人工切换）
+
+- 应用 `8b4ba1b18dee925cbd241fdd6fd4f9f91148f4c5`，镜像 `sha256:c833028c6525e1c76bf448562ef1c4f6cc5afed397ff5048fec118edea9c09da`，正式 run `/srv/subnexus-migration/cutover/20260914060246-716990`，状态 `prepared/prepared/no`。详细交接与证据见 `docs/deployment-bepusdt-20260914.md`。
+- 前端 317 文件/2224 测试、typecheck/build、Linux 后端全量、带 unit 标签的支付定向测试、隔离候选门禁及新旧版本真实轮换通过；支付激活/重复执行/停用脚本在隔离候选真实管理 API 上通过。
+- 用户指定 BEpusdt 收银台域名 `ustd.yydsapi.uno`，已配置专用 HTTPS 和收银台转发。BEpusdt 当前仍使用原独角数卡域名配置；手动切换成功后，经官方 API 改为新收银台域名并启用本项目 BSC Provider。原域名路由、已有链接和商户回调保留。
+- 实际 BSC 未付款测试单创建、查询、取消及新域名收银台通过；未进行链上付款或生产用户到账操作。Token、管理凭据只存受限服务器文件，不在文档中记录。
+- 正式 PG/Redis/app-data 只读备份及最终 never-started probe 审计通过；线上 app/PG/Redis 未停止、重启、迁移或恢复，生产支付配置尚未改变。首次备份触及 120 秒超时，按脚本支持将 prepare 等待设为 600 秒后完成，未改生产数据。
+- 本次不创建新的回滚目标，沿用 `e389b3b1…` / `sha256:44e8dcf0…`。回滚入口检查并停用 USDT 下单，有未处理 USDT 订单会拒绝回滚，避免旧应用无法处理到账。
+- 切换：`sudo -n bash /srv/subnexus-migration/tools/release-bepusdt-8b4ba1b1.sh switch`。回滚：同一入口的 `rollback`。只读发布检查 `check` 已通过，尚未执行 switch/rollback/activate。
