@@ -12,11 +12,11 @@ const (
 	ModelEvaluationPrompt            = "生成html，内容是svg绘制鹈鹕骑自行车2D动画，不用进行测试。"
 	ModelEvaluationMaxTasks          = 100
 	ModelEvaluationMaxHTMLBytes      = 512 * 1024
-	// Request timeout is the provider HTTP budget; the worker and DB lease add
-	// room for retries, backoff, and final persistence.
-	ModelEvaluationRequestTimeoutSeconds = 600
-	ModelEvaluationTotalTimeoutSeconds   = 660
-	ModelEvaluationLeaseTimeoutSeconds   = 720
+	// Generation and retries share a 30-minute ceiling. Persistence uses its
+	// own context; keep the DB lease longer so a late result can still be saved.
+	ModelEvaluationRequestTimeoutSeconds = 30 * 60
+	ModelEvaluationTotalTimeoutSeconds   = ModelEvaluationRequestTimeoutSeconds
+	ModelEvaluationLeaseTimeoutSeconds   = ModelEvaluationTotalTimeoutSeconds + 60
 	ModelEvaluationMaxResponseBytes      = 16 * 1024 * 1024
 )
 

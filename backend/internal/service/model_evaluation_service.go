@@ -42,8 +42,7 @@ func NewModelEvaluationService(repo ModelEvaluationRepository, settings SettingR
 		Timeout: time.Duration(ModelEvaluationRequestTimeoutSeconds) * time.Second,
 		// A provider may spend several minutes queueing a large HTML generation
 		// before it sends SSE headers. Keep the header budget aligned with the
-		// request budget; the previous 170s limit caused false timeout samples
-		// even though the documented per-request limit is 600s.
+		// full 30-minute request budget rather than ending generation early.
 		Transport:     &http.Transport{Proxy: nil, DialContext: modelEvaluationSafeDialContext, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: time.Duration(ModelEvaluationRequestTimeoutSeconds) * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("redirects are disabled") },
 	}}

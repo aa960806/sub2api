@@ -1792,3 +1792,24 @@
 - 后续实现和发布流程必须保留原作者的会话安全策略逻辑；遇到该 403 时按上游/会话策略处理，引导用户新建会话，不再引入本地范围判断或额外放行逻辑。
 - 默认暗色主题修改继续保留；此前战令管理员可见开关、30 级活动预设、模型能力监控及其他既有修改继续保留，除非用户另行要求。此前章节内容保持不变。
 - 已将 7 个 403 相关源文件和测试文件精确恢复至原作者版本，`git diff` 确认这些文件无本轮改动；原有 Cyber/ContentModeration/SecurityAudit service 与 handler 定向测试恢复后通过。默认暗色主题的 4 处改动仍保留。
+
+### 2026-09-13 — 0eb9b97e 已完成线上切换
+
+- 用户已在服务器执行 `/srv/subnexus-migration/tools/release-0eb9-20260913133044.sh switch`，返回 `RETAINED_RELEASE_SWITCH_COMPLETED=/srv/subnexus-migration/cutover/20260913133044-322774`。
+- 切换后线上 `subnexus-cutover` 为候选镜像 `sha256:752c4fa5ba4ed86fdbbdb46b5a36b66e78fc73e77fee1fe40563c869f1ffc845`，容器 ID `885585e40576c8425bde7a483c21a297dd37c2da234c6d2ac57d5beaceb4bbf0`，running/healthy/restart=0，健康检查 HTTP 200。run 状态为 `switched`，fallback 仍 stopped。
+- 切换流程未恢复数据库；PG/Redis 未被重启，用户计费、余额、订单、订阅、用量和监控数据未执行迁移写入或恢复。既有永久回滚目标仍保留，回滚命令为同一 launcher 的 `rollback`。
+
+### 2026-09-13 — 0eb9b97e 线上切换前置完成（待人工切换）
+
+- 候选应用固定为 `0eb9b97e70cf4133e56c278e45a8b01af95b1d71` / tree `111a231a0080a8816d313de245e7d5ebbdd84367` / image `sha256:752c4fa5ba4ed86fdbbdb46b5a36b66e78fc73e77fee1fe40563c869f1ffc845`。前端 317 文件/2219 tests、后端 `go test -p 2 ./...`、candidate gate 和独立 synthetic 真实轮换兼容测试均通过。兼容测试只使用隔离 PG/Redis/volumes 和 synthetic fixture，未读取、恢复或修改生产数据。
+- 正式 prepare run `/srv/subnexus-migration/cutover/20260913133044-322774` 已成功退出 0，状态 `prepared/prepared/no`，生成生产 PG/Redis/app-data 只读备份；没有生产 SQL 写入、迁移、重启、切换或回滚。最终只读审计 `/srv/subnexus-migration/diagnostics/final-0eb9-20260913133044-322774.evidence` 通过，never-started probe 精确删除，health HTTP 200，结算任务和活动 schema DDL 均为 0。
+- 服务器 launcher `/srv/subnexus-migration/tools/release-0eb9-20260913133044.sh` 已按 SHA 安装并通过 `check`；代理停在最终切换前。用户只需执行 `sudo -n /srv/subnexus-migration/tools/release-0eb9-20260913133044.sh switch`。回滚命令为同一 launcher 的 `rollback`。
+- 本轮不创建新的永久回滚目标，继续复用 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；不恢复旧数据库。当前线上 app/PG/Redis 身份和启动时间保持不变。
+- 本轮纠正了历史无效兼容 evidence 和错误的 retained wrapper 绑定：无效文件已移出 gate，永久 anchor 仍为 `/srv/subnexus-migration/cutover/20260911130706-3232923`，未把最近 retained run 误当永久回滚锚点。
+
+### 2026-09-14 — 模型表现监控延长为 30 分钟（本地待发布）
+
+- 用户要求取消 600 秒限制、最多等待 30 分钟。请求等待响应头和响应体均使用 1800 秒，整个 worker 与重试共享同一 1800 秒总期限，避免两次尝试累计为一小时。
+- task/slot 租约同步改为总期限加 60 秒（1860 秒），保留独立结果保存与名额释放时间；管理员测试轮询改为每 2 秒一次、最多 32 分钟。原两次尝试、两个并发名额、配置失效取消、权限、发布和清理规则不变。
+- 没有表结构或迁移改动，本轮未连接生产或修改用户数据；旧切换命令对应已部署的 0eb9b97e，不能用于发布这次修改。
+- 后端模型监控定向测试通过，包含虚拟时钟验证 29 分钟等待响应头/流式结果成功、30 分钟截止、重试共享截止时间；前端相关 5 文件/31 项测试、TypeScript、定向 ESLint 和 `git diff --check` 通过。上游主动返回 524/504 或断流仍按原规则处理，本地延长不保证外部服务始终成功。

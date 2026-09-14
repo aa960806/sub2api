@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -64,13 +65,78 @@ func TestModelEvaluationConfigFailsClosedAndNoRequest(t *testing.T) {
 func TestModelEvaluationHTTPBudgetsAreAligned(t *testing.T) {
 	svc := NewModelEvaluationService(nil, nil, nil, nil)
 	defer svc.Stop()
-	require.Equal(t, time.Duration(ModelEvaluationRequestTimeoutSeconds)*time.Second, svc.client.Timeout)
+	require.Equal(t, 30*time.Minute, svc.client.Timeout)
+	require.Equal(t, 30*60, ModelEvaluationTotalTimeoutSeconds)
+	require.Greater(t, ModelEvaluationLeaseTimeoutSeconds, ModelEvaluationTotalTimeoutSeconds+15, "lease must cover final save and release contexts")
 	transport, ok := svc.client.Transport.(*http.Transport)
 	require.True(t, ok)
 	// Waiting for response headers must not fail before the documented
 	// per-request budget. This is especially important for providers that
 	// queue a long generation before opening an SSE stream.
 	require.Equal(t, svc.client.Timeout, transport.ResponseHeaderTimeout)
+}
+
+// Advance the real HTTP client's deadline using Go's virtual clock. This
+// exercises long header/body waits and retry budgets without paid requests or
+// a real 30-minute test delay.
+func TestModelEvaluationThirtyMinuteGenerationBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		headWait time.Duration
+		bodyWait time.Duration
+		retry    bool
+		want     string
+		elapsed  time.Duration
+		attempts int
+	}{
+		{name: "late headers succeed", headWait: 29 * time.Minute, want: "success", elapsed: 29 * time.Minute, attempts: 1},
+		{name: "late stream succeeds", bodyWait: 29 * time.Minute, want: "success", elapsed: 29 * time.Minute, attempts: 1},
+		{name: "header wait is capped", headWait: 31 * time.Minute, want: "error", elapsed: 30 * time.Minute, attempts: 1},
+		{name: "stream wait is capped", bodyWait: 31 * time.Minute, want: "error", elapsed: 30 * time.Minute, attempts: 1},
+		{name: "retry shares deadline", headWait: 20 * time.Minute, retry: true, want: "error", elapsed: 30 * time.Minute, attempts: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				svc := NewModelEvaluationService(nil, nil, nil, evaluationTestEncryptor{})
+				defer svc.Stop()
+				attempts := 0
+				events := evaluationSSE(t, map[string]any{"type": "response.completed", "response": map[string]any{"status": "completed", "output": []any{map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]string{"type": "output_text", "text": evaluationTestHTML}}}}}})
+				svc.client.Transport = evaluationTestTransport(func(req *http.Request) (*http.Response, error) {
+					attempts++
+					select {
+					case <-req.Context().Done():
+						return nil, req.Context().Err()
+					case <-time.After(tc.headWait):
+					}
+					if tc.retry && attempts == 1 {
+						return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
+					}
+					reader, writer := io.Pipe()
+					go func() {
+						defer writer.Close()
+						select {
+						case <-req.Context().Done():
+							_ = writer.CloseWithError(req.Context().Err())
+						case <-time.After(tc.bodyWait):
+							_, _ = io.WriteString(writer, events)
+						}
+					}()
+					return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: reader}, nil
+				})
+				started := time.Now()
+				result := svc.execute(context.Background(), &ModelEvaluationTask{Endpoint: "https://provider.test/v1/responses", APIFormat: "responses", APIKeyEncrypted: "encrypted:fixture-secret", Model: "configured-model"})
+				require.Equal(t, tc.want, result.Status, result.ErrorMessage)
+				require.Equal(t, tc.elapsed, time.Since(started))
+				require.Equal(t, tc.attempts, attempts)
+				if tc.want == "success" {
+					require.Equal(t, evaluationTestHTML, result.HTML)
+				} else {
+					require.Empty(t, result.HTML)
+					require.Contains(t, result.ErrorMessage, "1800 秒")
+				}
+			})
+		})
+	}
 }
 
 func TestModelEvaluationSchedulerDisabledDoesNotClaimOrCleanup(t *testing.T) {

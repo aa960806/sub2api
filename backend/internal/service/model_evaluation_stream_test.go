@@ -148,7 +148,8 @@ func TestModelEvaluationHTTPTimeoutClassification(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	require.Equal(t, "请求已取消", modelEvaluationRequestError(ctx, ctx.Err()))
-	require.Contains(t, modelEvaluationRequestError(context.Background(), context.DeadlineExceeded), "600 秒")
+	require.Contains(t, modelEvaluationRequestError(context.Background(), context.DeadlineExceeded), "1800 秒")
+	require.Contains(t, modelEvaluationTransientStreamFailureMessage(modelEvaluationTransientStreamTimeout), "1800 秒")
 }
 
 func TestModelEvaluationOutboundEffortMapsLegacyUltra(t *testing.T) {

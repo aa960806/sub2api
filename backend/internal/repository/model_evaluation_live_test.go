@@ -42,7 +42,7 @@ func TestModelEvaluationLiveGenerationPersistenceAndPublication(t *testing.T) {
 	require.NoError(t, svc.TestTask(ctx, task.ID))
 	waitResult := func(wantCount int) *service.ModelEvaluationResult {
 		t.Helper()
-		deadline := time.Now().Add(12 * time.Minute)
+		deadline := time.Now().Add(time.Duration(service.ModelEvaluationLeaseTimeoutSeconds+60) * time.Second)
 		for time.Now().Before(deadline) {
 			items, total, listErr := svc.ListResults(ctx, service.ModelEvaluationListParams{Admin: true, TaskID: task.ID})
 			require.NoError(t, listErr)
