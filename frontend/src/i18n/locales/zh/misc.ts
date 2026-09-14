@@ -317,6 +317,7 @@ export default {
     customAmount: '自定义金额',
     enterAmount: '输入金额',
     paymentMethod: '支付方式',
+    network: '支付网络',
     fee: '手续费',
     actualPay: '实付金额',
     createOrder: '确认支付',

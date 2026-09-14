@@ -44,7 +44,7 @@
       data-testid="bepusdt-network-selector"
       class="mt-4"
     >
-      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('payment.network', '支付网络') }}</label>
+      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('payment.network') }}</label>
       <div class="grid grid-cols-2 gap-3">
         <button
           v-for="network in networkOptions"

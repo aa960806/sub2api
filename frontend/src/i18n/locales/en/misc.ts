@@ -293,6 +293,7 @@ export default {
     customAmount: 'Custom Amount',
     enterAmount: 'Enter amount',
     paymentMethod: 'Payment Method',
+    network: 'Payment Network',
     fee: 'Fee',
     actualPay: 'Actual Payment',
     createOrder: 'Confirm Payment',
