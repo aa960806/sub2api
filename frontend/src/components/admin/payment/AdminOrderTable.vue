@@ -220,6 +220,7 @@ const paymentTypeFilterOptions = computed(() => [
   { value: 'wxpay', label: t('payment.methods.wxpay') },
   { value: 'stripe', label: t('payment.methods.stripe') },
   { value: 'airwallex', label: t('payment.methods.airwallex') },
+  { value: 'bepusdt', label: t('payment.methods.bepusdt') },
 ])
 
 const orderTypeFilterOptions = computed(() => [

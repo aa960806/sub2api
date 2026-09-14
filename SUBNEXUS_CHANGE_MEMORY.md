@@ -1813,3 +1813,17 @@
 - task/slot 租约同步改为总期限加 60 秒（1860 秒），保留独立结果保存与名额释放时间；管理员测试轮询改为每 2 秒一次、最多 32 分钟。原两次尝试、两个并发名额、配置失效取消、权限、发布和清理规则不变。
 - 没有表结构或迁移改动，本轮未连接生产或修改用户数据；旧切换命令对应已部署的 0eb9b97e，不能用于发布这次修改。
 - 后端模型监控定向测试通过，包含虚拟时钟验证 29 分钟等待响应头/流式结果成功、30 分钟截止、重试共享截止时间；前端相关 5 文件/31 项测试、TypeScript、定向 ESLint 和 `git diff --check` 通过。上游主动返回 524/504 或断流仍按原规则处理，本地延长不保证外部服务始终成功。
+
+### 2026-09-14 — 30 分钟监控超时发布前置完成（待人工切换）
+
+- 候选应用提交 `1a6563940c6e87230135e8bdcacaa578354c8612`，tree `d04c0d5f0e1884055d2a8a91560957f9feef8110`，镜像 `sha256:398add2b6ae7d8a0e129f3b354f4720e6f8b3a0d14fb07eb59232d9ec990786b`，归档 SHA256 `e29a09ad8fb1ed819cacfcbcf53ed9f2f7dc97dece3f0a4d0c30f79210088aba`。
+- 前端 317 文件/2219 测试、后端完整 `go test -p 2 ./...`、定向 30 分钟虚拟时钟测试、隔离候选门禁和新→当前→既有回滚→新兼容轮换均通过。兼容数据为 synthetic fixture，计费、余额、Key、订单、订阅、用量、监控配置/HTML 和迁移指纹全部保持不变。
+- 正式 prepare run `/srv/subnexus-migration/cutover/20260914021421-588539` 已成功完成，状态 `prepared/prepared/no`；只读生产备份已生成，最终 never-started probe 审计通过，health HTTP 200。当前线上 app/PG/Redis 身份、启动时间和 restart count 未变。
+- 服务器 launcher `/srv/subnexus-migration/tools/release-timeout30-1a656394.sh` 已安装并通过只读 `check`。代理停在人工切换前，本次不创建新的永久回滚目标，继续使用既有 `e389b3b1…` / `sha256:44e8dcf0…`。
+- 切换：`sudo -n bash /srv/subnexus-migration/tools/release-timeout30-1a656394.sh switch`；回滚：`sudo -n bash /srv/subnexus-migration/tools/release-timeout30-1a656394.sh rollback`。回滚只恢复应用容器，不恢复数据库。
+
+### 2026-09-14 — BEpusdt USDT 支付增量接入（本地）
+
+- 新增独立 `bepusdt` 支付 Provider，调用 BEpusdt JSON API 创建、查询和取消交易，并验证 JSON 回调签名；复用现有 PaymentOrder、Webhook 和余额到账流程，无数据库迁移。
+- 管理端支付配置新增 API Base URL、API Token（仅后端保存）、交易类型、CNY 法币和超时字段；BEpusdt 强制 CNY 以保持现有账户计费币种一致，退款自动关闭。
+- 新增回调地址 `/api/v1/payment/webhook/bepusdt`，前端支付类型、管理员配置入口和中英文文案已补齐。后端 provider/handler/service 测试与前端 `vue-tsc` 通过；尚未连接服务器或配置生产商户信息。

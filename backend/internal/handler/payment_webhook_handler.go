@@ -67,6 +67,9 @@ func (h *PaymentWebhookHandler) AirwallexWebhook(c *gin.Context) {
 	h.handleNotify(c, payment.TypeAirwallex)
 }
 
+// BepusdtNotify handles BEpusdt JSON callbacks.
+func (h *PaymentWebhookHandler) BepusdtNotify(c *gin.Context) { h.handleNotify(c, payment.TypeBepusdt) }
+
 // handleNotify is the shared logic for all provider webhook handlers.
 func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string) {
 	var rawBody string
@@ -164,6 +167,13 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
 			return strings.TrimSpace(payload.Data.Object.MerchantOrderID)
 		}
+	case payment.TypeBepusdt:
+		var payload struct {
+			OrderID string `json:"order_id"`
+		}
+		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
+			return strings.TrimSpace(payload.OrderID)
+		}
 	}
 	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
 	// typically has only one instance, so no instance lookup is needed.
@@ -210,6 +220,8 @@ func writeSuccessResponse(c *gin.Context, providerKey string) {
 		c.JSON(http.StatusOK, wxpaySuccessResponse{Code: wxpaySuccessCode, Message: wxpaySuccessMessage})
 	case payment.TypeStripe, payment.TypeAirwallex:
 		c.String(http.StatusOK, "")
+	case payment.TypeBepusdt:
+		c.String(http.StatusOK, "ok")
 	default:
 		c.String(http.StatusOK, "success")
 	}

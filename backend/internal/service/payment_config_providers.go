@@ -116,6 +116,7 @@ var providerSensitiveConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}},
 	payment.TypeAirwallex: {"apikey": {}, "webhooksecret": {}},
+	payment.TypeBepusdt:   {"token": {}},
 }
 
 // providerPendingOrderProtectedConfigFields lists config keys that cannot be
@@ -128,6 +129,7 @@ var providerPendingOrderProtectedConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}, "currency": {}},
 	payment.TypeAirwallex: {"clientid": {}, "apikey": {}, "webhooksecret": {}, "apibase": {}, "accountid": {}, "currency": {}},
+	payment.TypeBepusdt:   {"token": {}, "apibase": {}, "tradetype": {}, "fiat": {}, "timeout": {}},
 }
 
 func isSensitiveProviderConfigField(providerKey, fieldName string) bool {
@@ -178,10 +180,14 @@ func (s *PaymentConfigService) countPendingOrdersByPlan(ctx context.Context, pla
 }
 
 var validProviderKeys = map[string]bool{
-	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true,
+	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true, payment.TypeBepusdt: true,
 }
 
 func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req CreateProviderInstanceRequest) (*dbent.PaymentProviderInstance, error) {
+	if req.ProviderKey == payment.TypeBepusdt {
+		req.RefundEnabled = false
+		req.AllowUserRefund = false
+	}
 	typesStr := joinTypes(req.SupportedTypes)
 	if err := validateProviderRequest(req.ProviderKey, req.Name, typesStr); err != nil {
 		return nil, err
@@ -291,6 +297,11 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	current, err := s.entClient.PaymentProviderInstance.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("load provider instance: %w", err)
+	}
+	if current.ProviderKey == payment.TypeBepusdt {
+		disabled := false
+		req.RefundEnabled = &disabled
+		req.AllowUserRefund = &disabled
 	}
 	var pendingOrderCount *int
 	getPendingOrderCount := func() (int, error) {
