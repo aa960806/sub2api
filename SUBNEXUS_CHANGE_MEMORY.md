@@ -1850,3 +1850,12 @@
 - 用户手动执行上述 `switch`，截图返回 `BEPUSDT_ACTIVATION=passed` 和 `BEPUSDT_RELEASE_SWITCH_COMPLETED=true`。代理随后核对发布入口 `check` 通过，线上容器为 `cb18fcbf51b194424c97e0fff0174a831c72fb3dc14662fe834dede54b169c58`，使用候选镜像 `sha256:c833028c6525e1c76bf448562ef1c4f6cc5afed397ff5048fec118edea9c09da`，healthy/restart=0，公网 health HTTP 200。
 - BEpusdt Provider 已存在、启用且列入支付方式；`ustd.yydsapi.uno` 专属收银台就绪。用户截图确认其他支付配置保留。状态核对时有 1 笔未处理 USDT 订单，未操作该订单，不能将部署成功等同于链上到账验证完成。
 - 本轮只核对状态并更新文档，没有再次切换或执行回滚。
+
+### 2026-09-14 — USDT 链下付款排查与收款地址更换
+
+- 用户反馈 4.47 USDT 已付款未到账。最新网站订单为 `sub2_2026091475hRCgim`（ID 3943），BEpusdt 交易 `QmBC3hxkrpxZTKB4vN`，应付 CNY 30、实际应转 4.47 USDT；配置倍率对应站内余额 300。BEpusdt 查询时仍为 waiting，未识别链上付款。
+- 用户提供币安现货到账截图：2026-09-14 18:35:07、+4.47 USDT、旧 BSC 收款地址、`链下转账 410925432182`。这是平台内部划转编号，无可供 BEpusdt 扫描的 BSC 交易哈希。回调日志持续显示 status=1 通知收到 `ok`，网站回调可达；没有 status=2 的付款成功通知。不能将 waiting 的回调成功日志解释为支付成功。
+- 上一条更换地址请求曾被遗漏；本轮已通过 BEpusdt 官方钱包 API 完成：BSC `0xfc9527b8352291a3491089Fb073950Ecf53cB223`；TRC20 `TYzjxt7bGZDjhvcjVJKN3kZyaqWcFoYafo`。BSC EIP-55 和 TRON Base58Check 校验通过；两种网络均创建未付款测试单、查询核对收款地址后取消。BEpusdt 将 BSC 收款地址转小写展示，字节地址相同。
+- 旧两条钱包记录仅停用，不删除，不改历史订单的网络、地址、金额或交易号。审计保存在 `/srv/subnexus-migration/payment-bepusdt-20260914/wallet-rotation-20260914T105855Z.json`。没有重启应用/网关、没有手动确认付款、修改用户余额或补单。本项目支付实例仍固定 BSC；TRC20 钱包配置已就绪不等于网站新增网络选择器。
+- 同时发现独立的 BSC 扫链故障：旧默认 Nodies RPC 返回需要付费订阅；该故障会影响后续链上付款识别，不能以创建/取消测试单通过来宣称链上扫描正常。恢复扫描也无法识别上述链下转账。
+- BSC RPC 尚未更换：受限探测发现公共候选存在 403/429、`eth_getLogs` 的 `-32005 limit exceeded` 或不可用响应；官方 Binance/defibit/ninicoin 虽能查询高度和回执，但连单区块 USDT Transfer 日志也拒绝。没有把未验证的 RPC 写入配置，需要用户提供支持 BEpusdt 所需批量区块查询、Transfer 日志和回执查询的可用 BSC RPC。此次没有声称链上自动到账恢复。
