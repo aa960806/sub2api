@@ -350,6 +350,8 @@ export default {
       alipay_direct: '支付宝（直连）',
       wxpay_direct: '微信支付（直连）',
       bepusdt: 'USDT支付',
+      bepusdt_bep20: 'USDT（BSC / BEP20）',
+      bepusdt_trc20: 'USDT（TRC20）',
     },
     status: {
       pending: '待支付',

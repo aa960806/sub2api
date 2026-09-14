@@ -42,7 +42,9 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
-  bepusdt: ['bepusdt'],
+  // Keep the legacy type for existing instances while allowing an admin to
+  // explicitly scope a BEpusdt instance to one network.
+  bepusdt: ['bepusdt', 'bepusdt_bep20', 'bepusdt_trc20'],
 }
 
 /** Available payment modes for EasyPay providers. */

@@ -326,6 +326,8 @@ export default {
       alipay_direct: 'Alipay (Direct)',
       wxpay_direct: 'WeChat Pay (Direct)',
       bepusdt: 'USDT Payment',
+      bepusdt_bep20: 'USDT (BSC / BEP20)',
+      bepusdt_trc20: 'USDT (TRC20)',
     },
     status: {
       pending: 'Pending',
