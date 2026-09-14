@@ -659,6 +659,9 @@ function isBepusdtNetwork(type: string): boolean {
   return (BEPUSDT_NETWORK_TYPES as readonly string[]).includes(type)
 }
 function methodLimitKey(type: string): string {
+  if (isBepusdtNetwork(type) && !visibleMethods.value[type] && visibleMethods.value.bepusdt) {
+    return 'bepusdt'
+  }
   if (type === 'bepusdt') return visibleMethods.value[selectedBepusdtNetwork.value]
     ? selectedBepusdtNetwork.value
     : visibleMethods.value.bepusdt
@@ -900,7 +903,7 @@ const subMethodOptions = computed<PaymentMethodOption[]>(() => {
 
 const bepusdtNetworkOptions = computed<PaymentMethodOption[]>(() =>
   BEPUSDT_NETWORK_TYPES
-    .filter((type) => visibleMethods.value[type] || (type === 'bepusdt_bep20' && visibleMethods.value.bepusdt))
+    .filter((type) => visibleMethods.value[type] || visibleMethods.value.bepusdt)
     .map((type) => {
       const ml = visibleMethods.value[type] || visibleMethods.value.bepusdt
       return {
