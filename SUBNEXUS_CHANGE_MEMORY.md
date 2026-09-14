@@ -1859,3 +1859,10 @@
 - 旧两条钱包记录仅停用，不删除，不改历史订单的网络、地址、金额或交易号。审计保存在 `/srv/subnexus-migration/payment-bepusdt-20260914/wallet-rotation-20260914T105855Z.json`。没有重启应用/网关、没有手动确认付款、修改用户余额或补单。本项目支付实例仍固定 BSC；TRC20 钱包配置已就绪不等于网站新增网络选择器。
 - 同时发现独立的 BSC 扫链故障：旧默认 Nodies RPC 返回需要付费订阅；该故障会影响后续链上付款识别，不能以创建/取消测试单通过来宣称链上扫描正常。恢复扫描也无法识别上述链下转账。
 - BSC RPC 尚未更换：受限探测发现公共候选存在 403/429、`eth_getLogs` 的 `-32005 limit exceeded` 或不可用响应；官方 Binance/defibit/ninicoin 虽能查询高度和回执，但连单区块 USDT Transfer 日志也拒绝。没有把未验证的 RPC 写入配置，需要用户提供支持 BEpusdt 所需批量区块查询、Transfer 日志和回执查询的可用 BSC RPC。此次没有声称链上自动到账恢复。
+
+### 2026-09-15 — BSC RPC 已恢复
+
+- 用户提供并确认 Chainstack BSC Mainnet RPC：`https://bsc-mainnet.core.chainstack.com/a92ad3e9309cdd6e7460fdf7ebd4563c`（节点限制 25 req/s）。
+- 已从本地及 OVH 服务器只读验证 `eth_chainId=0x38`、最新区块、交易回执，以及 BSC USDT Transfer 日志；10 区块扫描批次和 100 区块回溯请求均成功。更大范围受供应商策略限制，但 BEpusdt 默认每批 10 区块，满足扫描要求。
+- 已通过受限 BEpusdt 管理接口更新 `rpc_endpoint_bsc`。更新前后容器启动时间不变、重启次数仍为 0，订单表仅做只读核对（20 条）；未修改用户余额、订单、钱包地址或数据库结构。
+- 服务器审计记录写入 `/srv/subnexus-migration/payment-bepusdt-20260914/rpc-repair-*.json`，生产 BEpusdt 现可继续查询 BSC 链上 USDT 转账并触发原有回调流程。历史链下转账编号仍无法作为链上 TxID 识别。
