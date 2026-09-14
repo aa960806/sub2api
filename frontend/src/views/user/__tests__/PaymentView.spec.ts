@@ -5,6 +5,8 @@ import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
+import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
+import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import en from '@/i18n/locales/en'
 import zh from '@/i18n/locales/zh'
 import type { CheckoutInfoResponse, MethodLimit, SubscriptionPlan } from '@/types/payment'
@@ -868,5 +870,92 @@ describe('PaymentView first recharge gift', () => {
 
     wrapper.unmount()
     appStore.cachedPublicSettings = {}
+  })
+})
+
+describe('PaymentView BEpusdt checkout', () => {
+  it.each(['balance', 'subscription'] as const)('uses the existing %s flow for USDT checkout', async (orderType) => {
+    vi.useRealTimers()
+    routeState.path = '/purchase'
+    routeState.query = orderType === 'subscription' ? { tab: 'subscription', group: '3' } : {}
+    window.localStorage.clear()
+    appStore.cachedPublicSettings = {}
+    routerReplace.mockReset().mockResolvedValue(undefined)
+    routerPush.mockReset().mockResolvedValue(undefined)
+    showError.mockReset()
+    fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+    const checkout = checkoutInfoWithPlansFixture().data
+    checkout.methods.bepusdt = {
+      ...checkout.methods.wxpay,
+      display_name: 'USDT',
+      currency: 'CNY',
+    }
+    getCheckoutInfo.mockReset().mockResolvedValue({ data: checkout })
+    createOrder.mockReset().mockResolvedValue({
+      order_id: 902,
+      amount: orderType === 'subscription' ? 128 : 10,
+      pay_amount: orderType === 'subscription' ? 128 : 10,
+      fee_rate: 0,
+      expires_at: '2099-01-01T00:10:00.000Z',
+      payment_type: 'bepusdt',
+      payment_mode: 'redirect',
+      pay_url: 'https://pay.example.com/pay/test-order',
+      out_trade_no: 'sub2_usdt_902',
+    })
+
+    const originalLocation = window.location
+    const locationState = { href: 'http://localhost/purchase', origin: 'http://localhost' }
+    Object.defineProperty(window, 'location', { configurable: true, value: locationState })
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          PaymentMethodSelector: false,
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    try {
+      await flushPromises()
+      if (orderType === 'balance') {
+        wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 10)
+        await flushPromises()
+      }
+      const selector = wrapper.getComponent(PaymentMethodSelector)
+      expect(selector.props('methods').map(method => method.type)).toEqual(['wxpay', 'bepusdt'])
+      await selector.get('button[title="USDT"]').trigger('click')
+      expect(selector.props('selected')).toBe('bepusdt')
+      const submit = wrapper.findAll('button').find(button => button.text().includes('payment.createOrder'))
+      if (!submit) throw new Error('Existing checkout submit button not found')
+      await submit.trigger('click')
+      await flushPromises()
+
+      expect(createOrder).toHaveBeenCalledOnce()
+      expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+        amount: orderType === 'subscription' ? 128 : 10,
+        payment_type: 'bepusdt',
+        order_type: orderType,
+        ...(orderType === 'subscription' ? { plan_id: 7 } : {}),
+        return_url: 'http://localhost/payment/result',
+      }))
+      expect(locationState.href).toBe('https://pay.example.com/pay/test-order')
+      expect(wrapper.getComponent(PaymentStatusPanel).props()).toMatchObject({
+        orderId: 902,
+        paymentType: 'bepusdt',
+        orderType,
+      })
+      expect(JSON.parse(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)!)).toMatchObject({
+        orderId: 902,
+        paymentType: 'bepusdt',
+        orderType,
+        payUrl: 'https://pay.example.com/pay/test-order',
+      })
+      expect(showError).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+      window.localStorage.clear()
+    }
   })
 })

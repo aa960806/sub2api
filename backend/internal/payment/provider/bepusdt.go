@@ -3,10 +3,12 @@ package provider
 import (
 	"context"
 	"crypto/md5"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -42,6 +44,9 @@ func NewBepusdt(instanceID string, config map[string]string) (*Bepusdt, error) {
 	if fiat := strings.TrimSpace(cfg["fiat"]); fiat != "" && !strings.EqualFold(fiat, "CNY") {
 		return nil, fmt.Errorf("bepusdt fiat must be CNY to match account billing currency")
 	}
+	cfg["fiat"] = "CNY"
+	cfg["tradeType"] = strings.TrimSpace(cfg["tradeType"])
+	cfg["timeout"] = strings.TrimSpace(cfg["timeout"])
 	if timeout := strings.TrimSpace(cfg["timeout"]); timeout != "" {
 		n, err := strconv.Atoi(timeout)
 		if err != nil || n < 120 {
@@ -58,9 +63,12 @@ func (b *Bepusdt) MerchantIdentityMetadata() map[string]string {
 }
 
 func (b *Bepusdt) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
-	amount, err := strconv.ParseFloat(req.Amount, 64)
+	amount, err := bepPositiveAmount(req.Amount)
 	if err != nil {
 		return nil, fmt.Errorf("invalid amount: %w", err)
+	}
+	if strings.TrimSpace(req.OrderID) == "" {
+		return nil, fmt.Errorf("bepusdt create missing order_id")
 	}
 	tradeType := b.config["tradeType"]
 	if tradeType == "" {
@@ -77,6 +85,9 @@ func (b *Bepusdt) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 	if returnURL == "" {
 		returnURL = b.config["returnUrl"]
 	}
+	if !bepHTTPURL(notifyURL) || !bepHTTPURL(returnURL) {
+		return nil, fmt.Errorf("bepusdt create requires absolute HTTP(S) notify_url and redirect_url")
+	}
 	payload := map[string]any{"order_id": req.OrderID, "amount": amount, "fiat": fiat, "trade_type": tradeType, "name": req.Subject, "notify_url": notifyURL, "redirect_url": returnURL}
 	if timeout, _ := strconv.Atoi(b.config["timeout"]); timeout > 0 {
 		payload["timeout"] = timeout
@@ -90,10 +101,8 @@ func (b *Bepusdt) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 		StatusCode int    `json:"status_code"`
 		Message    string `json:"message"`
 		Data       struct {
-			TradeID      string `json:"trade_id"`
-			PaymentURL   string `json:"payment_url"`
-			Token        string `json:"token"`
-			ActualAmount string `json:"actual_amount"`
+			TradeID    string `json:"trade_id"`
+			PaymentURL string `json:"payment_url"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -102,10 +111,16 @@ func (b *Bepusdt) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("bepusdt create failed: %s", resp.Message)
 	}
+	if strings.TrimSpace(resp.Data.TradeID) == "" || !bepHTTPURL(resp.Data.PaymentURL) {
+		return nil, fmt.Errorf("bepusdt create response missing trade_id or valid payment_url")
+	}
 	return &payment.CreatePaymentResponse{TradeNo: resp.Data.TradeID, PayURL: resp.Data.PaymentURL}, nil
 }
 
 func (b *Bepusdt) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+	if strings.TrimSpace(tradeNo) == "" {
+		return nil, fmt.Errorf("bepusdt query missing trade_id")
+	}
 	body, err := b.postJSON(ctx, "/api/v1/pay/info", map[string]any{"trade_id": tradeNo, "signature": bepSign(map[string]any{"trade_id": tradeNo}, b.config["token"])})
 	if err != nil {
 		return nil, err
@@ -114,10 +129,11 @@ func (b *Bepusdt) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 		StatusCode int    `json:"status_code"`
 		Message    string `json:"message"`
 		Data       struct {
-			Status       int    `json:"status"`
-			Amount       string `json:"amount"`
-			Money        string `json:"money"`
-			ActualAmount string `json:"actual_amount"`
+			TradeID      string `json:"trade_id"`
+			Status       any    `json:"status"`
+			Money        any    `json:"money"`
+			ActualAmount any    `json:"actual_amount"`
+			Fiat         string `json:"fiat"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -126,23 +142,35 @@ func (b *Bepusdt) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("bepusdt query failed: %s", resp.Message)
 	}
-	status := payment.ProviderStatusPending
-	if resp.Data.Status == 2 {
-		status = payment.ProviderStatusPaid
-	} else if resp.Data.Status == 3 {
-		status = payment.ProviderStatusFailed
+	if resp.Data.TradeID != tradeNo {
+		return nil, fmt.Errorf("bepusdt query returned a different or missing trade_id")
 	}
-	amount, _ := strconv.ParseFloat(resp.Data.Amount, 64)
-	if resp.Data.Amount == "" {
-		amount, _ = strconv.ParseFloat(resp.Data.Money, 64)
+	if !strings.EqualFold(strings.TrimSpace(resp.Data.Fiat), "CNY") {
+		return nil, fmt.Errorf("bepusdt query currency must be CNY")
 	}
-	actual, _ := strconv.ParseFloat(resp.Data.ActualAmount, 64)
-	return &payment.QueryOrderResponse{TradeNo: tradeNo, Status: status, Amount: amount, Metadata: map[string]string{"actual_amount": strconv.FormatFloat(actual, 'f', -1, 64)}}, nil
+	status, err := bepProviderStatus(resp.Data.Status)
+	if err != nil {
+		return nil, err
+	}
+	// /pay/info returns the original fiat total as money. actual_amount is
+	// the token quantity and must never be used to credit a CNY order.
+	amount, err := bepPositiveAmount(resp.Data.Money)
+	if err != nil {
+		return nil, fmt.Errorf("bepusdt query invalid money: %w", err)
+	}
+	metadata, err := bepAmountMetadata(resp.Data.ActualAmount)
+	if err != nil {
+		return nil, err
+	}
+	return &payment.QueryOrderResponse{TradeNo: tradeNo, Status: status, Amount: amount, Metadata: metadata}, nil
 }
 func (b *Bepusdt) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
 	return nil, fmt.Errorf("bepusdt does not support refunds")
 }
 func (b *Bepusdt) CancelPayment(ctx context.Context, tradeNo string) error {
+	if strings.TrimSpace(tradeNo) == "" {
+		return fmt.Errorf("bepusdt cancel missing trade_id")
+	}
 	body, err := b.postJSON(ctx, "/api/v1/order/cancel-transaction", map[string]any{"trade_id": tradeNo, "signature": bepSign(map[string]any{"trade_id": tradeNo}, b.config["token"])})
 	if err != nil {
 		return err
@@ -161,32 +189,48 @@ func (b *Bepusdt) CancelPayment(ctx context.Context, tradeNo string) error {
 }
 
 func (b *Bepusdt) VerifyNotification(_ context.Context, raw string, _ map[string]string) (*payment.PaymentNotification, error) {
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.UseNumber()
 	values := map[string]any{}
-	if err := dec.Decode(&values); err != nil {
+	// BEpusdt signs after json.Unmarshal into map[string]any, so JSON
+	// numbers must use Go's float64 formatting (including exponents),
+	// while quoted decimal strings retain their original precision.
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
 		return nil, fmt.Errorf("bepusdt notify parse: %w", err)
 	}
 	signature, _ := values["signature"].(string)
-	if !strings.EqualFold(bepSign(values, b.config["token"]), signature) {
+	if subtle.ConstantTimeCompare([]byte(bepSign(values, b.config["token"])), []byte(strings.ToLower(signature))) != 1 {
 		return nil, fmt.Errorf("invalid signature")
 	}
 	tradeID, _ := values["trade_id"].(string)
 	orderID, _ := values["order_id"].(string)
-	amount, _ := strconv.ParseFloat(fmt.Sprint(values["amount"]), 64)
-	actual, _ := strconv.ParseFloat(fmt.Sprint(values["actual_amount"]), 64)
-	numericStatus, _ := strconv.Atoi(fmt.Sprint(values["status"]))
-	providerStatus := payment.ProviderStatusFailed
-	if numericStatus == 2 {
-		providerStatus = payment.ProviderStatusSuccess
-	} else if numericStatus == 1 {
-		providerStatus = payment.ProviderStatusPending
+	if strings.TrimSpace(tradeID) == "" || strings.TrimSpace(orderID) == "" {
+		return nil, fmt.Errorf("bepusdt notify missing trade_id or order_id")
 	}
-	return &payment.PaymentNotification{TradeNo: tradeID, OrderID: orderID, Amount: amount, Status: providerStatus, RawData: raw, Metadata: map[string]string{"actual_amount": strconv.FormatFloat(actual, 'f', -1, 64)}}, nil
+	amount, err := bepPositiveAmount(values["amount"])
+	if err != nil {
+		return nil, fmt.Errorf("bepusdt notify invalid amount: %w", err)
+	}
+	if fiat, exists := values["fiat"]; exists && !strings.EqualFold(fmt.Sprint(fiat), "CNY") {
+		return nil, fmt.Errorf("bepusdt notify currency must be CNY")
+	}
+	providerStatus, err := bepProviderStatus(values["status"])
+	if err != nil {
+		return nil, err
+	}
+	if providerStatus == payment.ProviderStatusPaid {
+		providerStatus = payment.ProviderStatusSuccess
+	}
+	metadata, err := bepAmountMetadata(values["actual_amount"])
+	if err != nil {
+		return nil, err
+	}
+	return &payment.PaymentNotification{TradeNo: tradeID, OrderID: orderID, Amount: amount, Status: providerStatus, RawData: raw, Metadata: metadata}, nil
 }
 
 func (b *Bepusdt) postJSON(ctx context.Context, path string, payload map[string]any) ([]byte, error) {
-	data, _ := json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("bepusdt encode request: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.config["apiBase"]+path, strings.NewReader(string(data)))
 	if err != nil {
 		return nil, err
@@ -197,11 +241,58 @@ func (b *Bepusdt) postJSON(ctx context.Context, path string, payload map[string]
 		return nil, fmt.Errorf("bepusdt request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	const maxResponseBytes = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("bepusdt read response: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("bepusdt response exceeds %d bytes", maxResponseBytes)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("bepusdt HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return body, nil
+}
+
+func bepHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
+}
+
+func bepPositiveAmount(value any) (float64, error) {
+	amount, err := strconv.ParseFloat(fmt.Sprint(value), 64)
+	if err != nil || math.IsNaN(amount) || math.IsInf(amount, 0) || amount <= 0 {
+		return 0, fmt.Errorf("amount must be finite and positive")
+	}
+	return amount, nil
+}
+
+func bepAmountMetadata(actual any) (map[string]string, error) {
+	metadata := map[string]string{"currency": "CNY"}
+	if actual != nil && actual != "" {
+		amount, err := bepPositiveAmount(actual)
+		if err != nil {
+			return nil, fmt.Errorf("bepusdt invalid actual_amount: %w", err)
+		}
+		metadata["actual_amount"] = strconv.FormatFloat(amount, 'f', -1, 64)
+	}
+	return metadata, nil
+}
+
+func bepProviderStatus(value any) (string, error) {
+	status, err := strconv.Atoi(fmt.Sprint(value))
+	if err == nil {
+		switch status {
+		case 1, 5: // Waiting for payment or blockchain confirmation.
+			return payment.ProviderStatusPending, nil
+		case 2:
+			return payment.ProviderStatusPaid, nil
+		case 3, 4, 6: // Expired, cancelled, or failed confirmation.
+			return payment.ProviderStatusFailed, nil
+		}
+	}
+	return "", fmt.Errorf("bepusdt invalid order status")
 }
 
 func bepSign(values map[string]any, token string) string {

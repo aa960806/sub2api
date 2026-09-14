@@ -1827,3 +1827,10 @@
 - 新增独立 `bepusdt` 支付 Provider，调用 BEpusdt JSON API 创建、查询和取消交易，并验证 JSON 回调签名；复用现有 PaymentOrder、Webhook 和余额到账流程，无数据库迁移。
 - 管理端支付配置新增 API Base URL、API Token（仅后端保存）、交易类型、CNY 法币和超时字段；BEpusdt 强制 CNY 以保持现有账户计费币种一致，退款自动关闭。
 - 新增回调地址 `/api/v1/payment/webhook/bepusdt`，前端支付类型、管理员配置入口和中英文文案已补齐。后端 provider/handler/service 测试与前端 `vue-tsc` 通过；尚未连接服务器或配置生产商户信息。
+
+### 2026-09-14 — BEpusdt 发布验证与 BSC 配置准备
+
+- 用户确认固定使用 BSC/BEP20（`usdt.bep20`）。USDT 复用 `/purchase` 现有充值、订阅和支付选择器，无新侧栏或页面；CNY 计价及现有充值倍率不变。
+- 对照实际部署的 BEpusdt v1.24.2 协议修正查询法币金额字段、回调数值签名及订单状态映射，补齐金额、交易号、币种、URL 和异常响应校验。仅已支付状态可到账，无数据库迁移。
+- 后端支付 provider/handler/service 定向测试通过；前端全量 317 文件、2224 测试及 typecheck 通过。商户密钥仅放受限部署配置文件，不进入源码、文档或发布日志。
+- 本轮停在人工切换前，不创建新的回滚镜像、容器或 tag，沿用既有保留目标。当前线上提交已确认为 `1a6563940c6e87230135e8bdcacaa578354c8612`；生产支付配置尚未启用 BEpusdt，待发布流程完成后记录最终命令。

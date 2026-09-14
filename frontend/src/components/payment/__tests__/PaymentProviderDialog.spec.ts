@@ -65,16 +65,19 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'stripe', label: 'Stripe' },
         { value: 'airwallex', label: 'Airwallex' },
+        { value: 'bepusdt', label: 'USDT (BEpusdt)' },
       ],
       enabledKeyOptions: [
         { value: 'easypay', label: 'EasyPay' },
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'airwallex', label: 'Airwallex' },
+        { value: 'bepusdt', label: 'USDT (BEpusdt)' },
       ],
       allPaymentTypes: [
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
+        { value: 'bepusdt', label: 'USDT' },
       ],
       redirectLabel: 'Redirect',
     },
@@ -96,6 +99,68 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
 }
 
 describe('PaymentProviderDialog payment guide', () => {
+  it('creates BEpusdt in the existing provider dialog with BSC and payment callbacks', async () => {
+    const wrapper = mountDialog()
+    ;(wrapper.vm as unknown as { reset: (key: string) => void }).reset('bepusdt')
+    await nextTick()
+
+    const textInputs = wrapper.findAll('input[type="text"]')
+    await textInputs[0].setValue('USDT BSC')
+    await textInputs[1].setValue('https://pay.example.com')
+    await wrapper.get('input[type="password"]').setValue('test-api-token')
+    await wrapper.get('input[placeholder="usdt.trc20"]').setValue('usdt.bep20')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(wrapper.emitted('save')?.[0]?.[0]).toMatchObject({
+      provider_key: 'bepusdt',
+      name: 'USDT BSC',
+      supported_types: ['bepusdt'],
+      refund_enabled: false,
+      allow_user_refund: false,
+      config: {
+        apiBase: 'https://pay.example.com',
+        token: 'test-api-token',
+        tradeType: 'usdt.bep20',
+        fiat: 'CNY',
+        timeout: '600',
+        notifyUrl: `${window.location.origin}/api/v1/payment/webhook/bepusdt`,
+        returnUrl: `${window.location.origin}/payment/result`,
+      },
+    })
+    wrapper.unmount()
+  })
+
+  it('preserves BEpusdt callback hosts and omits an unchanged secret when editing', async () => {
+    const provider = providerFactory({
+      provider_key: 'bepusdt',
+      name: 'USDT BSC',
+      supported_types: ['bepusdt'],
+      config: {
+        apiBase: 'https://pay.example.com',
+        tradeType: 'usdt.bep20',
+        fiat: 'CNY',
+        notifyUrl: 'https://api.example.com/api/v1/payment/webhook/bepusdt',
+        returnUrl: 'https://app.example.com/payment/result',
+      },
+    })
+    const wrapper = mountDialog({ editing: provider })
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+
+    expect((wrapper.get('input[type="password"]').element as HTMLInputElement).value).toBe('')
+    await wrapper.find('form').trigger('submit.prevent')
+
+    const payload = wrapper.emitted('save')?.[0]?.[0] as { config: Record<string, string> }
+    expect(payload.config).toMatchObject(provider.config)
+    expect(payload.config).not.toHaveProperty('token')
+
+    await wrapper.get('input[type="password"]').setValue('replacement-test-token')
+    await wrapper.find('form').trigger('submit.prevent')
+    const updated = wrapper.emitted('save')?.[1]?.[0] as { config: Record<string, string> }
+    expect(updated.config.token).toBe('replacement-test-token')
+    wrapper.unmount()
+  })
+
   it('shows no payment guide for providers without a flow guide', () => {
     const wrapper = mountDialog()
 

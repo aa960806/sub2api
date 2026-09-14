@@ -9,6 +9,30 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('PaymentMethodSelector', () => {
+  it('selects USDT alongside existing methods and honors payment availability', async () => {
+    const methods = [
+      { type: 'alipay', display_name: 'Alipay', fee_rate: 0, available: true },
+      { type: 'wxpay', display_name: 'WeChat Pay', fee_rate: 0, available: true },
+      { type: 'bepusdt', display_name: 'USDT', fee_rate: 0, available: true },
+    ]
+    const wrapper = mount(PaymentMethodSelector, {
+      props: { selected: 'alipay', methods },
+    })
+
+    expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Alipay', 'WeChat Pay', 'USDT'])
+    await wrapper.get('button[title="USDT"]').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([['bepusdt']])
+
+    await wrapper.setProps({
+      selected: 'bepusdt',
+      methods: methods.map(method => ({ ...method, available: method.type !== 'bepusdt' })),
+    })
+    expect((wrapper.get('button[title="USDT"]').element as HTMLButtonElement).disabled).toBe(true)
+    await wrapper.get('button[title="USDT"]').trigger('click')
+    expect(wrapper.emitted('select')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('wraps large custom method collections without letting labels widen the selector', () => {
     const methods = Array.from({ length: 12 }, (_, index) => ({
       type: `custom_${index}`,
