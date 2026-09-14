@@ -1844,3 +1844,9 @@
 - 正式 PG/Redis/app-data 只读备份及最终 never-started probe 审计通过；线上 app/PG/Redis 未停止、重启、迁移或恢复，生产支付配置尚未改变。首次备份触及 120 秒超时，按脚本支持将 prepare 等待设为 600 秒后完成，未改生产数据。
 - 本次不创建新的回滚目标，沿用 `e389b3b1…` / `sha256:44e8dcf0…`。回滚入口检查并停用 USDT 下单，有未处理 USDT 订单会拒绝回滚，避免旧应用无法处理到账。
 - 切换：`sudo -n bash /srv/subnexus-migration/tools/release-bepusdt-8b4ba1b1.sh switch`。回滚：同一入口的 `rollback`。只读发布检查 `check` 已通过，尚未执行 switch/rollback/activate。
+
+### 2026-09-14 — BEpusdt BSC 已完成线上切换
+
+- 用户手动执行上述 `switch`，截图返回 `BEPUSDT_ACTIVATION=passed` 和 `BEPUSDT_RELEASE_SWITCH_COMPLETED=true`。代理随后核对发布入口 `check` 通过，线上容器为 `cb18fcbf51b194424c97e0fff0174a831c72fb3dc14662fe834dede54b169c58`，使用候选镜像 `sha256:c833028c6525e1c76bf448562ef1c4f6cc5afed397ff5048fec118edea9c09da`，healthy/restart=0，公网 health HTTP 200。
+- BEpusdt Provider 已存在、启用且列入支付方式；`ustd.yydsapi.uno` 专属收银台就绪。用户截图确认其他支付配置保留。状态核对时有 1 笔未处理 USDT 订单，未操作该订单，不能将部署成功等同于链上到账验证完成。
+- 本轮只核对状态并更新文档，没有再次切换或执行回滚。
