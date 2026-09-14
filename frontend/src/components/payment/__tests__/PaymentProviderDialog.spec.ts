@@ -114,7 +114,7 @@ describe('PaymentProviderDialog payment guide', () => {
     expect(wrapper.emitted('save')?.[0]?.[0]).toMatchObject({
       provider_key: 'bepusdt',
       name: 'USDT BSC',
-      supported_types: ['bepusdt'],
+      supported_types: ['bepusdt', 'bepusdt_bep20', 'bepusdt_trc20'],
       refund_enabled: false,
       allow_user_refund: false,
       config: {
