@@ -173,7 +173,7 @@ func (b *Bepusdt) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 	if err != nil {
 		return nil, fmt.Errorf("bepusdt query invalid money: %w", err)
 	}
-	metadata, err := bepAmountMetadata(resp.Data.ActualAmount)
+	metadata, err := bepAmountMetadata(resp.Data.ActualAmount, status != payment.ProviderStatusPaid)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func (b *Bepusdt) VerifyNotification(_ context.Context, raw string, _ map[string
 	if providerStatus == payment.ProviderStatusPaid {
 		providerStatus = payment.ProviderStatusSuccess
 	}
-	metadata, err := bepAmountMetadata(values["actual_amount"])
+	metadata, err := bepAmountMetadata(values["actual_amount"], providerStatus != payment.ProviderStatusSuccess)
 	if err != nil {
 		return nil, err
 	}
@@ -283,12 +283,19 @@ func bepPositiveAmount(value any) (float64, error) {
 	return amount, nil
 }
 
-func bepAmountMetadata(actual any) (map[string]string, error) {
+func bepAmountMetadata(actual any, allowZero bool) (map[string]string, error) {
 	metadata := map[string]string{"currency": "CNY"}
 	if actual != nil && actual != "" {
-		amount, err := bepPositiveAmount(actual)
+		amount, err := strconv.ParseFloat(fmt.Sprint(actual), 64)
 		if err != nil {
 			return nil, fmt.Errorf("bepusdt invalid actual_amount: %w", err)
+		}
+		if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 || (!allowZero && amount == 0) {
+			requirement := "strictly positive"
+			if allowZero {
+				requirement = "finite and non-negative"
+			}
+			return nil, fmt.Errorf("bepusdt invalid actual_amount: must be %s", requirement)
 		}
 		metadata["actual_amount"] = strconv.FormatFloat(amount, 'f', -1, 64)
 	}

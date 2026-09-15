@@ -1883,3 +1883,17 @@
 - 本地在原充值/订阅页面的 USDT 网络选择器中补齐 Ethereum（ERC20）和 TON，后端请求类型为 `bepusdt_erc20` / `bepusdt_ton`，分别映射 `usdt.erc20` / `usdt.ton`。订单、恢复令牌和前端恢复状态保留完整网络；沿用共享限额，订阅按换汇及手续费后的金额判断可用网络。无新页面、侧栏、依赖或数据库迁移。
 - 新网络须后台 BEpusdt Provider 的 `supported_types` 显式启用；旧 `bepusdt` 配置继续兼容 BSC/TRC20，不会自动开放 ERC20/TON。前后端支付相关测试通过（前端 73 项），TypeScript、修改文件 ESLint、前端生产构建及 `git diff --check` 通过。
 - 状态边界：BEpusdt 收款地址已经在线生效；网站网络选择代码仍在本地，主应用尚未发布。后续发布需包含网络选择相关提交，并在新版切换后通过后台启用这两个网络。禁止把原单网络 BSC 的旧发布命令当作本次网络选择的发布命令。
+
+### 2026-09-15 — TON/ERC20 发布前置状态（未切换）
+
+- 候选提交 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8` 已在隔离 Docker daemon 构建成功；tree `6e4d791a8d3c76dc1401633ad30af6f66e546d48`，候选镜像 `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，归档 SHA256 `695eb9fe15410ebd6c8ff8d82ff4998e2ca621cef2a53d05edc3f3418a375102`。归档暂存于本地 `F:\MySub2\candidate-transfer\ton-erc20-e9462cf9d\candidate-image.tar`，尚未上传或运行线上候选。
+- 前端全量 `317` 文件 / `2233` 测试通过，typecheck 通过；后端 `internal/payment` 与 `internal/service` 定向测试通过。构建过程未连接生产服务。
+- 发布仍停在候选 Gate/正式 prepare 之前。现有历史 retained wrapper 的本地测试发现 controller/UI library pin drift，且旧 `release-bepusdt` helper 只支持 BSC，不能直接用于本次 TON/ERC20。尚未执行线上 prepare、数据库备份、应用重启、支付配置写入、switch 或 rollback。
+- 本次若继续发布，必须重新生成/安装与服务器当前 controller/UI SHA 匹配的 retained wrapper，并通过候选 Gate、只读生产备份和最终审计；沿用既有回滚目标，不创建新的永久回滚镜像。当前没有可安全执行的切换命令。
+
+### 2026-09-15 — BEpusdt 路由与待支付金额边界加固（未切换）
+
+- 修复空 `providerKey` 的跨服务商查询：BEpusdt 网络类型（含旧 `bepusdt`、BEP20、TRC20、ERC20、TON）现在必须由精确 `bepusdt` Provider 承载，不能被仅伪装 `supported_types` 的其他 Provider 实例接管；同一约束同步到支付方式限额聚合和旧订单退款实例解析。
+- 修复 BEpusdt 状态 `1/5`（待支付/链上确认）在 `actual_amount=0` 时被误拒绝的问题；待支付状态允许有限非负金额，已支付/成功状态仍要求严格正数，NaN、Inf、负数继续拒绝。
+- 新增路由、查询、通知回归测试；Windows 本机定向测试 `go test -tags unit ./internal/payment ./internal/payment/provider` 通过。服务层定向测试已通过；Linux 全量后端验证仍需在可写 WSL 副本中完成。
+- 本批修改尚未生成新的不可变镜像、归档或服务器 `prepare` run；此前 `e9462cf9d` 制品不包含本批加固，不能用于切换。当前仍保持线上版本 `8b4ba1b18`，没有执行生产切换或重启。

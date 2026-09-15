@@ -86,6 +86,9 @@ func (s *PaymentConfigService) GetMethodLimits(ctx context.Context, types []stri
 	for _, pt := range types {
 		var matching []*dbent.PaymentProviderInstance
 		for _, inst := range instances {
+			if !payment.ProviderSupportsPaymentType(inst.ProviderKey, pt) {
+				continue
+			}
 			if payment.InstanceSupportsType(inst.SupportedTypes, pt) {
 				matching = append(matching, inst)
 			}
@@ -236,6 +239,9 @@ func pcGroupByPaymentType(instances []*dbent.PaymentProviderInstance) map[string
 			continue
 		}
 		for _, t := range splitTypes(inst.SupportedTypes) {
+			if !payment.ProviderSupportsPaymentType(inst.ProviderKey, t) {
+				continue
+			}
 			add(t, inst)
 		}
 	}

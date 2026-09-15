@@ -148,6 +148,9 @@ func psLegacyOrderMatchesInstance(orderPaymentType string, inst *dbent.PaymentPr
 	if instanceProviderKey == payment.TypeStripe {
 		return false
 	}
+	if !payment.ProviderSupportsPaymentType(instanceProviderKey, baseType) {
+		return false
+	}
 	if instanceProviderKey == baseType {
 		return true
 	}

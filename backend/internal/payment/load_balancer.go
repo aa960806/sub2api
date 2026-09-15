@@ -138,6 +138,13 @@ func (lb *DefaultLoadBalancer) queryEnabledInstances(
 	var matched []*dbent.PaymentProviderInstance
 	expectedWxpayJSAPIAppID := wxpayJSAPIAppIDFromContext(ctx)
 	for _, inst := range instances {
+		// Network-specific BEpusdt methods must never be routed to an
+		// unrelated provider instance that merely copied the advertised type.
+		// This is especially important when providerKey is intentionally empty
+		// for cross-provider visible-method selection.
+		if !ProviderSupportsPaymentType(inst.ProviderKey, paymentType) {
+			continue
+		}
 		// Stripe: match by provider_key because supported_types lists sub-types (card,link,alipay,wxpay),
 		// not "stripe" itself. The checkout page aggregates all sub-types under "stripe".
 		if paymentType == TypeStripe {
@@ -409,6 +416,23 @@ func InstanceSupportsType(supportedTypes string, target PaymentType) bool {
 		}
 	}
 	return false
+}
+
+// ProviderSupportsPaymentType verifies the provider identity for payment
+// types whose protocol is owned by one concrete provider.  Supported-types
+// metadata is operator-configurable, so it cannot by itself establish that an
+// instance can actually execute a network-specific request.
+func ProviderSupportsPaymentType(providerKey string, target PaymentType) bool {
+	target = PaymentType(strings.TrimSpace(target))
+	if target == "" {
+		return false
+	}
+	if GetBasePaymentType(target) == TypeBepusdt {
+		// Provider keys are persisted identifiers and are later dispatched by
+		// an exact factory switch; do not normalize malformed values here.
+		return providerKey == TypeBepusdt
+	}
+	return true
 }
 
 func normalizeVisibleMethodSupportType(paymentType PaymentType) PaymentType {

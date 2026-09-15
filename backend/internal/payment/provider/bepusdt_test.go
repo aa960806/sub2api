@@ -239,6 +239,7 @@ func TestBepusdtQueryRejectsUnsafePaymentEvidence(t *testing.T) {
 		func(data map[string]any) { data["status"] = 0 },
 		func(data map[string]any) { data["status"] = 7 },
 		func(data map[string]any) { data["actual_amount"] = "NaN" },
+		func(data map[string]any) { data["actual_amount"] = 0 },
 	} {
 		data := map[string]any{"trade_id": "trade-1", "money": "28.88", "fiat": "CNY", "status": 2, "actual_amount": "4.25"}
 		mutate(data)
@@ -247,6 +248,34 @@ func TestBepusdtQueryRejectsUnsafePaymentEvidence(t *testing.T) {
 		})
 		_, err := provider.QueryOrder(context.Background(), "trade-1")
 		require.Error(t, err, "%v", data)
+	}
+}
+
+func TestBepusdtPendingStatusesAllowZeroActualAmount(t *testing.T) {
+	for _, status := range []int{1, 5} {
+		for _, actual := range []string{"0", `"0"`} {
+			t.Run(fmt.Sprintf("status_%d_actual_%s", status, actual), func(t *testing.T) {
+				provider := bepTestProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = fmt.Fprintf(w, `{"status_code":200,"data":{"trade_id":"trade-1","status":%d,"money":"28.88","actual_amount":%s,"fiat":"CNY"}}`, status, actual)
+				})
+				resp, err := provider.QueryOrder(context.Background(), "trade-1")
+				require.NoError(t, err)
+				require.Equal(t, payment.ProviderStatusPending, resp.Status)
+				require.Equal(t, "0", resp.Metadata["actual_amount"])
+			})
+		}
+	}
+}
+
+func TestBepusdtPendingNotificationsAllowZeroActualAmount(t *testing.T) {
+	provider, err := NewBepusdt("test", map[string]string{"apiBase": "https://pay.example", "token": "test-token"})
+	require.NoError(t, err)
+	for _, status := range []int{1, 5} {
+		raw := bepSignedNotify(t, fmt.Sprintf(`{"trade_id":"trade-1","order_id":"order-1","amount":28.88,"actual_amount":0,"status":%d}`, status))
+		notification, err := provider.VerifyNotification(context.Background(), raw, nil)
+		require.NoError(t, err)
+		require.Equal(t, payment.ProviderStatusPending, notification.Status)
+		require.Equal(t, "0", notification.Metadata["actual_amount"])
 	}
 }
 

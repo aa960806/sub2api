@@ -153,6 +153,34 @@ func TestBepusdtAdditionalNetworksRequireExplicitConfiguration(t *testing.T) {
 	}
 }
 
+func TestProviderSupportsPaymentTypeRequiresBepusdtIdentityForNetworks(t *testing.T) {
+	t.Parallel()
+
+	for _, network := range []PaymentType{TypeBepusdt, TypeBepusdtBEP20, TypeBepusdtTRC20, TypeBepusdtERC20, TypeBepusdtTON} {
+		if !ProviderSupportsPaymentType(TypeBepusdt, network) {
+			t.Fatalf("BEpusdt provider was rejected for %s", network)
+		}
+		for _, providerKey := range []string{"", TypeEasyPay, TypeAlipay, "bepusdt "} {
+			if ProviderSupportsPaymentType(providerKey, network) {
+				t.Fatalf("provider %q was accepted for %s", providerKey, network)
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		providerKey string
+		paymentType PaymentType
+	}{
+		{providerKey: TypeEasyPay, paymentType: TypeAlipay},
+		{providerKey: TypeAlipay, paymentType: TypeAlipayDirect},
+		{providerKey: "", paymentType: TypeWxpay},
+	} {
+		if !ProviderSupportsPaymentType(tc.providerKey, tc.paymentType) {
+			t.Fatalf("non-BEpusdt method %s was rejected for provider %q", tc.paymentType, tc.providerKey)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helper to build test PaymentProviderInstance values
 // ---------------------------------------------------------------------------
