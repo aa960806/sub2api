@@ -264,7 +264,7 @@ func getInstanceChannelLimits(inst *dbent.PaymentProviderInstance, paymentType P
 	}
 	// Preserve limits configured under the legacy BEpusdt key when a network
 	// specific payment type is selected.
-	if (paymentType == TypeBepusdtBEP20 || paymentType == TypeBepusdtTRC20) && lookupKey != TypeBepusdt {
+	if GetBasePaymentType(paymentType) == TypeBepusdt && lookupKey != TypeBepusdt {
 		if cl, ok := limits[TypeBepusdt]; ok {
 			return cl
 		}
@@ -382,12 +382,13 @@ func startOfDay(t time.Time) time.Time {
 }
 
 // InstanceSupportsType checks if the given supported types string includes the target type.
-// An empty supportedTypes string means all types are supported.
+// New ERC20/TON networks require explicit configuration. The historical empty
+// supportedTypes behavior remains unchanged for other payment types.
 func InstanceSupportsType(supportedTypes string, target PaymentType) bool {
-	if supportedTypes == "" {
-		return true
-	}
 	target = PaymentType(strings.TrimSpace(target))
+	if supportedTypes == "" {
+		return target != TypeBepusdtERC20 && target != TypeBepusdtTON
+	}
 	normalizedTarget := normalizeVisibleMethodSupportType(target)
 	for _, t := range strings.Split(supportedTypes, ",") {
 		supported := strings.TrimSpace(t)
@@ -395,7 +396,7 @@ func InstanceSupportsType(supportedTypes string, target PaymentType) bool {
 			return true
 		}
 		// Legacy instances advertise only "bepusdt"; allow them to serve
-		// either explicit network while retaining network-specific isolation
+		// either original network while retaining network-specific isolation
 		// when the instance advertises one variant explicitly.
 		if (target == TypeBepusdtBEP20 || target == TypeBepusdtTRC20) && supported == TypeBepusdt {
 			return true

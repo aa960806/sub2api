@@ -126,6 +126,33 @@ func TestGetInstanceChannelLimitsFallsBackToLegacyDirectAliases(t *testing.T) {
 	}
 }
 
+func TestBepusdtAdditionalNetworksRequireExplicitConfiguration(t *testing.T) {
+	for _, network := range []string{TypeBepusdtERC20, TypeBepusdtTON} {
+		t.Run(network, func(t *testing.T) {
+			for _, supported := range []string{"", TypeBepusdt, TypeBepusdtBEP20 + "," + TypeBepusdtTRC20} {
+				if InstanceSupportsType(supported, network) {
+					t.Fatalf("unconfigured network %s accepted by %q", network, supported)
+				}
+			}
+			if !InstanceSupportsType(TypeBepusdt+","+network, network) {
+				t.Fatal("explicitly configured network was rejected")
+			}
+			if GetBasePaymentType(network) != TypeBepusdt {
+				t.Fatal("network did not resolve to BEpusdt provider")
+			}
+			inst := testInstance(1, TypeBepusdt, makeLimitsJSON(TypeBepusdt, ChannelLimits{SingleMin: 2, SingleMax: 100}))
+			limits := getInstanceChannelLimits(inst, network)
+			if limits.SingleMin != 2 || limits.SingleMax != 100 {
+				t.Fatalf("legacy shared limits were lost: %+v", limits)
+			}
+			inst.Limits = `{"bepusdt":{"singleMax":100},"` + network + `":{"singleMax":50}}`
+			if getInstanceChannelLimits(inst, network).SingleMax != 50 {
+				t.Fatal("network-specific limits must take precedence")
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helper to build test PaymentProviderInstance values
 // ---------------------------------------------------------------------------

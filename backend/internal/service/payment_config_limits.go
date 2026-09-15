@@ -254,6 +254,11 @@ func pcInstanceTypeLimits(inst *dbent.PaymentProviderInstance, pt string) (payme
 		return payment.ChannelLimits{}, false
 	}
 	cl, ok := limits[pt]
+	// Keep checkout limits consistent with load balancing when an existing
+	// BEpusdt instance stores a shared limit under the legacy provider key.
+	if !ok && inst.ProviderKey == payment.TypeBepusdt && payment.GetBasePaymentType(pt) == payment.TypeBepusdt {
+		cl, ok = limits[payment.TypeBepusdt]
+	}
 	return cl, ok
 }
 

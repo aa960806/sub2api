@@ -105,6 +105,8 @@ func TestBepusdtCreatePaymentSelectsNetworkFromPaymentType(t *testing.T) {
 	}{
 		{payment.TypeBepusdtBEP20, "usdt.bep20"},
 		{payment.TypeBepusdtTRC20, "usdt.trc20"},
+		{payment.TypeBepusdtERC20, "usdt.erc20"},
+		{payment.TypeBepusdtTON, "usdt.ton"},
 	} {
 		t.Run(tc.paymentType, func(t *testing.T) {
 			provider := bepTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
@@ -113,13 +115,38 @@ func TestBepusdtCreatePaymentSelectsNetworkFromPaymentType(t *testing.T) {
 				var payload map[string]any
 				require.NoError(t, json.Unmarshal(body, &payload))
 				require.Equal(t, tc.tradeType, payload["trade_type"])
+				require.Equal(t, bepUpstreamSignature(t, body), payload["signature"])
 				_, _ = io.WriteString(w, `{"status_code":200,"data":{"trade_id":"trade-network","payment_url":"https://pay.example/pay/trade-network"}}`)
 			})
 			req := bepCreateRequest()
+			provider.config["tradeType"] = "usdt.bep20"
 			req.PaymentType = tc.paymentType
 			_, err := provider.CreatePayment(context.Background(), req)
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestBepusdtLegacyCreateKeepsConfiguredNetwork(t *testing.T) {
+	provider := bepTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		require.Equal(t, "usdt.bep20", payload["trade_type"])
+		_, _ = io.WriteString(w, `{"status_code":200,"data":{"trade_id":"trade-legacy","payment_url":"https://pay.example/pay/trade-legacy"}}`)
+	})
+	provider.config["tradeType"] = "usdt.bep20"
+	req := bepCreateRequest()
+	req.PaymentType = payment.TypeBepusdt
+	_, err := provider.CreatePayment(context.Background(), req)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	registry.Register(provider)
+	for _, method := range []string{payment.TypeBepusdtERC20, payment.TypeBepusdtTON} {
+		registered, err := registry.GetProvider(method)
+		require.NoError(t, err)
+		require.Same(t, provider, registered)
+		require.Equal(t, payment.TypeBepusdt, registry.GetProviderKey(method))
 	}
 }
 

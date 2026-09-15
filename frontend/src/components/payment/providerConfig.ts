@@ -44,7 +44,14 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   airwallex: ['airwallex'],
   // Keep the legacy type for existing instances while allowing an admin to
   // explicitly scope a BEpusdt instance to one network.
-  bepusdt: ['bepusdt', 'bepusdt_bep20', 'bepusdt_trc20'],
+  bepusdt: ['bepusdt', 'bepusdt_bep20', 'bepusdt_trc20', 'bepusdt_erc20', 'bepusdt_ton'],
+}
+
+/** New networks need an explicit opt-in after wallet/scanner configuration. */
+export function getDefaultSupportedTypes(providerKey: string): string[] {
+  return providerKey === 'bepusdt'
+    ? ['bepusdt', 'bepusdt_bep20', 'bepusdt_trc20']
+    : [...(PROVIDER_SUPPORTED_TYPES[providerKey] || [])]
 }
 
 /** Available payment modes for EasyPay providers. */

@@ -45,7 +45,7 @@
       class="mt-4"
     >
       <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('payment.network') }}</label>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <button
           v-for="network in networkOptions"
           :key="network.type"

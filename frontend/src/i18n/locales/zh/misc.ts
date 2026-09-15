@@ -352,6 +352,8 @@ export default {
       bepusdt: 'USDT支付',
       bepusdt_bep20: 'USDT（BSC / BEP20）',
       bepusdt_trc20: 'USDT（TRC20）',
+      bepusdt_erc20: 'USDT（Ethereum / ERC20）',
+      bepusdt_ton: 'USDT（TON）',
     },
     status: {
       pending: '待支付',

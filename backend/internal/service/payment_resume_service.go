@@ -120,7 +120,7 @@ func NormalizeVisibleMethod(method string) string {
 	// payment helper intentionally collapses these variants for lifecycle and
 	// provider fallback code.
 	switch method {
-	case payment.TypeBepusdtBEP20, payment.TypeBepusdtTRC20:
+	case payment.TypeBepusdtBEP20, payment.TypeBepusdtTRC20, payment.TypeBepusdtERC20, payment.TypeBepusdtTON:
 		return method
 	default:
 		return payment.GetBasePaymentType(method)

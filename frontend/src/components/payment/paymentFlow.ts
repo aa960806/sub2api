@@ -18,7 +18,12 @@ const VISIBLE_METHOD_ALIASES = {
   airwallex: 'airwallex',
 } as const
 
-const BEPUSDT_NETWORK_PAYMENT_TYPES = ['bepusdt_bep20', 'bepusdt_trc20'] as const
+export const BEPUSDT_NETWORK_PAYMENT_TYPES = ['bepusdt_bep20', 'bepusdt_trc20', 'bepusdt_erc20', 'bepusdt_ton'] as const
+
+/** Only the original two networks may use a legacy unspecialized instance. */
+export function isLegacyBepusdtNetwork(method: string): boolean {
+  return method === 'bepusdt_bep20' || method === 'bepusdt_trc20'
+}
 
 export type VisiblePaymentMethod = 'alipay' | 'wxpay' | 'stripe' | 'airwallex'
 export type StripeVisibleMethod = 'alipay' | 'wechat_pay'
@@ -179,7 +184,7 @@ export function decidePaymentLaunch(
     amount: result.amount,
     qrCode: result.qr_code || '',
     expiresAt: result.expires_at || '',
-    paymentType: visibleMethod,
+    paymentType: normalizePaymentRequestType(context.visibleMethod),
     payUrl: result.pay_url || '',
     outTradeNo: result.out_trade_no || '',
     clientSecret: result.client_secret || '',

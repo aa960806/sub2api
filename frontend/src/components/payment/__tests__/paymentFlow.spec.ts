@@ -73,6 +73,27 @@ describe('getVisibleMethods', () => {
   })
 })
 
+describe('BEpusdt network recovery', () => {
+  it.each(['bepusdt_erc20', 'bepusdt_ton'])('retains %s when launching, saving and restoring checkout', (network) => {
+    const payload = buildCreateOrderPayload({
+      amount: 20,
+      paymentType: network,
+      orderType: 'balance',
+      isMobile: false,
+      isWechatBrowser: false,
+    })
+    expect(payload.payment_type).toBe(network)
+    const launch = decidePaymentLaunch(createOrderResult({
+      pay_url: 'https://pay.example.com/pay/101',
+      payment_mode: 'redirect',
+    }), { visibleMethod: network, orderType: 'balance', isMobile: false })
+    expect(launch.kind).toBe('redirect_waiting')
+    const restored = readPaymentRecoverySnapshot(JSON.stringify(launch.recovery))
+    expect(restored?.paymentType).toBe(network)
+    expect(restored?.payUrl).toBe('https://pay.example.com/pay/101')
+  })
+})
+
 describe('decidePaymentLaunch', () => {
   it('uses Stripe popup waiting flow for desktop Alipay client secret', () => {
     const decision = decidePaymentLaunch(createOrderResult({

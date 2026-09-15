@@ -355,10 +355,13 @@ import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vu
 import { METHOD_ORDER, getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
 import {
   PAYMENT_RECOVERY_STORAGE_KEY,
+  BEPUSDT_NETWORK_PAYMENT_TYPES,
   buildCreateOrderPayload,
   clearPaymentRecoverySnapshot,
   decidePaymentLaunch,
   getVisibleMethods,
+  isBepusdtNetworkPaymentType as isBepusdtNetwork,
+  isLegacyBepusdtNetwork,
   normalizeVisibleMethod,
   normalizePaymentRequestType,
   readPaymentRecoverySnapshot,
@@ -654,17 +657,13 @@ const tabs = computed(() => {
 })
 
 const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
-const BEPUSDT_NETWORK_TYPES = ['bepusdt_bep20', 'bepusdt_trc20'] as const
-function isBepusdtNetwork(type: string): boolean {
-  return (BEPUSDT_NETWORK_TYPES as readonly string[]).includes(type)
-}
 function methodLimitKey(type: string): string {
-  if (isBepusdtNetwork(type) && !visibleMethods.value[type] && visibleMethods.value.bepusdt) {
+  if (isLegacyBepusdtNetwork(type) && !visibleMethods.value[type] && visibleMethods.value.bepusdt) {
     return 'bepusdt'
   }
   if (type === 'bepusdt') return visibleMethods.value[selectedBepusdtNetwork.value]
     ? selectedBepusdtNetwork.value
-    : visibleMethods.value.bepusdt
+    : isLegacyBepusdtNetwork(selectedBepusdtNetwork.value) && visibleMethods.value.bepusdt
       ? 'bepusdt'
       : selectedBepusdtNetwork.value
   return type
@@ -733,7 +732,6 @@ const planGridClass = computed(() => {
 function amountFitsMethod(amt: number, methodType: string): boolean {
   if (amt <= 0) return true
   const ml = visibleMethods.value[methodLimitKey(methodType)]
-    || (isBepusdtNetwork(methodType) ? visibleMethods.value.bepusdt : undefined)
   if (!ml) return false
   if (ml.single_min > 0 && amt < ml.single_min) return false
   if (ml.single_max > 0 && amt > ml.single_max) return false
@@ -808,7 +806,7 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
     const ml = visibleMethods.value[methodLimitKey(type)] || visibleMethods.value[type]
     return {
       type,
-      display_name: ml?.display_name,
+      display_name: type === 'bepusdt' ? 'USDT' : ml?.display_name,
       fee_rate: ml?.fee_rate ?? 0,
       available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
     }
@@ -894,7 +892,7 @@ const subMethodOptions = computed<PaymentMethodOption[]>(() => {
     const currency = normalizePaymentCurrency(ml?.currency)
     return {
       type,
-      display_name: ml?.display_name,
+      display_name: type === 'bepusdt' ? 'USDT' : ml?.display_name,
       fee_rate: ml?.fee_rate ?? 0,
       available: ml?.available !== false && amountFitsMethod(subscriptionTotalAmountForCurrency(price, currency), type),
     }
@@ -902,22 +900,26 @@ const subMethodOptions = computed<PaymentMethodOption[]>(() => {
 })
 
 const bepusdtNetworkOptions = computed<PaymentMethodOption[]>(() =>
-  BEPUSDT_NETWORK_TYPES
-    .filter((type) => visibleMethods.value[type] || visibleMethods.value.bepusdt)
+  BEPUSDT_NETWORK_PAYMENT_TYPES
+    .filter((type) => visibleMethods.value[type] || (isLegacyBepusdtNetwork(type) && visibleMethods.value.bepusdt))
     .map((type) => {
-      const ml = visibleMethods.value[type] || visibleMethods.value.bepusdt
+      const ml = visibleMethods.value[methodLimitKey(type)]
+      const paymentAmount = activeTab.value === 'subscription'
+        ? subscriptionTotalAmountForCurrency(selectedPlan.value?.price ?? 0, normalizePaymentCurrency(ml?.currency))
+        : validAmount.value
       return {
         type,
-        display_name: type === 'bepusdt_bep20' ? 'BSC (BEP20)' : 'TRC20',
+        display_name: { bepusdt_bep20: 'BSC (BEP20)', bepusdt_trc20: 'TRC20', bepusdt_erc20: 'Ethereum (ERC20)', bepusdt_ton: 'TON' }[type],
         fee_rate: ml?.fee_rate ?? 0,
-        available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
+        available: ml?.available !== false && amountFitsMethod(paymentAmount, type),
       }
     }),
 )
 
 watch(bepusdtNetworkOptions, (options) => {
-  if (options.length > 0 && !options.some((option) => option.type === selectedBepusdtNetwork.value)) {
-    selectedBepusdtNetwork.value = options[0].type
+  const selected = options.find(option => option.type === selectedBepusdtNetwork.value)
+  if (options.length > 0 && (!selected || (!selected.available && options.some(option => option.available)))) {
+    selectedBepusdtNetwork.value = (options.find(option => option.available) || options[0]).type
   }
 }, { immediate: true })
 
@@ -929,6 +931,7 @@ const canSubmitSubscription = computed(() =>
 
 // Auto-switch to first available method when current selection can't handle the amount
 watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) => {
+  if (method === 'bepusdt' && activeTab.value === 'subscription') return
   if (method === 'bepusdt' && amt > 0 && !amountFitsMethod(amt, method)) {
     const availableNetwork = bepusdtNetworkOptions.value.find((option) => option.available)
     if (availableNetwork) selectedBepusdtNetwork.value = availableNetwork.type

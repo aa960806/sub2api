@@ -317,6 +317,7 @@ import type { EasyPayCustomMethod, TypeOption } from './providerConfig'
 import {
   PROVIDER_CONFIG_FIELDS,
   PROVIDER_SUPPORTED_TYPES,
+  getDefaultSupportedTypes,
   PROVIDER_CALLBACK_PATHS,
   WEBHOOK_PATHS,
   PAYMENT_MODE_QRCODE,
@@ -589,7 +590,7 @@ function removeEasyPayCustomMethod(index: number) {
 }
 
 function onKeyChange() {
-  form.supported_types = [...(PROVIDER_SUPPORTED_TYPES[form.provider_key] || [])]
+  form.supported_types = getDefaultSupportedTypes(form.provider_key)
   form.payment_mode = defaultPaymentMode(form.provider_key)
   clearConfig()
   applyDefaults()
@@ -786,7 +787,7 @@ function emitValidationError(msg: string) {
 function reset(defaultKey: string) {
   form.name = ''
   form.provider_key = defaultKey
-  form.supported_types = [...(PROVIDER_SUPPORTED_TYPES[defaultKey] || [])]
+  form.supported_types = getDefaultSupportedTypes(defaultKey)
   form.enabled = true
   form.payment_mode = defaultPaymentMode(defaultKey)
   form.refund_enabled = false

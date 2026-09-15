@@ -58,7 +58,7 @@ func NewBepusdt(instanceID string, config map[string]string) (*Bepusdt, error) {
 func (b *Bepusdt) Name() string        { return "BEpusdt" }
 func (b *Bepusdt) ProviderKey() string { return "bepusdt" }
 func (b *Bepusdt) SupportedTypes() []payment.PaymentType {
-	return []payment.PaymentType{payment.TypeBepusdt, payment.TypeBepusdtBEP20, payment.TypeBepusdtTRC20}
+	return []payment.PaymentType{payment.TypeBepusdt, payment.TypeBepusdtBEP20, payment.TypeBepusdtTRC20, payment.TypeBepusdtERC20, payment.TypeBepusdtTON}
 }
 func (b *Bepusdt) MerchantIdentityMetadata() map[string]string {
 	return map[string]string{"apiBase": b.config["apiBase"]}
@@ -81,6 +81,10 @@ func (b *Bepusdt) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 		tradeType = "usdt.bep20"
 	case payment.TypeBepusdtTRC20:
 		tradeType = "usdt.trc20"
+	case payment.TypeBepusdtERC20:
+		tradeType = "usdt.erc20"
+	case payment.TypeBepusdtTON:
+		tradeType = "usdt.ton"
 	}
 	if tradeType == "" {
 		tradeType = "usdt.trc20"

@@ -99,6 +99,28 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
 }
 
 describe('PaymentProviderDialog payment guide', () => {
+  it('requires explicit opt-in for ERC20 and TON when saving a legacy BEpusdt instance', async () => {
+    const provider = providerFactory({
+      provider_key: 'bepusdt',
+      supported_types: ['bepusdt'],
+      config: { apiBase: 'https://pay.example.com', tradeType: 'usdt.bep20', fiat: 'CNY' },
+    })
+    const wrapper = mountDialog({ editing: provider })
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+    for (const network of ['bepusdt_erc20', 'bepusdt_ton']) {
+      const option = wrapper.findAll('button').find(button => button.text() === `payment.methods.${network}`)
+      expect(option).toBeDefined()
+      expect(option!.classes()).not.toContain('bg-primary-500')
+      await option!.trigger('click')
+    }
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(wrapper.emitted('save')?.[0]?.[0]).toMatchObject({
+      supported_types: ['bepusdt', 'bepusdt_erc20', 'bepusdt_ton'],
+    })
+    wrapper.unmount()
+  })
+
   it('creates BEpusdt in the existing provider dialog with BSC and payment callbacks', async () => {
     const wrapper = mountDialog()
     ;(wrapper.vm as unknown as { reset: (key: string) => void }).reset('bepusdt')

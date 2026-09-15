@@ -1872,3 +1872,14 @@
 - 在现有充值/订阅页面的 USDT 方式下增加 BSC（BEP20）与 TRC20 子选项，保留原有支付宝、微信、订单、余额和回调流程。
 - 后端新增 `bepusdt_bep20` / `bepusdt_trc20` 请求类型；兼容旧 `bepusdt`，由 BEpusdt Provider 将网络类型映射为 `usdt.bep20` / `usdt.trc20`。无需数据库迁移，不改变历史订单。
 - 前端默认 BSC，恢复支付订单时保留网络选择；无可用网络时沿用原支付不可用状态。定向后端测试、前端 51 项支付测试及 typecheck 通过；当前仅提交本地代码，尚未部署线上。
+
+### 2026-09-15 — 新增 TON / Ethereum USDT 收款地址及网络选项
+
+- 从用户两张钱包截图的二维码解码并校验：TON `UQC_zKo9I8ikMwZNCDt6MTg4iBT2We9m0uSlBR8gW1m67Jdr`；Ethereum/ERC20 `0xfc9527b8352291a3491089Fb073950Ecf53cB223`。后者与现有 BSC 地址相同，但以独立 `usdt.erc20` 网络配置。TON 地址为用户收款地址，BEpusdt 内部匹配对应的 USDT Jetton 钱包，不能把内部匹配地址当作用户收款地址替换。
+- 已通过 BEpusdt 官方钱包管理 API 添加并启用 `usdt.ton`（钱包 ID 5）与 `usdt.erc20`（钱包 ID 6），最终只读回查的网络和完整地址一致。原有 BSC/TRC20 钱包与历史订单收款字段保持不变。
+- TON 原 `ton.org` 配置源返回 403；已在独立 liteclient 验证后改用官方仓库发布的 `https://ton-blockchain.github.io/global.config.json`。主链、USDT Jetton 钱包与分片读取通过。Ethereum 当前节点的链 ID、区块、交易回执和 USDT Transfer 日志读取通过。
+- 两个网络分别创建未付款测试订单，核对实际收款地址、网络、订单状态及收银台 HTTP 200 后取消；观察到 TON 成功扫描 17 个区块、Ethereum 成功扫描 2 个批次，相关扫描错误为 0。尚未进行这两个网络的真实转账及到账回调验证，不能将上述检查等同于真实付款全流程通过。
+- 审计目录 `/srv/subnexus-migration/payment-bepusdt-20260914/`：`wallet-add-ton-erc20-20260915T012838Z.json`，SHA256 `125f23324725232ecff1f3a07a263cadbae368596d639eb83e3166cdfccb802f`；`wallet-smoke-ton-erc20-20260915T013034Z.json`，SHA256 `ad88ccb8fc42fbc9d664673b41cd18dee90df1e82ce97db20b1d91ce43f611e6`。最终核验应用 health 200，应用、PostgreSQL、Redis、BEpusdt 容器身份、启动时间及重启次数不变；没有操作用户余额、计费数据或生产应用切换，没有新建回滚目标。
+- 本地在原充值/订阅页面的 USDT 网络选择器中补齐 Ethereum（ERC20）和 TON，后端请求类型为 `bepusdt_erc20` / `bepusdt_ton`，分别映射 `usdt.erc20` / `usdt.ton`。订单、恢复令牌和前端恢复状态保留完整网络；沿用共享限额，订阅按换汇及手续费后的金额判断可用网络。无新页面、侧栏、依赖或数据库迁移。
+- 新网络须后台 BEpusdt Provider 的 `supported_types` 显式启用；旧 `bepusdt` 配置继续兼容 BSC/TRC20，不会自动开放 ERC20/TON。前后端支付相关测试通过（前端 73 项），TypeScript、修改文件 ESLint、前端生产构建及 `git diff --check` 通过。
+- 状态边界：BEpusdt 收款地址已经在线生效；网站网络选择代码仍在本地，主应用尚未发布。后续发布需包含网络选择相关提交，并在新版切换后通过后台启用这两个网络。禁止把原单网络 BSC 的旧发布命令当作本次网络选择的发布命令。

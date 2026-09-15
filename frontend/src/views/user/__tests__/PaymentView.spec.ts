@@ -874,7 +874,14 @@ describe('PaymentView first recharge gift', () => {
 })
 
 describe('PaymentView BEpusdt checkout', () => {
-  it.each(['balance', 'subscription'] as const)('uses the existing %s flow for USDT checkout', async (orderType) => {
+  it.each([
+    { orderType: 'balance', network: 'bepusdt_bep20', explicit: false },
+    { orderType: 'subscription', network: 'bepusdt_bep20', explicit: false },
+    { orderType: 'balance', network: 'bepusdt_erc20', explicit: true },
+    { orderType: 'subscription', network: 'bepusdt_erc20', explicit: true },
+    { orderType: 'balance', network: 'bepusdt_ton', explicit: true },
+    { orderType: 'subscription', network: 'bepusdt_ton', explicit: true },
+  ] as const)('uses $network in the existing $orderType flow (explicit: $explicit)', async ({ orderType, network, explicit }) => {
     vi.useRealTimers()
     routeState.path = '/purchase'
     routeState.query = orderType === 'subscription' ? { tab: 'subscription', group: '3' } : {}
@@ -889,6 +896,10 @@ describe('PaymentView BEpusdt checkout', () => {
       ...checkout.methods.wxpay,
       display_name: 'USDT',
       currency: 'CNY',
+    }
+    if (explicit) {
+      checkout.methods.bepusdt_erc20 = { ...checkout.methods.bepusdt }
+      checkout.methods.bepusdt_ton = { ...checkout.methods.bepusdt }
     }
     getCheckoutInfo.mockReset().mockResolvedValue({ data: checkout })
     createOrder.mockReset().mockResolvedValue({
@@ -926,6 +937,10 @@ describe('PaymentView BEpusdt checkout', () => {
       expect(selector.props('methods').map(method => method.type)).toEqual(['wxpay', 'bepusdt'])
       await selector.get('button[title="USDT"]').trigger('click')
       expect(selector.props('selected')).toBe('bepusdt')
+      expect(selector.props('networkOptions').map(option => option.type)).toEqual(explicit
+        ? ['bepusdt_bep20', 'bepusdt_trc20', 'bepusdt_erc20', 'bepusdt_ton']
+        : ['bepusdt_bep20', 'bepusdt_trc20'])
+      await selector.get(`[data-testid="bepusdt-network-${network}"]`).trigger('click')
       const submit = wrapper.findAll('button').find(button => button.text().includes('payment.createOrder'))
       if (!submit) throw new Error('Existing checkout submit button not found')
       await submit.trigger('click')
@@ -934,7 +949,7 @@ describe('PaymentView BEpusdt checkout', () => {
       expect(createOrder).toHaveBeenCalledOnce()
       expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
         amount: orderType === 'subscription' ? 128 : 10,
-        payment_type: 'bepusdt_bep20',
+        payment_type: network,
         order_type: orderType,
         ...(orderType === 'subscription' ? { plan_id: 7 } : {}),
         return_url: 'http://localhost/payment/result',
@@ -942,12 +957,12 @@ describe('PaymentView BEpusdt checkout', () => {
       expect(locationState.href).toBe('https://pay.example.com/pay/test-order')
       expect(wrapper.getComponent(PaymentStatusPanel).props()).toMatchObject({
         orderId: 902,
-        paymentType: 'bepusdt',
+        paymentType: network,
         orderType,
       })
       expect(JSON.parse(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)!)).toMatchObject({
         orderId: 902,
-        paymentType: 'bepusdt',
+        paymentType: network,
         orderType,
         payUrl: 'https://pay.example.com/pay/test-order',
       })
@@ -956,6 +971,32 @@ describe('PaymentView BEpusdt checkout', () => {
       wrapper.unmount()
       Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
       window.localStorage.clear()
+    }
+  })
+
+  it('checks subscription network limits against the converted total including fees', async () => {
+    const method = checkoutInfoFixture().data.methods.wxpay
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        subscription_usd_to_cny_rate: 7,
+        recharge_fee_rate: 10,
+        methods: {
+          wxpay: method,
+          bepusdt: { ...method, currency: 'CNY' },
+          bepusdt_erc20: { ...method, currency: 'CNY', single_max: 985 },
+          bepusdt_ton: { ...method, currency: 'CNY', single_min: 900, single_max: 1000 },
+        },
+      },
+    })
+    try {
+      const selector = wrapper.getComponent(PaymentMethodSelector)
+      // 128 USD * 7 CNY/USD + 10% = 985.60 CNY; the unrelated recharge amount is zero.
+      expect(selector.props('networkOptions')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'bepusdt_erc20', available: false }),
+        expect.objectContaining({ type: 'bepusdt_ton', available: true }),
+      ]))
+    } finally {
+      wrapper.unmount()
     }
   })
 })
