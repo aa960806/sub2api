@@ -19,7 +19,19 @@ export type OrderStatus =
   | 'REFUNDED'
   | 'REFUND_FAILED'
 
-export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex' | 'bepusdt'
+export type PaymentType =
+  | 'alipay'
+  | 'wxpay'
+  | 'alipay_direct'
+  | 'wxpay_direct'
+  | 'stripe'
+  | 'easypay'
+  | 'airwallex'
+  | 'bepusdt'
+  | 'bepusdt_bep20'
+  | 'bepusdt_trc20'
+  | 'bepusdt_erc20'
+  | 'bepusdt_ton'
 
 export type OrderType = 'balance' | 'subscription' | 'first_recharge_gift'
 
