@@ -1904,3 +1904,11 @@
 - 在专用 context `subnexus-local-96`（socket `unix:///var/run/subnexus-docker-96.sock`，daemon `ab82cd35-2345-44b4-8709-bdcbd49b22ca`）使用五个固定 immutable base refs 完成隔离镜像构建。run token `20260915T041649Z-5c62f2a3-609b-47e5-b106-ec715c9f8cd7`；候选镜像 `sha256:0d18d8df76585a9869a342f48bbcc20b8ac7ec2183f250b209cf9920e5494c3b`；归档大小 `48782848` bytes，SHA256 `a004fa165a78d3ed1a76de89e833192ffb418aca25429ed4bc66b4648248f970`；构建脚本批准 SHA `cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3`。
 - `metadata.env`、`SHA256SUMS`、`base-images.txt`、`build.log`、`builder.inspect` 已在隔离环境校验，并复制到本地 `F:\MySub2\candidate-transfer\ton-erc20-571940130`；构建后 daemon 恢复为 `0` 容器、`0` 卷、无自定义网络（仅 `host`/`none`）。该制品尚未上传服务器、尚未运行候选 Gate、`prepare`、切换或回滚。
 - 后续线上动作前发现服务器存在多个旧 `e9462cf9d` retained wrapper `prepare` 进程并行生成备份，且磁盘使用率约 `91%`；这些不是本轮 571 制品流程。已暂停新增线上操作，须先由维护者按精确 PID、run 目录和磁盘预算只读核对并处理，不能把旧 run 当作本轮证据。
+
+### 2026-09-15 — TON/ERC20 兼容性门禁修复与发布准备完成（待人工切换）
+
+- 根因已修复：旧兼容证据错误地把候选镜像写入 `previous_live_image`，与线上实际 BSC 镜像不一致；已重新生成匹配证据，明确线上旧镜像 `sha256:c833028c6525e1c76bf448562ef1c4f6cc5afed397ff5048fec118edea9c09da`、候选镜像 `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，证据 SHA256 `96333408cb59f98ec4df70d5c9431b6dfdd3c8ab82f299816c2b69f726302692`。
+- 线上正式准备运行 `/srv/subnexus-migration/cutover/20260915042437-1208588` 已完成：`state=prepared`、`ui_state=prepared`、`retained_flow=full-release-retained-v1`、`retained_commit_phase=none`、`ui_commit_intent=no`；没有创建新的永久回滚容器/镜像，沿用 `e389b3b1…` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`。
+- PG dump、Redis RDB、应用数据归档及 SHA 校验通过；never-started 候选探针创建并删除成功，探针确认候选从未启动；最终审计日志 SHA256 `8396e02edc3c65c66a4c3c0a0ead32d3370f954620ceea184f7e67843dbe96bf`，最终审计结论 `FINAL_PRE_SWITCH_AUDIT=passed`。
+- 审计期间线上应用、PostgreSQL、Redis 启动时间和重启次数不变，线上仍为 BSC 版本；未切换、未写入生产支付配置、未修改用户余额/订单/计费数据。
+- 本次发布只使用已冻结且与兼容证据严格匹配的 `e9462cf9d` 候选及 retained wrapper；切换前不得复用旧 BSC 专用脚本或不匹配的旧证据。
