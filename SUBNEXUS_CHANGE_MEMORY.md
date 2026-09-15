@@ -1919,3 +1919,10 @@
 - 线上容器已切换为候选镜像 `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，容器 healthy、restart count=0，`/health` 返回 `{"status":"ok"}`。
 - 切换后只读核验确认状态为 `state=switched`、`ui_state=switched`；既有回滚目标仍为 `e389b3b1…`，切换过程未创建新的永久回滚目标。
 - 为使四个网络在用户端可选，已通过管理员 API 将现有 `bepusdt` 实例（ID 3）的 `supported_types` 更新为 `bepusdt,bepusdt_bep20,bepusdt_trc20,bepusdt_erc20,bepusdt_ton`；实例保持启用，其他配置不变。未修改用户余额、订单或计费数据。
+### 2026-09-15 — 上游 v0.2.5 合并完成
+
+- 已从 `upstream` 获取并合并标签 `v0.2.5`（提交 `86f93c28e`），保留当前 SubNexus 的支付网络（BSC/TRC20/ERC20/TON）、Rain/Glass 用户端界面、活动功能及性能开关。
+- 合并冲突已逐项解决：依赖注入保留 SubNexus 管理处理器；设置公开结构同时保留活动/监控字段并加入 `subscription_enabled`；导航保留模型评测、战令和邀请活动，并接入上游订阅开关；功能开关保留加载失败时的安全关闭逻辑；OpenCode Go 上游常量和多协议识别已补齐。
+- 合并提交：`bf067d3ee`；随后修复并提交缺失的 OpenCode Go 常量：`80410100a`。当前工作树干净。
+- 验证通过：前端 Vitest `333` 文件 / `2411` 测试，`vue-tsc --noEmit`；后端 `go test ./internal/service ./internal/payment/...`。`git diff --check` 通过。
+- 本次仅完成本地代码合并和验证，未构建或切换线上镜像，未执行数据库迁移、用户数据写入或生产重启。后续发布需重新构建候选并按既有人工切换流程准备。
