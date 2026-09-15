@@ -18,7 +18,11 @@ vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user }) }))
 vi.mock('@/stores/adminSettings', () => ({ useAdminSettingsStore: () => ({}) }))
 vi.mock('@/stores/onboarding', () => ({ useOnboardingStore: () => ({ setReplayCallback: vi.fn() }) }))
 vi.mock('@/composables/useOnboardingTour', () => ({ useOnboardingTour: () => ({ replayTour: vi.fn() }) }))
-vi.mock('@/utils/featureFlags', () => ({ FeatureFlags: {}, isFeatureFlagEnabled: () => false }))
+vi.mock('@/utils/featureFlags', () => ({
+  FeatureFlags: { subscription: { key: 'subscription_enabled', mode: 'opt-out' } },
+  isFeatureFlagEnabled: () => false,
+  resolveFeatureFlag: () => false,
+}))
 
 let wrapper: VueWrapper | undefined
 let frames: Map<number, FrameRequestCallback>

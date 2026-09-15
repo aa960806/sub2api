@@ -200,6 +200,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyHideCcsImportButton,
 		SettingKeyPurchaseSubscriptionEnabled,
 		SettingKeyPurchaseSubscriptionURL,
+		SettingKeySubscriptionEnabled,
 		SettingKeyTableDefaultPageSize,
 		SettingKeyTablePageSizeOptions,
 		SettingKeyCustomMenuItems,
@@ -373,6 +374,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		HideCcsImportButton:                 settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:         settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:             strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+		SubscriptionEnabled:                 settings[SettingKeySubscriptionEnabled] != "false",
 		TableDefaultPageSize:                tableDefaultPageSize,
 		TablePageSizeOptions:                tablePageSizeOptions,
 		CustomMenuItems:                     settings[SettingKeyCustomMenuItems],
@@ -715,6 +717,7 @@ type PublicSettingsInjectionPayload struct {
 	BattlePassAdminOnly                   bool `json:"battle_pass_admin_only"`
 	InvoiceEnabled                        bool `json:"invoice_enabled"`
 	AvailableChannelsEnabled              bool `json:"available_channels_enabled"`
+	SubscriptionEnabled                   bool `json:"subscription_enabled"`
 	ModelPlazaEnabled                     bool `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth                 bool `json:"model_plaza_require_auth"`
 	PluginManagementEnabled               bool `json:"plugin_management_enabled"`
@@ -814,6 +817,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		BattlePassAdminOnly:                   settings.BattlePassAdminOnly,
 		InvoiceEnabled:                        settings.InvoiceEnabled,
 		AvailableChannelsEnabled:              settings.AvailableChannelsEnabled,
+		SubscriptionEnabled:                   settings.SubscriptionEnabled,
 		ModelPlazaEnabled:                     settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                 settings.ModelPlazaRequireAuth,
 		PluginManagementEnabled:               settings.PluginManagementEnabled,

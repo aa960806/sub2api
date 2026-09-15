@@ -115,6 +115,11 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Available Channels',
   }),
+  subscription: defineFlag({
+    key: 'subscription_enabled',
+    mode: 'opt-out',
+    label: 'Subscription',
+  }),
   modelPlaza: defineFlag({
     key: 'model_plaza_enabled',
     mode: 'opt-in',
@@ -216,9 +221,15 @@ export function isFeatureFlagEnabled(flag: FeatureFlagDefinition): boolean {
   // refresh is pending or after the public-settings request failed.
   if (appStore.publicSettingsLoaded !== true) return false
 
-  const raw = appStore.cachedPublicSettings?.[flag.key] as
-    | boolean
-    | undefined
+  return resolveFeatureFlag(appStore.cachedPublicSettings, flag)
+}
+
+/** Resolve a flag from an already available public settings snapshot. */
+export function resolveFeatureFlag(
+  settings: Partial<PublicSettings> | null | undefined,
+  flag: FeatureFlagDefinition,
+): boolean {
+  const raw = settings?.[flag.key] as boolean | undefined
   if (typeof raw === 'boolean') return raw
   // A successfully loaded payload that omits a key still follows the
   // definition's compatibility mode. Staged migration flags are opt-in.

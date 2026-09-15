@@ -55,6 +55,9 @@ declare module 'vue-router' {
      */
     requiresRiskControl?: boolean
 
+    /** Whether this route requires the subscription feature switch. */
+    requiresSubscription?: boolean
+
     /**
      * Whether the user invoice route requires the invoice feature gate.
      * Administrators use the management route even while new applications
