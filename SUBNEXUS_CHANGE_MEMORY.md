@@ -1942,3 +1942,11 @@
 - 本次保留的迁移文件差异有明确的数据保护目的，今后合并上游时必须保留该保护。当前没有修改生产迁移记录或放宽 checksum 校验；一旦这份迁移上线，后续变更应追加新迁移。
 - 同步 `backend/migrations/user_platform_quota_purge_unlimited_migration_test.go` 的完整 SQL 契约，锁定三档独立判零，防止回退到“只看 limit”或“相加后为零”。在测试注释中提供真实隔离 PostgreSQL fixture：分别覆盖各档非零用量、正负相抵、各档显式 0/正限额、活跃/软删、可清理零行与重复执行；默认单测不连接数据库。Windows 本机 `go test ./migrations` 通过（`0.086s`），`git diff --check` 通过；未将该源码契约测试表述为数据库迁移演练通过。
 - 应用候选为 `bd174adbb143a943e15be66837449d76695888e7`，构建和隔离 new/old/new 验证正在进行；本条记录不表示正式 prepare 或发布完成。最终验证、镜像/归档/证据哈希、新回滚目标绑定和正式 run 由根代理后续补记。尚未执行本轮生产迁移、切换、回滚或数据库恢复。
+
+### 2026-09-16 — v0.2.5 发布前置完成（停在人工切换前）
+
+- 真实生产快照克隆已在完全隔离的 Docker 网络、卷和受限数据库角色中通过 `new -> old -> new`：登录、核心 API、迁移 checksum、users、payment_orders、usage_logs（13,776,573 行）、usage_billing_dedup（13,863,531 行）、订阅、keys、quota、redeem_codes、groups 及非零 quota 指纹全部保持；证据 `/srv/subnexus-migration/docker-candidate/v025-realclone-d2bed13f05d9/production-clone-evidence.json`，SHA256=`e34f90f4e0cf45b4e3a444319ceb109e87d9adfb480f4e0b045e9bae12e0912a`，`result=passed`，`cleanup=passed`。
+- 为使隔离副本真实启动，诊断脚本仅在 clone 库为测试账号预置 `auth_identities`，并授予 clone_app 对 `security_secrets` 的最小 INSERT/UPDATE/sequence 权限；未修改候选业务代码或生产数据库。关闭 clone-only 的 Tencent/Alibaba captcha 设置，避免继承生产配置阻断验证登录。
+- 正式 run `/srv/subnexus-migration/cutover/20260915144333-1506840` 仍为 `state=prepared`、`ui_state=prepared`、`ui_commit_intent=no`；最终 preflight 输出 SHA256=`6c306196adec627928154eae31d1ecd95c2919b1097c13cfa2117d091fa6a7b4`，manifest SHA256=`7933faabaa5cb66b7ed3b6c0b82930d4637414a26c011888a3109893af482d23`，历史锚点 manifest SHA256=`7d54698f11485ce35c538fab46e9844327eaffc3e65dc5d37de3ae43faa86659`。健康检查 200、never-started probe 运行合同与清理均通过，无候选或 probe 残留。
+- 本轮新一级回滚目标绑定当前 live `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，名称 `subnexus-cutover-ui-prior-20260915144333-1506840`；历史锚点 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` 继续保留。线上 PostgreSQL/Redis/应用身份未变化，生产迁移、switch、rollback 均未执行。
+- 人工交接前只读检查：应用健康，未发现结算/迁移进程；数据库活动为线上正常连接，Redis 仅有既有 billing probe leader 锁。切换时仍由维护者确认无结算任务后使用命令中的 quiet token。

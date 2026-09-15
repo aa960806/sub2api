@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-15，Asia/Shanghai）：上游 v0.2.5 发布前置进行中，生产基线为已发布的 TON/ERC20 提交 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`。本轮已补齐 Wire 生成代码并保护迁移中的非零平台用量，应用候选为 `bd174adbb143a943e15be66837449d76695888e7`，正在构建和隔离验证，尚未完成最终发布门禁或执行切换。最新授权要求以本次切换前实际 live 建立新的回滚目标；只有最终 switch/rollback 交给维护者手动执行。本文件旧日期的状态、旧 run 和旧命令均为历史记录，不是本轮入口；详见文末及 `SUBNEXUS_CHANGE_MEMORY.md` 最新记录。
+> 当前权威状态（2026-09-16，Asia/Shanghai）：上游 v0.2.5 候选 `bd174adbb143a943e15be66837449d76695888e7` 的构建、真实生产快照 new→old→new 隔离验证、prepare、新回滚目标绑定和最终 preflight 全部通过；run=`20260915144333-1506840` 仍为 `prepared/prepared/no`，尚未执行 switch。线上 live、PostgreSQL、Redis 未变化。唯一待人工动作是维护者确认结算窗口后执行本轮 switch；rollback 命令绑定同一 run 和新回滚目标。本文件旧日期状态与旧命令均为历史记录，详见文末及 `SUBNEXUS_CHANGE_MEMORY.md` 最新记录。
 
 ## 项目身份
 
