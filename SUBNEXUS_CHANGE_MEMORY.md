@@ -1912,3 +1912,10 @@
 - PG dump、Redis RDB、应用数据归档及 SHA 校验通过；never-started 候选探针创建并删除成功，探针确认候选从未启动；最终审计日志 SHA256 `8396e02edc3c65c66a4c3c0a0ead32d3370f954620ceea184f7e67843dbe96bf`，最终审计结论 `FINAL_PRE_SWITCH_AUDIT=passed`。
 - 审计期间线上应用、PostgreSQL、Redis 启动时间和重启次数不变，线上仍为 BSC 版本；未切换、未写入生产支付配置、未修改用户余额/订单/计费数据。
 - 本次发布只使用已冻结且与兼容证据严格匹配的 `e9462cf9d` 候选及 retained wrapper；切换前不得复用旧 BSC 专用脚本或不匹配的旧证据。
+
+### 2026-09-15 — TON/ERC20 发布已切换完成
+
+- 用户已执行 retained wrapper 切换，返回 `RETAINED_RELEASE_SWITCH_COMPLETED=/srv/subnexus-migration/cutover/20260915042437-1208588`。
+- 线上容器已切换为候选镜像 `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，容器 healthy、restart count=0，`/health` 返回 `{"status":"ok"}`。
+- 切换后只读核验确认状态为 `state=switched`、`ui_state=switched`；既有回滚目标仍为 `e389b3b1…`，切换过程未创建新的永久回滚目标。
+- 为使四个网络在用户端可选，已通过管理员 API 将现有 `bepusdt` 实例（ID 3）的 `supported_types` 更新为 `bepusdt,bepusdt_bep20,bepusdt_trc20,bepusdt_erc20,bepusdt_ton`；实例保持启用，其他配置不变。未修改用户余额、订单或计费数据。
