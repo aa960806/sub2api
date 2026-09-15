@@ -1897,3 +1897,10 @@
 - 修复 BEpusdt 状态 `1/5`（待支付/链上确认）在 `actual_amount=0` 时被误拒绝的问题；待支付状态允许有限非负金额，已支付/成功状态仍要求严格正数，NaN、Inf、负数继续拒绝。
 - 新增路由、查询、通知回归测试；Windows 本机定向测试 `go test -tags unit ./internal/payment ./internal/payment/provider` 通过。服务层定向测试已通过；Linux 全量后端验证仍需在可写 WSL 副本中完成。
 - 本批修改尚未生成新的不可变镜像、归档或服务器 `prepare` run；此前 `e9462cf9d` 制品不包含本批加固，不能用于切换。当前仍保持线上版本 `8b4ba1b18`，没有执行生产切换或重启。
+
+### 2026-09-15 — 571940130 隔离候选制品（未切换）
+
+- 对确切提交 `571940130700aa7d5aeeea206993b3883b9ca50d`（tree `6f7460b74662c941ede2927166f298c9b8dff52f`）完成 Linux 可写 tmpfs 全量后端测试与 embed 构建，均退出码 `0`；固定 golang 镜像 `sha256:4c9fe601...`，源码为 WSL root-owned detached clean clone。
+- 在专用 context `subnexus-local-96`（socket `unix:///var/run/subnexus-docker-96.sock`，daemon `ab82cd35-2345-44b4-8709-bdcbd49b22ca`）使用五个固定 immutable base refs 完成隔离镜像构建。run token `20260915T041649Z-5c62f2a3-609b-47e5-b106-ec715c9f8cd7`；候选镜像 `sha256:0d18d8df76585a9869a342f48bbcc20b8ac7ec2183f250b209cf9920e5494c3b`；归档大小 `48782848` bytes，SHA256 `a004fa165a78d3ed1a76de89e833192ffb418aca25429ed4bc66b4648248f970`；构建脚本批准 SHA `cbec521753cc5fa18bf96a4fd1dd58b32ff026fd76009189e8015a2d201b8aa3`。
+- `metadata.env`、`SHA256SUMS`、`base-images.txt`、`build.log`、`builder.inspect` 已在隔离环境校验，并复制到本地 `F:\MySub2\candidate-transfer\ton-erc20-571940130`；构建后 daemon 恢复为 `0` 容器、`0` 卷、无自定义网络（仅 `host`/`none`）。该制品尚未上传服务器、尚未运行候选 Gate、`prepare`、切换或回滚。
+- 后续线上动作前发现服务器存在多个旧 `e9462cf9d` retained wrapper `prepare` 进程并行生成备份，且磁盘使用率约 `91%`；这些不是本轮 571 制品流程。已暂停新增线上操作，须先由维护者按精确 PID、run 目录和磁盘预算只读核对并处理，不能把旧 run 当作本轮证据。
