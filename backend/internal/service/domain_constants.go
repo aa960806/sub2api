@@ -67,6 +67,8 @@ const (
 const (
 	AccountModePayG   = domain.AccountModePayG
 	AccountModeCoding = domain.AccountModeCoding
+	AccountModeZen    = domain.AccountModeZen
+	AccountModeGo     = domain.AccountModeGo
 )
 
 // 上游 API 协议（国产供应商）：决定转发端点与格式，与接入模式正交。
@@ -86,17 +88,21 @@ const (
 	DefaultZhipuCodingBaseURL = "https://open.bigmodel.cn/api/coding/paas/v4"
 	DefaultDeepseekBaseURL    = "https://api.deepseek.com"
 	// MiniMax 按量付费与 Coding/Token Plan 共用推理域名，靠 API Key 区分套餐。
-	DefaultMiniMaxBaseURL = "https://api.minimaxi.com/v1"
+	DefaultMiniMaxBaseURL     = "https://api.minimaxi.com/v1"
+	DefaultOpenCodeGoBaseURL  = "https://opencode.ai/zen/go/v1"
+	DefaultOpenCodeZenBaseURL = "https://opencode.ai/zen/v1"
 )
 
 // 国产供应商 Anthropic 协议端点的默认 base_url（上游路径为 {base}/v1/messages）。
 // 与前端 credentialsBuilder.ts 中的预设保持一致。
 const (
-	DefaultKimiPayGAnthropicBaseURL   = "https://api.moonshot.cn/anthropic"
-	DefaultKimiCodingAnthropicBaseURL = "https://api.kimi.com/coding"
-	DefaultZhipuAnthropicBaseURL      = "https://open.bigmodel.cn/api/anthropic"
-	DefaultDeepseekAnthropicBaseURL   = "https://api.deepseek.com/anthropic"
-	DefaultMiniMaxAnthropicBaseURL    = "https://api.minimaxi.com/anthropic"
+	DefaultKimiPayGAnthropicBaseURL    = "https://api.moonshot.cn/anthropic"
+	DefaultKimiCodingAnthropicBaseURL  = "https://api.kimi.com/coding"
+	DefaultZhipuAnthropicBaseURL       = "https://open.bigmodel.cn/api/anthropic"
+	DefaultDeepseekAnthropicBaseURL    = "https://api.deepseek.com/anthropic"
+	DefaultMiniMaxAnthropicBaseURL     = "https://api.minimaxi.com/anthropic"
+	DefaultOpenCodeGoAnthropicBaseURL  = "https://opencode.ai/zen/go"
+	DefaultOpenCodeZenAnthropicBaseURL = "https://opencode.ai/zen"
 )
 
 // IsCNProvider 报告 platform 是否为国产 OpenAI 兼容供应商（kimi/zhipu/deepseek/minimax）。
@@ -107,6 +113,11 @@ func IsCNProvider(platform string) bool {
 	default:
 		return false
 	}
+}
+
+// IsMultiProtocolAPIKeyProvider reports whether the provider supports adaptive protocol dispatch.
+func IsMultiProtocolAPIKeyProvider(platform string) bool {
+	return IsCNProvider(platform) || platform == PlatformOpenCodeGo
 }
 
 // AllowedQuotaPlatforms 是允许设置 user × platform quota 的平台列表（单一权威来源）。
