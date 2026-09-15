@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
+> 当前权威状态（2026-09-15，Asia/Shanghai）：上游 v0.2.5 发布前置进行中，生产基线为已发布的 TON/ERC20 提交 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`。本轮已补齐 Wire 生成代码并保护迁移中的非零平台用量，应用候选为 `bd174adbb143a943e15be66837449d76695888e7`，正在构建和隔离验证，尚未完成最终发布门禁或执行切换。最新授权要求以本次切换前实际 live 建立新的回滚目标；只有最终 switch/rollback 交给维护者手动执行。本文件旧日期的状态、旧 run 和旧命令均为历史记录，不是本轮入口；详见文末及 `SUBNEXUS_CHANGE_MEMORY.md` 最新记录。
 
 ## 项目身份
 
@@ -12,11 +12,11 @@
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
 - 最新本地上游基线：`upstream/main=881f3202694c6bc932446931a30c27d9675178b9`（版本 `0.2.5`，2026-09-15；功能基线为标签提交 `86f93c28e`，其后版本同步提交为 `881f32026`）；以下历史生产信息不代表本轮已部署。
-- 本次实际生产应用基线为 `890828afe0f726abb363029f147e04087fed2bca`。模型表现监控不可变候选 commit=`33a9601c93304f89a67b7845b4e3b10447edcf96`、tree=`efb0d3a6e9089ecb7eea188f91e5299a3694b8d6`；后续记账不替代该构建身份，`main` 未修改。
+- 本轮实际生产应用基线为 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`（TON/ERC20），v0.2.5 应用候选为 `bd174adbb143a943e15be66837449d76695888e7`；后续测试/记忆提交不替代该应用构建身份，`main` 未修改。
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 
-## 当前状态
+## 2026-09-11 历史状态（当前发布以顶部及文末记录为准）
 
 | 状态项 | 当前值 |
 | --- | --- |
@@ -295,6 +295,15 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 新的回滚镜像 tag=`subnexus-rollback:model-evaluation-20260911-890828afe0f7` 已归档校验，正常回滚目标是实际 live `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；维护者 switch 后保留为 `subnexus-cutover-ui-prior-20260911130706-3232923`，默认不恢复数据库。旧 v0.2.4 第 15.3 节及更早历史命令不可用于本次。新功能默认关闭，维护者在后台配置后启用。
 
 
-## 当前模型监控修复发布（2026-09-12 00:45）
+## 历史模型监控修复发布（2026-09-12 00:45）
 
 本轮全部前置已完成，run `/srv/subnexus-migration/cutover/20260911163046-3338612` / manifest SHA `20f1c17d67e37c41debaff189ac09a5ecec6369cc6abcc8fbb199192ecd49600`，停在 prepared。候选 `ccb69f00132dcb9dcbad76e8c3f542231bb002fd` / `sha256:c8a9db0d90f3c99924d7c53c7b9b41b4b90f26d053341abc254888e58c12df55`。本次不创建回滚目标，正常回滚复用 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；切换提交前失败恢复当前 live，提交成功删除临时 current。完整生产副本六阶段回归、备份与 never-started probe 通过，生产迁移未执行。唯一人工命令见切换手册第 15.5 节；旧第 15.4 节 run 已 switched，禁止重用。
+
+## 2026-09-15 v0.2.5 发布前置修复（尚未切换）
+
+- 用户授权完成全部前置，并要求本轮创建新的回滚目标。当前线上应用基线为 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`，镜像 `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`；以实际 live 作为本轮新回滚目标，不能继续套用历史 retained/no-new-rollback 发布入口。
+- `c5b6e972cd27fefb3178e9f467a3c2f302a99eb8` 重新生成 `backend/cmd/server/wire_gen.go`，补齐上游 `ProvideRateLimitService` 新增的 `OllamaCloudUsageService` 依赖及初始化顺序，修复应用构建入口与 provider 签名不一致的问题。
+- 本轮新增两份 `238_*` 迁移：OpenCode 平台 CHECK 超集扩展，以及无限额零用量行清理。发布前只读检查业务库 `sub2api` 发现三档限额全 NULL 共 `7749` 行，其中 `459` 行至少一档用量非零，三窗口数值合计 `2600.8991650383`（窗口互有重叠，不能当作独立计费总额）。容器 `POSTGRES_DB` 是 bootstrap 库，业务核对必须显式选用 `sub2api`，不能因查错库认定无业务表。
+- `bd174adbb143a943e15be66837449d76695888e7` 对尚未发布的清理迁移增加三档独立 `COALESCE(usage, 0) = 0` 条件：任何一档非零用量或非 NULL 限额（含限额为 0）均保留，避免升级删除历史用量；没有修改用户余额、订单、订阅或计费明细。这项保护是本 fork 有意保留的迁移差异，后续上游合并不得直接覆盖。迁移一旦执行后必须维持 checksum 不变。
+- 应用候选固定为 `bd174adbb143a943e15be66837449d76695888e7`，构建与隔离迁移/旧版回归验证仍在进行。迁移契约测试已同步保护条件，并说明隔离 PostgreSQL 的各窗口非零、显式零限额、软删历史及重复执行 fixture；Windows 本机 `go test ./migrations` 及 `git diff --check` 通过，隔离数据库及最终发布制品证据以变更记忆后续记录为准。
+- 当前未执行本轮生产迁移、switch、rollback 或数据库恢复，不能称为已发布。最终交接须等待候选构建、兼容 Gate、全新备份、新回滚绑定、prepare/probe 和最终审计完成，随后仅交付本轮一条 switch 与一条 rollback 命令；回滚默认恢复应用，不恢复数据库快照。

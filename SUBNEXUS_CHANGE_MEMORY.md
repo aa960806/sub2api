@@ -1932,3 +1932,13 @@
 - 刷新 `upstream/main` 后确认上游最新提交为 `881f3202694c6bc932446931a30c27d9675178b9`（`chore: sync VERSION to 0.2.5 [skip ci]`），共同祖先为 `v0.2.5` 标签提交 `86f93c28e`。
 - 在 `feature/subnexus-migration` 精确 cherry-pick 该提交，生成本地提交 `8c29de502`；仅将 `backend/cmd/server/VERSION` 从 `0.2.4` 更新为 `0.2.5`，未改动业务代码、数据库迁移、配置或线上资源。
 - 当前工作树干净；上游最新版本文件内容已纳入本地分支。由于采用 cherry-pick，本地版本提交 SHA 与上游原提交不同，提交图谱仍会显示一笔非祖先提交；这不代表版本文件或功能代码缺失。本次只完成本地上游同步，未构建、部署或切换线上镜像。
+
+### 2026-09-15 — v0.2.5 发布入口与平台用量保护修复（尚未切换）
+
+- 本轮用户授权完成全部发布前置、建立新的回滚目标，最终 switch/rollback 由用户手动执行。只读确认本轮生产应用基线是已发布的 TON/ERC20 提交 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8` / 镜像 `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`；历史“不创建新回滚目标”与 retained wrapper 的交接不能直接复用。
+- 首次构建发现上游 `ProvideRateLimitService` 已增加 `OllamaCloudUsageService` 参数，仓库中 Wire 生成入口没有跟进。提交 `c5b6e972cd27fefb3178e9f467a3c2f302a99eb8` 重新生成 `backend/cmd/server/wire_gen.go`，将该服务及依赖初始化提前并注入限流服务，保留 SubNexus 既有处理器接线。
+- 迁移审查发现上游 `238_purge_unlimited_user_platform_quotas.sql` 原先会直接删除三档限额全 NULL 的记录，包含有历史用量的行。生产业务库 `sub2api` 只读统计为 `7749` 行，其中 `459` 行至少一档 usage 非零，三窗口数值合计 `2600.8991650383`；三个窗口会重叠，该合计只是迁移保护核对值，不能解释为用户独立消费总额。此部署的 PostgreSQL 容器环境 `POSTGRES_DB` 指向 bootstrap 库，业务核对须显式选 `-U sub2api -d sub2api`。
+- 为遵守用户“不要影响任何用户数据”的要求，提交 `bd174adbb143a943e15be66837449d76695888e7` 在尚未执行的迁移中加入三档分别为零的 `COALESCE(..., 0) = 0` 守卫。只删除无限额且三档用量全零的空记录；非零用量、正负相抵用量、任一显式限额（含 0）均保留，软删历史同样受保护。新候选不会执行旧版的无条件无限额行清理；不能用旧候选镜像或旧兼容证据进行本轮切换。
+- 本次保留的迁移文件差异有明确的数据保护目的，今后合并上游时必须保留该保护。当前没有修改生产迁移记录或放宽 checksum 校验；一旦这份迁移上线，后续变更应追加新迁移。
+- 同步 `backend/migrations/user_platform_quota_purge_unlimited_migration_test.go` 的完整 SQL 契约，锁定三档独立判零，防止回退到“只看 limit”或“相加后为零”。在测试注释中提供真实隔离 PostgreSQL fixture：分别覆盖各档非零用量、正负相抵、各档显式 0/正限额、活跃/软删、可清理零行与重复执行；默认单测不连接数据库。Windows 本机 `go test ./migrations` 通过（`0.086s`），`git diff --check` 通过；未将该源码契约测试表述为数据库迁移演练通过。
+- 应用候选为 `bd174adbb143a943e15be66837449d76695888e7`，构建和隔离 new/old/new 验证正在进行；本条记录不表示正式 prepare 或发布完成。最终验证、镜像/归档/证据哈希、新回滚目标绑定和正式 run 由根代理后续补记。尚未执行本轮生产迁移、切换、回滚或数据库恢复。
