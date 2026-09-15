@@ -11,7 +11,7 @@
 - 旧二开输入：`F:\Sub2Api\SubNexus`
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
-- 最新本地上游基线：`upstream/main=98d86915becae9fe9491a91ffc6defd5235c8d2b`（版本 `0.2.4`，2026-09-09 合并提交 `c76c04dd170c6eb4d34f864150c8e03536f38c24`）；以下 `0.2.1` 生产信息仍为历史快照，不代表本轮已部署。
+- 最新本地上游基线：`upstream/main=881f3202694c6bc932446931a30c27d9675178b9`（版本 `0.2.5`，2026-09-15；功能基线为标签提交 `86f93c28e`，其后版本同步提交为 `881f32026`）；以下历史生产信息不代表本轮已部署。
 - 本次实际生产应用基线为 `890828afe0f726abb363029f147e04087fed2bca`。模型表现监控不可变候选 commit=`33a9601c93304f89a67b7845b4e3b10447edcf96`、tree=`efb0d3a6e9089ecb7eea188f91e5299a3694b8d6`；后续记账不替代该构建身份，`main` 未修改。
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
