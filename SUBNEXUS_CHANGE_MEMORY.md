@@ -1980,3 +1980,9 @@
 - 既有一级回滚为 `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，名称 `subnexus-cutover-ui-prior-20260915144333-1506840`，commit=`e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`。没有创建新的回滚 tag、镜像归档或永久容器；switch 只临时保留 current 用于失败恢复，成功后删除临时 current，正常 rollback 恢复上述既有目标。
 - 交接只读检查：应用/PG/Redis/回滚容器 ID、image、启动时间和重启数与准备前完全相同；384 条迁移账本 digest=`da0fc0f4da2518252ee0db5d9636c45c` 未变；settling=0、活动 schema DDL=0，内部与 `https://image.yydsapi.uno/health` 均 200，磁盘剩余 `41803812864` bytes，无需清理。未执行生产 switch、rollback、SQL 写入或迁移。
 - 本地脱敏工件与可执行交接清单在 `F:\MySub2\candidate-transfer\grok-video-release`，`handoff-ready.json` 为 READY_FOR_MANUAL_SWITCH_NOT_EXECUTED。后续文档提交不改变已冻结的候选代码与镜像。唯一人工切换/回滚命令见切换手册第 15.6 节。
+### 2026-09-16 — Grok 视频 Canvas 兼容修复：发布前置完成
+
+- 候选提交 `169469943423b03ae1eebeee218d8436265beb9e`（tree `dca65e833dcceef5b7fc5fec081621e531721650`），修复无限画布要求的 `id`、`completed` 状态及鉴权 `/content` 下载契约，同时兼容 `resolution_name` 与 `input_reference[]`。
+- 本地定向测试、真实任务轮询/Range 下载、客户端模块回放、MP4 解码、候选 Gate、精确镜像兼容轮换、只读备份及最终预检全部通过。首次本地 fresh handler 502 没有保留原始响应体，无法确定归因；同一真实任务后续完整回放通过，因此不将其表述为已确定根因。
+- 线上候选镜像 `sha256:973742706b5b62e05a3fb848e28faaeb0d43c451257ed4e08825154903286a6a`；prepare run `/srv/subnexus-migration/cutover/20260916042849-1880282`，状态 `prepared/prepared/no`，`FINAL_SWITCH_EXECUTED=false`。当前线上容器、数据库、Redis、迁移账本与用户计费数据均未被切换或写入。
+- 本次不创建新的回滚目标；继续使用既有 `subnexus-cutover-ui-prior-20260915144333-1506840`（image `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`）。人工切换和回滚命令见 `SUBNEXUS_CUTOVER_RUNBOOK.md` 第 15.6 节；本轮只需用户在服务器终端执行切换。

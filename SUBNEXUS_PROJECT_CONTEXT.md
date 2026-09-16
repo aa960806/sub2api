@@ -322,3 +322,8 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 当前 v0.2.5 已由维护者切换成功，线上仍运行 bd174adbb143 / c1136ae12f4a。本轮 e42385c29986 视频请求兼容补丁已完成不可变镜像、候选 Gate、精确镜像隔离兼容回归、全新备份、正式 prepare 和最终 never-started probe 审计；run 20260916030325-1800501 为 prepared/prepared/no，尚未切换。无新增数据库迁移，合成隔离回归不冒充全量生产副本。
 
 本次不新建回滚对象，仍恢复既有 e9462cf9dc9e / 5b44c72e46bf / image 10cbbe0c68dd。生产与回滚对象的身份、启动时间及迁移账本未变，健康检查 200。唯一当前人工命令见切换手册第 15.6 节，证据哈希、验证范围和限制见变更记忆同时间条目；不得重复执行前次 v0.2.5 switch。
+## 2026-09-16 — Grok 视频 Canvas 兼容候选交接
+
+无限画布客户端要求创建响应含 `id`、完成状态为 `completed`，并通过 `/v1/videos/{id}/content` 鉴权下载。候选提交 `169469943423b03ae1eebeee218d8436265beb9e` 已完成全部发布前检查；线上尚未切换，prepare run 为 `/srv/subnexus-migration/cutover/20260916042849-1880282`，状态 `prepared/prepared/no`。生产应用、PostgreSQL、Redis、迁移账本和用户计费数据均保持不变。
+
+人工切换/回滚命令记录在 `SUBNEXUS_CUTOVER_RUNBOOK.md` 第 15.6 节；沿用既有回滚容器，不创建新回滚对象。
