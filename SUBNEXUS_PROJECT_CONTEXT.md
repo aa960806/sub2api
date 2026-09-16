@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-16 11:15 Asia/Shanghai）：v0.2.5 已由维护者切换，实际线上为 `bd174adbb143a943e15be66837449d76695888e7` / `c1136ae12f4a`。本次 Grok 视频兼容修复候选 `e42385c2998697ea3c6ac1efe766f703bfc25a71` 已完成全部发布前置，run=`20260916030325-1800501` 为 `prepared/prepared/no`，代理未切换。沿用既有 `5b44c72e46bf` / `10cbbe0c68dd` 回滚目标，没有创建新回滚对象。唯一人工命令见切换手册第 15.6 节；其他日期状态与命令均为历史记录。
+> 当前权威状态（2026-09-16 12:30 Asia/Shanghai）：线上仍为 v0.2.5（bdbb73ca9f51），Grok Canvas 兼容候选 169469943423b03ae1eebeee218d8436265beb9e 已完成全部发布前置，run=/srv/subnexus-migration/cutover/20260916042849-1880282，状态 prepared/prepared/no，尚未切换。沿用既有 5b44c72e46bf 回滚目标，没有创建新回滚对象。唯一人工命令见第 15.6 节。
 
 ## 项目身份
 
