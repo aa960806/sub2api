@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -33,6 +34,7 @@ func TestGrokVideoCanvasLiveLifecycle(t *testing.T) {
 	if base == "" || key == "" {
 		t.Skip("explicit gateway URL/key required; this creates one paid video")
 	}
+	logger.InitBootstrap()
 	u, err := url.Parse(base)
 	require.NoError(t, err)
 	require.Equal(t, "https", u.Scheme)
@@ -46,6 +48,11 @@ func TestGrokVideoCanvasLiveLifecycle(t *testing.T) {
 	h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, false)
 	client := &http.Client{Timeout: 90 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	upstream.call = func(req *http.Request, _ int64) (*http.Response, error) {
+		if id := os.Getenv("SUBNEXUS_GROK_LIVE_TASK_ID"); id != "" && req.Method == http.MethodPost {
+			data, err := json.Marshal(map[string]string{"request_id": id})
+			require.NoError(t, err)
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader(data))}, nil
+		}
 		copy := req.Clone(req.Context())
 		copy.URL.Scheme, copy.URL.Host, copy.Host = u.Scheme, u.Host, u.Host
 		copy.Header.Set("Authorization", "Bearer "+key)
