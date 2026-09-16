@@ -1950,3 +1950,8 @@
 - 正式 run `/srv/subnexus-migration/cutover/20260915144333-1506840` 仍为 `state=prepared`、`ui_state=prepared`、`ui_commit_intent=no`；最终 preflight 输出 SHA256=`6c306196adec627928154eae31d1ecd95c2919b1097c13cfa2117d091fa6a7b4`，manifest SHA256=`7933faabaa5cb66b7ed3b6c0b82930d4637414a26c011888a3109893af482d23`，历史锚点 manifest SHA256=`7d54698f11485ce35c538fab46e9844327eaffc3e65dc5d37de3ae43faa86659`。健康检查 200、never-started probe 运行合同与清理均通过，无候选或 probe 残留。
 - 本轮新一级回滚目标绑定当前 live `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，名称 `subnexus-cutover-ui-prior-20260915144333-1506840`；历史锚点 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` 继续保留。线上 PostgreSQL/Redis/应用身份未变化，生产迁移、switch、rollback 均未执行。
 - 人工交接前只读检查：应用健康，未发现结算/迁移进程；数据库活动为线上正常连接，Redis 仅有既有 billing probe leader 锁。切换时仍由维护者确认无结算任务后使用命令中的 quiet token。
+
+### 2026-09-16 — 人工切换命令超时参数更正
+
+- 前次交付命令误将 prepare 专用的 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=1800` 用于 switch/rollback；控制器规定两者范围为 10–600 秒，现两条命令均更正为 `600`。preflight 内部使用 `120`，所以当时的 preflight 通过没有验证到交付命令的错误值。不得为此放宽服务器脚本限制。
+- 用户截图中的失败发生在 `init_docker` 的参数校验阶段，早于 Docker 操作、生产停止及状态更新。SSH 只读复核 run `20260915144333-1506840` 仍为 `prepared/prepared/no`，manifest SHA 仍为 `7933faabaa5cb66b7ed3b6c0b82930d4637414a26c011888a3109893af482d23`；线上应用 `5b44c72e46bf...` 仍 running/healthy/restart=0，PostgreSQL/Redis 身份和启动时间未变。代理未重试 switch，继续交由维护者手动执行修正命令。
