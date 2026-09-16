@@ -372,6 +372,9 @@ type GrokVideoPendingBilling struct {
 	VideoResolution      string `json:"video_resolution,omitempty"`
 	VideoDurationSeconds int    `json:"video_duration_seconds,omitempty"`
 	OriginalModel        string `json:"original_model,omitempty"`
+	// ResponseFormat records the create route's client protocol. Empty retains
+	// the native xAI response for existing tasks and native API clients.
+	ResponseFormat string `json:"response_format,omitempty"`
 	// CreatedAt is when the gateway accepted the async create (RFC3339Nano UTC).
 	// duration_ms for deferred billing is measured from this instant until the
 	// first official done+video.url observation (status poll or content download),
@@ -747,15 +750,22 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 			}
 		}
 	}
+	// Compute billing from the upstream protocol before adapting the public
+	// response (OpenAI clients use completed, while xAI billing requires done).
+	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
+	clientBody := respBody
 	if endpoint == GrokMediaEndpointVideoStatus {
-		respBody = rewriteGrokMediaVideoContentURLs(
+		clientBody = rewriteGrokMediaVideoContentURLs(
 			respBody,
 			requestID,
 			grokMediaContentProxyURL(c, requestID),
 		)
 	}
-	writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
-	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
+	clientBody, err = grokVideoClientResponse(c, endpoint, requestID, clientBody)
+	if err != nil {
+		return nil, err
+	}
+	writeGrokMediaResponse(c, resp, clientBody, s.responseHeaderFilter)
 	resultModel := requestModel
 	resultBillingModel := requestModel
 	if endpoint == GrokMediaEndpointVideoStatus {

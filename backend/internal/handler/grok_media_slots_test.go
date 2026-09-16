@@ -120,10 +120,27 @@ func (s *grokMediaSlotsCache) assertReleased(t *testing.T) {
 
 type grokMediaSlotBindings struct {
 	testutil.StubGatewayCache
-	owner  int64
-	writes int
-	key    string
-	billed map[string]bool
+	owner        int64
+	writes       int
+	key          string
+	billed       map[string]bool
+	pending      map[string][]byte
+	pendingReads int
+	pendingErr   error
+	usageLogs    chan *service.UsageLog
+}
+
+func (s *grokMediaSlotBindings) SetGrokVideoPendingBilling(_ context.Context, key string, payload []byte, _ time.Duration) error {
+	if s.pending == nil {
+		s.pending = make(map[string][]byte)
+	}
+	s.pending[key] = append([]byte(nil), payload...)
+	return nil
+}
+
+func (s *grokMediaSlotBindings) GetGrokVideoPendingBilling(_ context.Context, key string) ([]byte, error) {
+	s.pendingReads++
+	return append([]byte(nil), s.pending[key]...), s.pendingErr
 }
 
 func (s *grokMediaSlotBindings) GetSessionAccountID(_ context.Context, groupID int64, key string) (int64, error) {
@@ -202,7 +219,7 @@ func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool) (*OpenAIGateway
 	}
 	slots := &grokMediaSlotsCache{accounts: map[string]int64{}, users: map[string]int64{}}
 	concurrency := service.NewConcurrencyService(slots)
-	bindings := &grokMediaSlotBindings{owner: 1}
+	bindings := &grokMediaSlotBindings{owner: 1, usageLogs: make(chan *service.UsageLog, 32)}
 	upstream := &grokMediaSlotUpstream{call: func(*http.Request, int64) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}},
 			Body: io.NopCloser(strings.NewReader(`{"request_id":"task","status":"pending"}`))}, nil
@@ -217,7 +234,8 @@ func newGrokMediaSlotHandler(t *testing.T, oauth, mismatch bool) (*OpenAIGateway
 		_, err := provider.GetAccessToken(context.Background(), &accounts[1])
 		require.NoError(t, err)
 	}
-	gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, bindings, cfg, nil, concurrency, nil, nil, nil, upstream, nil, nil, provider, nil, nil, nil, nil, nil)
+	usageRepo := &openAIWSUsageHandlerUsageLogRepoStub{created: bindings.usageLogs}
+	gateway := service.NewOpenAIGatewayService(repo, usageRepo, nil, nil, nil, nil, bindings, cfg, nil, concurrency, service.NewBillingService(cfg, nil), nil, nil, upstream, &service.DeferredService{}, nil, provider, nil, nil, nil, nil, nil)
 	groupID := int64(24)
 	require.NoError(t, gateway.BindGrokMediaVideoRequestAccount(context.Background(), &groupID, "task", 10, 20, 1))
 	bindings.writes = 0

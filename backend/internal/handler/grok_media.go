@@ -185,6 +185,18 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video request not found")
 			return
 		}
+		if endpoint == service.GrokMediaEndpointVideoStatus && service.IsGrokVideoShortStatusRequest(c) {
+			pending, loadErr := h.gatewayService.LoadGrokVideoPendingBilling(c.Request.Context(), requestID, subject.UserID, apiKey.ID)
+			if loadErr != nil {
+				reqLog.Warn("grok_media.video_response_format_load_failed", zap.Error(loadErr))
+				c.Header("Retry-After", "1")
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Video status is temporarily unavailable; retry this request")
+				return
+			}
+			if pending != nil {
+				service.BindGrokVideoResponseFormat(c, pending.ResponseFormat)
+			}
+		}
 	}
 	// Grok 媒体（图片/视频生成与视频查询）按媒体倍率计费，不在 token 利润门
 	// 范围内：显式豁免，防止 service 层防御性装门按文本 D 误过滤媒体请求，
@@ -477,6 +489,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				VideoResolution:      result.VideoResolution,
 				VideoDurationSeconds: result.VideoDurationSeconds,
 				OriginalModel:        clientRequestedModel(c, requestModel),
+				ResponseFormat:       service.GrokVideoCreateResponseFormat(c),
 				// Wall-clock start for usage duration_ms: create accepted → first done discovery.
 				CreatedAt: videoCreateStartedAt,
 			}

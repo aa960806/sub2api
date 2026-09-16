@@ -55,6 +55,15 @@ func PrepareGrokVideoGenerationRequest(body []byte, contentType string) ([]byte,
 		}
 	}
 	changed := multipartBody
+	// Canvas clients label the resolution separately from their pixel geometry.
+	// Keep an explicit native resolution authoritative and remove the alias.
+	if raw, exists := payload["resolution_name"]; exists {
+		if _, native := payload["resolution"]; !native {
+			payload["resolution"] = raw
+		}
+		delete(payload, "resolution_name")
+		changed = true
+	}
 	for _, field := range []string{"model", "prompt", "aspect_ratio"} {
 		if raw, ok := payload[field]; ok {
 			if _, err := grokVideoString(raw, field); err != nil {
@@ -132,6 +141,32 @@ func PrepareGrokVideoGenerationRequest(body []byte, contentType string) ([]byte,
 			}
 		}
 		delete(payload, "size")
+		changed = true
+	}
+	if raw, exists := payload["input_reference[]"]; exists {
+		for _, field := range []string{"image", "input_reference", "image_url", "images", "reference_images"} {
+			if _, conflict := payload[field]; conflict {
+				return nil, "", grokVideoRequestError("Specify input_reference[] or %s, not both", field)
+			}
+		}
+		var refs []json.RawMessage
+		if json.Unmarshal(raw, &refs) != nil || len(refs) == 0 || len(refs) > 7 {
+			return nil, "", grokVideoRequestError("input_reference[] must contain between 1 and 7 images")
+		}
+		images := make([]map[string]string, 0, len(refs))
+		for _, ref := range refs {
+			imageURL, err := grokVideoReferenceURL(ref, "input_reference[]")
+			if err != nil {
+				return nil, "", err
+			}
+			images = append(images, map[string]string{"url": imageURL})
+		}
+		if len(images) == 1 {
+			payload["image"] = grokVideoJSONValue(images[0])
+		} else {
+			payload["reference_images"] = grokVideoJSONValue(images)
+		}
+		delete(payload, "input_reference[]")
 		changed = true
 	}
 	for _, alias := range []string{"input_reference", "image_url"} {
@@ -286,7 +321,7 @@ func parseGrokVideoMultipart(body []byte, boundary string) (map[string]json.RawM
 			_ = part.Close()
 			return nil, grokVideoRequestError("Video multipart fields must have a name")
 		}
-		if _, exists := payload[name]; exists {
+		if _, exists := payload[name]; exists && name != "input_reference[]" {
 			_ = part.Close()
 			return nil, grokVideoRequestError("Duplicate video multipart field: %s", name)
 		}
@@ -299,7 +334,7 @@ func parseGrokVideoMultipart(body []byte, boundary string) (map[string]json.RawM
 			return nil, grokVideoRequestError("Video multipart field %s exceeds the 20 MB limit", name)
 		}
 		if fileName := part.FileName(); fileName != "" {
-			if name != "input_reference" && name != "image" {
+			if name != "input_reference" && name != "input_reference[]" && name != "image" {
 				return nil, grokVideoRequestError("Unsupported video upload field: %s", name)
 			}
 			detectedType := http.DetectContentType(data)
@@ -310,11 +345,25 @@ func parseGrokVideoMultipart(body []byte, boundary string) (map[string]json.RawM
 			if err != nil {
 				return nil, grokVideoRequestError("Invalid %s image upload", name)
 			}
-			payload[name] = grokVideoJSONValue(map[string]string{"url": imageURL})
+			if name == "input_reference[]" {
+				if err := appendGrokVideoReference(payload, grokVideoJSONValue(map[string]string{"url": imageURL})); err != nil {
+					return nil, err
+				}
+			} else {
+				payload[name] = grokVideoJSONValue(map[string]string{"url": imageURL})
+			}
 			continue
 		}
 		value := string(data)
 		switch name {
+		case "input_reference[]":
+			ref := grokVideoJSONValue(value)
+			if strings.HasPrefix(strings.TrimSpace(value), "{") && json.Valid(data) {
+				ref = json.RawMessage(data)
+			}
+			if err := appendGrokVideoReference(payload, ref); err != nil {
+				return nil, err
+			}
 		case "image", "input_reference":
 			if strings.HasPrefix(strings.TrimSpace(value), "{") && json.Valid(data) {
 				payload[name] = json.RawMessage(data)
@@ -333,4 +382,18 @@ func parseGrokVideoMultipart(body []byte, boundary string) (map[string]json.RawM
 			payload[name] = grokVideoJSONValue(value)
 		}
 	}
+}
+
+func appendGrokVideoReference(payload map[string]json.RawMessage, ref json.RawMessage) error {
+	var refs []json.RawMessage
+	if raw, exists := payload["input_reference[]"]; exists {
+		if err := json.Unmarshal(raw, &refs); err != nil {
+			return grokVideoRequestError("Invalid input_reference[] images")
+		}
+	}
+	if len(refs) >= 7 {
+		return grokVideoRequestError("input_reference[] supports at most 7 images")
+	}
+	payload["input_reference[]"] = grokVideoJSONValue(append(refs, ref))
+	return nil
 }

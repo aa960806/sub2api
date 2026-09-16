@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,7 +53,10 @@ func TestGrokVideoGenerationMultipartReachesUpstreamAsJSON(t *testing.T) {
 	h.GrokVideoGeneration(c)
 
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	require.JSONEq(t, `{"request_id":"task","status":"pending"}`, w.Body.String())
+	require.JSONEq(t, `{"id":"task","request_id":"task","object":"video","status":"queued"}`, w.Body.String())
+	pending, err := h.gatewayService.LoadGrokVideoPendingBilling(context.Background(), "task", 10, 20)
+	require.NoError(t, err)
+	require.Equal(t, service.GrokVideoResponseFormatOpenAI, pending.ResponseFormat)
 	require.Equal(t, 1, upstream.calls)
 	require.Positive(t, bindings.writes, "accepted tasks must remain bound to their owner")
 	require.Empty(t, bindings.billed, "creating an asynchronous task must not charge for completion")
