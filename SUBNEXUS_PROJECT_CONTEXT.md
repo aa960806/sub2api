@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-16，Asia/Shanghai）：上游 v0.2.5 候选 `bd174adbb143a943e15be66837449d76695888e7` 的构建、真实生产快照 new→old→new 隔离验证、prepare、新回滚目标绑定和最终 preflight 全部通过；run=`20260915144333-1506840` 仍为 `prepared/prepared/no`，尚未执行 switch。线上 live、PostgreSQL、Redis 未变化。唯一待人工动作是维护者确认结算窗口后执行本轮 switch；rollback 命令绑定同一 run 和新回滚目标。本文件旧日期状态与旧命令均为历史记录，详见文末及 `SUBNEXUS_CHANGE_MEMORY.md` 最新记录。
+> 当前权威状态（2026-09-16 11:15 Asia/Shanghai）：v0.2.5 已由维护者切换，实际线上为 `bd174adbb143a943e15be66837449d76695888e7` / `c1136ae12f4a`。本次 Grok 视频兼容修复候选 `e42385c2998697ea3c6ac1efe766f703bfc25a71` 已完成全部发布前置，run=`20260916030325-1800501` 为 `prepared/prepared/no`，代理未切换。沿用既有 `5b44c72e46bf` / `10cbbe0c68dd` 回滚目标，没有创建新回滚对象。唯一人工命令见切换手册第 15.6 节；其他日期状态与命令均为历史记录。
 
 ## 项目身份
 
@@ -315,3 +315,10 @@ run `/srv/subnexus-migration/cutover/20260907045159-1121373` 当时已完成无�
 - 文本生成和上传参考图均已通过维护者提供接口的真实创建、查询、完整 MP4 下载、Range 及重复查询验证；两段均为 6 秒/720p，完整解码通过。20 秒超出当前接口 1–15 秒限制，明确返回 400，用户应调整客户端时长。
 - 本补丁仍是本地修改，尚未发布；旧 prepared 镜像不含本补丁，不能用它宣称视频问题已在线修复。无数据库/配置/依赖迁移；真实测试会产生正常 API 用量。
 - 测试结果、既有 settings unit 测试编译限制及生产边界见 SUBNEXUS_CHANGE_MEMORY.md 同日条目；请求说明和复现方法见 docs/grok-video-compatibility.md。
+
+
+## 2026-09-16 11:15 Grok 视频修复发布交接
+
+当前 v0.2.5 已由维护者切换成功，线上仍运行 bd174adbb143 / c1136ae12f4a。本轮 e42385c29986 视频请求兼容补丁已完成不可变镜像、候选 Gate、精确镜像隔离兼容回归、全新备份、正式 prepare 和最终 never-started probe 审计；run 20260916030325-1800501 为 prepared/prepared/no，尚未切换。无新增数据库迁移，合成隔离回归不冒充全量生产副本。
+
+本次不新建回滚对象，仍恢复既有 e9462cf9dc9e / 5b44c72e46bf / image 10cbbe0c68dd。生产与回滚对象的身份、启动时间及迁移账本未变，健康检查 200。唯一当前人工命令见切换手册第 15.6 节，证据哈希、验证范围和限制见变更记忆同时间条目；不得重复执行前次 v0.2.5 switch。

@@ -1,8 +1,8 @@
 # SubNexus 回滚手册
 
-> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
+> 当前权威状态（2026-09-16 11:15 Asia/Shanghai）：v0.2.5 已由维护者切换，实际线上为 `bd174adbb143a943e15be66837449d76695888e7` / `c1136ae12f4a`。本次 Grok 视频兼容修复候选 `e42385c2998697ea3c6ac1efe766f703bfc25a71` 已完成全部发布前置，run=`20260916030325-1800501` 为 `prepared/prepared/no`，代理未切换。沿用既有 `5b44c72e46bf` / `10cbbe0c68dd` 回滚目标，没有创建新回滚对象。唯一人工命令见切换手册第 15.6 节；其他日期状态与命令均为历史记录。
 
-回滚默认只恢复应用，不恢复数据库、不改功能开关。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮全部门禁已完成，当前人工命令见切换手册第 15.5 节；回滚复用第 11 节登记的既有 v0.2.4 目标。不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、既有回滚目标和依赖身份校验。
+回滚默认只恢复应用，不恢复数据库、不改功能开关。所有命令先在维护窗口核对真实容器名、端口、网络、脚本和 release SHA。本轮全部门禁已完成，当前人工命令见切换手册第 15.6 节；回滚复用第 12 节登记的既有 TON/ERC20 版本目标。不得单独执行控制器、历史 rollback 或手工 `docker stop/start` 绕过 manifest、owner、既有回滚目标和依赖身份校验。
 
 本次线上应用数据目录的已审核 owner 是 `1000:1000`、叶目录 mode `0755`。执行 `prepare`、`switch` 或 `rollback` 时，只有在实时 `stat` 与 prepared manifest 一致的前提下，才同时传入以下三项环境变量；不得通过 `chown` 来“修复”不一致：
 
@@ -121,3 +121,10 @@ wrapper=`/srv/subnexus-migration/tools/subnexus-ui-cutover-dd320d09-20260907.sh`
 ## 11. 模型监控修复复用既有回滚目标（2026-09-12 00:45）
 
 本轮全部前置已完成，run `/srv/subnexus-migration/cutover/20260911163046-3338612` / manifest SHA `20f1c17d67e37c41debaff189ac09a5ecec6369cc6abcc8fbb199192ecd49600`，停在 prepared。候选 `ccb69f00132dcb9dcbad76e8c3f542231bb002fd` / `sha256:c8a9db0d90f3c99924d7c53c7b9b41b4b90f26d053341abc254888e58c12df55`。本次不创建回滚目标，正常回滚复用 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；切换提交前失败恢复当前 live，提交成功删除临时 current。完整生产副本六阶段回归、备份与 never-started probe 通过，生产迁移未执行。唯一人工命令见切换手册第 15.5 节；旧第 15.4 节 run 已 switched，禁止重用。
+
+
+## 12. Grok 视频兼容补丁（2026-09-16，沿用既有回滚）
+
+本轮 run=`/srv/subnexus-migration/cutover/20260916030325-1800501`，候选 e42385c29986，prepared/prepared/no，未切换。本次 rollback 固定指向已有 `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，现名 `subnexus-cutover-ui-prior-20260915144333-1506840`，版本 e9462cf9dc9e（TON/ERC20 支持版本）。它不是切换前 v0.2.5 live；既有目标的同库兼容性已通过精确镜像隔离回归。
+
+不创建新的回滚容器/镜像/tag/归档。switch 提交前失败自动恢复当前 c1136ae12f4a，提交成功删除该临时对象；正式 rollback 恢复固定旧对象，不自动恢复 PostgreSQL、Redis 或用户账务数据。唯一完整人工命令见切换手册第 15.6 节；不要使用历史 run 命令。

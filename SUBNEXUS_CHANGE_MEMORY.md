@@ -4,7 +4,7 @@
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
+> 当前权威状态（2026-09-16 11:15 Asia/Shanghai）：v0.2.5 已由维护者切换，实际线上为 `bd174adbb143a943e15be66837449d76695888e7` / `c1136ae12f4a`。本次 Grok 视频兼容修复候选 `e42385c2998697ea3c6ac1efe766f703bfc25a71` 已完成全部发布前置，run=`20260916030325-1800501` 为 `prepared/prepared/no`，代理未切换。沿用既有 `5b44c72e46bf` / `10cbbe0c68dd` 回滚目标，没有创建新回滚对象。唯一人工命令见切换手册第 15.6 节；其他日期状态与命令均为历史记录。
 
 ## 2026-09-06（Asia/Shanghai）— 修复 wrapper manifest SHA 后最终前置完成
 
@@ -1968,3 +1968,15 @@
 - 验证限制：直接运行 service unit 标签因原有 setting_service_public_test.go:525 引用缺失 PublicSettingsInjectionPayload.PaymentBalanceDisabled 字段而编译失败。为运行本次相关额外回归，只在仓库外测试专用 Go overlay 去掉该未选中 settings 测试的一行断言；service+handler Grok|VideoBilling 共1021项（含子用例）通过。原设置代码及测试均未改，不能声称全仓 unit 无失败；真实视频测试不依赖此 overlay。
 - 新增 opt-in live 测试仅在 -tags live 且显式传环境变量时创建付费视频，不自动重发创建请求，先保存 task ID；凭据只留进程内，未写入源码/视频日志/记忆。脱敏证据、视频及 overlay 位于 F:\MySub2\candidate-transfer\grok-video-fix；接口约定和验证说明见 docs/grok-video-compatibility.md。
 - 当前代码基线为 5f5b14f99；本批修复只完成本地验证，不属于旧 v0.2.5 prepared 候选制品。后续若发布，必须构建包含本补丁的新候选，按现行规则完成全部前置，最后 switch/rollback 仍由维护者执行。本次不创建新回滚对象，不复用或执行旧切换命令。
+
+
+### 2026-09-16 11:15 — Grok 视频兼容修复发布前置完成，待人工切换
+
+- 实时核对前轮 v0.2.5 已上线：live=`c1136ae12f4a4f0b6a7ddd1da76b6670323f949e3b31e4a3d9c20ff344f82b32`，image=`sha256:bcaff233ef8d572cdcd889ff59bb591beba2b6d2764ce2384aa66d233358cd10`，commit=`bd174adbb143a943e15be66837449d76695888e7`，启动时间 `2026-09-16T01:11:38.195998192Z`，healthy/restart=0；旧 prepared 记忆只代表当时快照。
+- 本次候选 commit=`e42385c2998697ea3c6ac1efe766f703bfc25a71`，tree=`6f0a9d1f14849dd5e20d1796b4e61b186f470a70`，image=`sha256:f091d2eb993e7a18e66a7de4923359b4b94b5b0adfec66c2558e79087f467e6f`，镜像归档 SHA256=`2f26770f79b6dff442e62900ff0885821d7fe69c7ad04ee390b166c2f0d81df2`。隔离不可变构建、前端生产构建及内置测试、后端 embed 构建成功；相关业务回归和真实视频生成证据、原有 settings unit 编译限制见上一条，不声称全仓 unit 全通过。
+- 候选 Gate=`/srv/subnexus-migration/docker-candidate/20260916T025707Z-47e44679-0b81-470d-a159-c678127e5701/evidence.txt`，SHA256=`94e7584eb0fb4d440846cdfc8510a5bd6eaec0d7f3e97dba507a22fafa863a81`。全新精确镜像兼容证据=`/srv/subnexus-migration/docker-candidate/compat-grok-e42385c29-c269f1108b/evidence.env`，SHA256=`fc5ca052aab692734091688907ee2a65fbcffe0b0bfa2bdb4fda1ffb9b0fc3d0`；new→current→new→retained→new 的登录/API、余额、订单、用量、keys、订阅、监控 HTML、quota 和迁移 checksum 保持。该次使用合成隔离数据库，不能表述为全量生产副本演练；Git blob 核对确认相对线上无迁移或 repository 生产源码改动，旧 v0.2.5 的真实快照回归仍作为数据结构兼容历史证据。隔离资源按精确标签/ID 清理。
+- 正式 run=`/srv/subnexus-migration/cutover/20260916030325-1800501`，prepared_at=`2026-09-16T03:11:49+00:00`，manifest SHA256=`8da5a70cd9cb270a85d575b9ee309ccda93e633e2f956a744ac846e737e370f6`。READY/UI_READY/RETAINED_READY 有效，state/ui_state/ui_commit_intent=`prepared/prepared/no`，retained_commit_phase=`none`。PostgreSQL 备份 `3103106845` bytes / SHA256=`b40dd3f4c2184f017168d2b7423524a1cb8bc92b34f6a7bfa2a9ba04fcbe0922`；Redis 和应用数据快照及 sidecar 一并通过校验。备份不是新的回滚镜像/容器；未恢复或修改生产业务数据。
+- 最终审计=`/srv/subnexus-migration/diagnostics/grok-e42385c29/final-audit.log`，SHA256=`a4b97ed70371fdc99605cc68ab647e8ccb4264df06df20d00532185a1e96dcd9`，ALL_PRE_STOP_CHECKS、PROBE_RUNTIME_CONTRACT、PROBE_CLEANUP、FINAL_PRE_SWITCH_AUDIT 全通过；FINAL_SWITCH_EXECUTED=false。探针从未启动且已精确删除，main manifest 和旧 anchor 哈希不变。交付命令独立复核 timeout=600，与 controller 范围一致。
+- 既有一级回滚为 `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，名称 `subnexus-cutover-ui-prior-20260915144333-1506840`，commit=`e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`。没有创建新的回滚 tag、镜像归档或永久容器；switch 只临时保留 current 用于失败恢复，成功后删除临时 current，正常 rollback 恢复上述既有目标。
+- 交接只读检查：应用/PG/Redis/回滚容器 ID、image、启动时间和重启数与准备前完全相同；384 条迁移账本 digest=`da0fc0f4da2518252ee0db5d9636c45c` 未变；settling=0、活动 schema DDL=0，内部与 `https://image.yydsapi.uno/health` 均 200，磁盘剩余 `41803812864` bytes，无需清理。未执行生产 switch、rollback、SQL 写入或迁移。
+- 本地脱敏工件与可执行交接清单在 `F:\MySub2\candidate-transfer\grok-video-release`，`handoff-ready.json` 为 READY_FOR_MANUAL_SWITCH_NOT_EXECUTED。后续文档提交不改变已冻结的候选代码与镜像。唯一人工切换/回滚命令见切换手册第 15.6 节。

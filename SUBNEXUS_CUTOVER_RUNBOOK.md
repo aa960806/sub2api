@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
+> 当前权威状态（2026-09-16 11:15 Asia/Shanghai）：v0.2.5 已由维护者切换，实际线上为 `bd174adbb143a943e15be66837449d76695888e7` / `c1136ae12f4a`。本次 Grok 视频兼容修复候选 `e42385c2998697ea3c6ac1efe766f703bfc25a71` 已完成全部发布前置，run=`20260916030325-1800501` 为 `prepared/prepared/no`，代理未切换。沿用既有 `5b44c72e46bf` / `10cbbe0c68dd` 回滚目标，没有创建新回滚对象。唯一人工命令见切换手册第 15.6 节；其他日期状态与命令均为历史记录。
 
 本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧 SubNexus anchor 及容器身份和 never-started probe 均核验完成之后。本轮最终 `switch` 仍由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
 
@@ -399,7 +399,7 @@ Full wrapper=`/srv/subnexus-migration/tools/subnexus-full-release-cutover-737f86
 正常 rollback 恢复本次切换前实际 live 容器，不自动恢复数据库或 Redis。新回滚 tag/归档为额外保留的不可变镜像；没有执行 docker commit。历史旧 SubNexus anchor、最近 v0.2.4 备份及其他回滚镜像均保留。空间清理仅覆盖已核验失效的三份冗余快照，记录见变更记忆。
 
 
-### 15.5 2026-09-12 00:45 模型监控测试发布与用户汇总更新（全部前置完成，不新建回滚）
+### 15.5 2026-09-12 00:45 模型监控测试发布与用户汇总更新（历史，旧交接撤回）
 
 本轮包含流式模型响应、保存后私有测试及成功后明确发布、用户错误脱敏、默认按生成时间展示全部有权限分组并支持筛选。9015 仅追加测试和发布字段；原配置、加密 Key 和 HTML 历史保留。切换后已有任务为未测试/未发布，需在后台测试成功并发布。尚未向真实供应商发出测试请求。
 
@@ -426,12 +426,41 @@ Full wrapper=`/srv/subnexus-migration/tools/subnexus-full-release-cutover-737f86
 
 切换（维护者在服务器终端执行）：
 
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=a5b955de3ec51cb1acfc1393290ae2259e8b839fbd3825bda563650e45fd1c3b SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS bash /srv/subnexus-migration/tools/subnexus-full-release-retained-cutover-a5b955de-full-ccb69f00132d.sh switch /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/tools/subnexus-ui-cutover-8fdfc825-full-ccb69f00132d.sh /srv/subnexus-migration/cutover/20260911163046-3338612
-```
+旧交接命令已撤回，不可再次执行；当前入口见第 15.6 节。
 
 回滚（仅在本轮切换后需要恢复既有 v0.2.4 时执行）：
 
+旧交接命令已撤回，不可再次执行；当前入口见第 15.6 节。
+
+
+### 15.6 2026-09-16 Grok 视频兼容修复（全部前置完成，未切换）
+
+本轮修复 multipart 视频请求返回 415；保留模型、权限、任务和计费实现，不新增数据库迁移。线上实际为已切换的 v0.2.5，本次候选仍待维护者执行以下 switch。
+
+| 固定项 | 已验证值 |
+| --- | --- |
+| 候选 commit | `e42385c2998697ea3c6ac1efe766f703bfc25a71` |
+| 候选 tree | `6f0a9d1f14849dd5e20d1796b4e61b186f470a70` |
+| 候选 image | `sha256:f091d2eb993e7a18e66a7de4923359b4b94b5b0adfec66c2558e79087f467e6f` |
+| run | `/srv/subnexus-migration/cutover/20260916030325-1800501` |
+| 当前状态 | `prepared/prepared/no`，三个 READY 有效，无 SWITCHED/ROLLED_BACK |
+| manifest SHA256 | `8da5a70cd9cb270a85d575b9ee309ccda93e633e2f956a744ac846e737e370f6` |
+| 最终审计 SHA256 | `a4b97ed70371fdc99605cc68ab647e8ccb4264df06df20d00532185a1e96dcd9` |
+| 已存在的回滚目标 | `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a` |
+| wrapper SHA256 | `054ef901a76fedcdc1393acd70400501fbe51bcd27795375bc0e393523edec5a` |
+
+构建、候选 Gate、精确镜像 new/current/new/retained/new 合成数据回归、全新生产备份、运行合同探针和最终预检通过。本补丁对线上迁移及 repository 生产源码逐字节无差异；本次合成回归不等同于重新恢复全量生产库，前次 v0.2.5 全量快照兼容证据保留。原 settings unit 测试编译问题及本次定向验证范围见变更记忆。
+
+本次没有创建新的回滚镜像、tag、归档或永久容器。成功切换后 current 临时恢复对象删除，正常 rollback 恢复既有 TON/ERC20 版本 e9462cf9dc9e，不恢复数据库。prepare 和最终检查未停止线上应用/PG/Redis；11:15 检查 settling=0、活动 schema DDL=0、health=200。两条命令均使用已验证合法的 timeout=600。
+
+切换（在服务器终端执行一整行）：
+
 ```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=a5b955de3ec51cb1acfc1393290ae2259e8b839fbd3825bda563650e45fd1c3b SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=120 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK bash /srv/subnexus-migration/tools/subnexus-full-release-retained-cutover-a5b955de-full-ccb69f00132d.sh rollback /srv/subnexus-migration/tools/subnexus-production-cutover-19824a87-20260905-v021.sh /srv/subnexus-migration/tools/subnexus-ui-cutover-8fdfc825-full-ccb69f00132d.sh /srv/subnexus-migration/cutover/20260911163046-3338612
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=054ef901a76fedcdc1393acd70400501fbe51bcd27795375bc0e393523edec5a SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS bash /srv/subnexus-migration/tools/grok-video-e42385c29-retained.sh switch /srv/subnexus-migration/tools/grok-video-e42385c29-controller.sh /srv/subnexus-migration/tools/grok-video-e42385c29-ui.sh /srv/subnexus-migration/cutover/20260916030325-1800501
+```
+
+回滚（仅在本次切换后需要恢复时执行）：
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=054ef901a76fedcdc1393acd70400501fbe51bcd27795375bc0e393523edec5a SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK bash /srv/subnexus-migration/tools/grok-video-e42385c29-retained.sh rollback /srv/subnexus-migration/tools/grok-video-e42385c29-controller.sh /srv/subnexus-migration/tools/grok-video-e42385c29-ui.sh /srv/subnexus-migration/cutover/20260916030325-1800501
 ```
