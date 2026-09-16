@@ -947,6 +947,9 @@ func isGrokCLIProxyTarget(rawURL string) bool {
 }
 
 func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, contentType string) ([]byte, string, error) {
+	if endpoint == GrokMediaEndpointVideosGenerations {
+		return PrepareGrokVideoGenerationRequest(body, contentType)
+	}
 	if endpoint != GrokMediaEndpointImagesEdits {
 		return body, contentType, nil
 	}

@@ -1955,3 +1955,16 @@
 
 - 前次交付命令误将 prepare 专用的 `SUBNEXUS_DOCKER_TIMEOUT_SECONDS=1800` 用于 switch/rollback；控制器规定两者范围为 10–600 秒，现两条命令均更正为 `600`。preflight 内部使用 `120`，所以当时的 preflight 通过没有验证到交付命令的错误值。不得为此放宽服务器脚本限制。
 - 用户截图中的失败发生在 `init_docker` 的参数校验阶段，早于 Docker 操作、生产停止及状态更新。SSH 只读复核 run `20260915144333-1506840` 仍为 `prepared/prepared/no`，manifest SHA 仍为 `7933faabaa5cb66b7ed3b6c0b82930d4637414a26c011888a3109893af482d23`；线上应用 `5b44c72e46bf...` 仍 running/healthy/restart=0，PostgreSQL/Redis 身份和启动时间未变。代理未重试 switch，继续交由维护者手动执行修正命令。
+
+
+### 2026-09-16 — Grok Heavy 视频生成 415 兼容修复（本地完成，未部署）
+
+- 维护者授权使用提供的 image.yydsapi.uno 接口和 Key 进行真实测试并修复 grok-imagine-video；截图客户端提交 multipart 并选择了 20 秒。本次未执行 SSH、生产部署、切换、迁移、数据库恢复或直接数据库写入；测试 API 正常产生调用记录和计费，不等同于完全没有生产用量变化。
+- 原版复现：POST /v1/videos 的 multipart（6 秒、1280×720）返回 415，message 为 xAI upstream returned status 415；同 Key 使用官方 POST /v1/videos/generations JSON 成功。对照任务 abac3138-9909-9226-a265-58cdaa6228eb 完整生成、下载 884927 bytes，MP4 SHA256=32dc1cc0a6912f2a677daabc1c5582efe09377976257861366971b2998c88105。根因是网关把 multipart 原样交给只接受 JSON 的 xAI 视频生成接口。
+- 新增 backend/internal/service/grok_video_request.go，在视频 handler 内容审核/账号调度/计费参数快照之前以及 service 直接调用入口统一转换；seconds→整数 duration，size→resolution/aspect_ratio，显式 geometry 优先，input_reference 文件/地址和 image_url→image.url。原生 JSON 的 image.file_id、扩展字段和未指定默认参数保留；仅 videos_generations 调用新逻辑，图片、视频编辑/延长接口不变。
+- 非整数/超范围时长、冲突秒数、重复 JSON/表单字段、损坏 multipart、非图片文件及超过单项 20 MiB 限制的上传返回本地 400；20 秒超出当前官方 1–15 秒范围，必须在客户端改选允许时长，不静默缩短。保持既有模型映射、OAuth 凭据/代理、任务所有权、未完成不计费和一次性完成计费规则，无数据库迁移、依赖、前端或版本号改动。
+- 修复后真实完整链路：multipart 文本任务 76490b8b-0234-9f48-9e47-678de7ea92f8，62.87s，971898 bytes，SHA256=6532bc0cf28e6f3cc8086cb7c23527117d0a7e8478bfe702177b028578199a8d；multipart 上传参考图任务 cbff3d60-a7cd-9c4b-8fc5-1e0da7152af0，63.46s，1006931 bytes，SHA256=91f10a6aa1905367a7b42dfa75bfab5f6768cf95afe12c7f1ed025793625a727。均创建→轮询 done→完整内容 200→Range 206→重复查询 done，通过 ffprobe 的 1280×720/H.264/约6.04s核验和 ffmpeg 全文件解码。
+- 测试：go test -tags live ./internal/service -run 'Grok|VideoBilling' -count=1（无凭据，live用例跳过）通过；handler unit Grok 回归通过；cmd/server 默认测试/编译通过；新增 OAuth Heavy multipart 官方 JSON 地址/Bearer/图片/参数/不提前计费测试单独通过；git diff --check通过。
+- 验证限制：直接运行 service unit 标签因原有 setting_service_public_test.go:525 引用缺失 PublicSettingsInjectionPayload.PaymentBalanceDisabled 字段而编译失败。为运行本次相关额外回归，只在仓库外测试专用 Go overlay 去掉该未选中 settings 测试的一行断言；service+handler Grok|VideoBilling 共1021项（含子用例）通过。原设置代码及测试均未改，不能声称全仓 unit 无失败；真实视频测试不依赖此 overlay。
+- 新增 opt-in live 测试仅在 -tags live 且显式传环境变量时创建付费视频，不自动重发创建请求，先保存 task ID；凭据只留进程内，未写入源码/视频日志/记忆。脱敏证据、视频及 overlay 位于 F:\MySub2\candidate-transfer\grok-video-fix；接口约定和验证说明见 docs/grok-video-compatibility.md。
+- 当前代码基线为 5f5b14f99；本批修复只完成本地验证，不属于旧 v0.2.5 prepared 候选制品。后续若发布，必须构建包含本补丁的新候选，按现行规则完成全部前置，最后 switch/rollback 仍由维护者执行。本次不创建新回滚对象，不复用或执行旧切换命令。

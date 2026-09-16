@@ -98,6 +98,15 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 
 	contentType := c.GetHeader("Content-Type")
+	if endpoint == service.GrokMediaEndpointVideosGenerations {
+		// Video clients may send OpenAI-style multipart fields. Normalize before
+		// moderation, routing and billing so all three see the actual xAI request.
+		body, contentType, err = service.PrepareGrokVideoGenerationRequest(body, contentType)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	}
 	requestInfo := service.ParseGrokMediaRequest(contentType, body)
 	requestModel := requestInfo.Model
 	routingModel := service.NormalizeGrokMediaModelForEndpoint(endpoint, requestModel, requestInfo.HasInputImage())
