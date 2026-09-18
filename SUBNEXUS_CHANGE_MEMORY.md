@@ -1,5 +1,8 @@
 # SubNexus 操作与变更记忆
 
+> 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
+> 下方较早的“当前权威状态”为历史快照；以本提示及文件末尾 2026-09-18 发布交接记录为准。
+
 > 这是追加式项目记忆，不得重写或删除历史条目。每次代码、测试、配置、迁移、文档、部署或诊断操作完成后，必须在本文件末尾追加一条记录。
 >
 > 详细当前架构见 `SUBNEXUS_PROJECT_CONTEXT.md`；批次状态见 `SUBNEXUS_MIGRATION_LEDGER.md`。
@@ -1986,3 +1989,32 @@
 - 本地定向测试、真实任务轮询/Range 下载、客户端模块回放、MP4 解码、候选 Gate、精确镜像兼容轮换、只读备份及最终预检全部通过。首次本地 fresh handler 502 没有保留原始响应体，无法确定归因；同一真实任务后续完整回放通过，因此不将其表述为已确定根因。
 - 线上候选镜像 `sha256:973742706b5b62e05a3fb848e28faaeb0d43c451257ed4e08825154903286a6a`；prepare run `/srv/subnexus-migration/cutover/20260916042849-1880282`，状态 `prepared/prepared/no`，`FINAL_SWITCH_EXECUTED=false`。当前线上容器、数据库、Redis、迁移账本与用户计费数据均未被切换或写入。
 - 本次不创建新的回滚目标；继续使用既有 `subnexus-cutover-ui-prior-20260915144333-1506840`（image `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`）。人工切换和回滚命令见 `SUBNEXUS_CUTOVER_RUNBOOK.md` 第 15.6 节；本轮只需用户在服务器终端执行切换。
+### 2026-09-16 17:15 — 修复 image 域名证书过期与续期配置
+
+- 用户截图 `NET::ERR_CERT_DATE_INVALID` 与公网验证一致：`image.yydsapi.uno` 的 Let's Encrypt 证书在 2026-09-16 08:22:33 UTC（北京时间 16:22:33）过期。服务器 NTP 正常，公网 A 记录为 `51.81.211.97`。
+- 续期日志确认两类原因：image/www 的 live PEM 链接被替换为普通文件；image/www/api 的 renewal 配置引用了不存在的旧 ACME account。先在 `/srv/subnexus-migration/diagnostics/tls-repair-20260916` 保存仅 root 可读的原证书/配置，再按 archive 文件内容哈希逐一恢复原链接，并复用服务器现有有效 ACME account。
+- image/www/yydsapi 证书已成功续期并平滑加载，image 新证书截至 `2026-12-15 08:14:08 UTC`，SHA256=`99855b8bb5386cb7a0bf24b4c818984ade5b15c900f8864acdd3e132e8c4551f`。image 的 `certbot renew --cert-name image.yydsapi.uno --dry-run --non-interactive --no-random-sleep-on-renew` 通过，既有 certbot.timer 为 enabled/active，部署 reload hook 保持原样。
+- api 续期另有独立阻塞：公共验证指向 `95.169.16.82`，HTTP-01 连接超时。本次未改该域名 DNS 或另一台服务器；全体 renew 返回一个 api failure，不能表述为全部域名续期成功。该失败不阻止 image/www 成功续期。
+- 严格证书校验下 image/www/root 主页与 health 均 HTTP 200；Nginx 有效配置逐字节相同；现存 Docker 容器 ID、镜像、状态、启动时间、重启数与修复前一致。未执行应用切换、数据库操作或业务代码修改。脱敏验证工件：`F:\MySub2\candidate-transfer\tls-repair-20260916\verification.json`。
+- 只读观察到维护者此前已切换 Canvas 修复候选：线上 `69a7379da5363cd726cf3a5ed523c3c551c12ea5dceb91938278938e00ac0716` / image `sha256:973742706b5b62e05a3fb848e28faaeb0d43c451257ed4e08825154903286a6a`，启动于 `2026-09-16T04:50:20.627343492Z`。旧 prepared 描述为历史状态，旧 switch 命令不得重复执行。
+
+## 2026-09-18（Asia/Shanghai）— 渠道监控 V3 厂商分类、国模补齐与两级排序
+
+- 需求：V3 按厂商分类显示卡片，支持管理员自定义厂商及厂商内部的分组顺序；保留监控统计、用户倍率、分组权限与自动刷新行为。
+- 根因：旧版 V2/V3 共用配置只包含早期厂商，查询仅接纳 enabled 平台，国模数据被过滤；后端配置排序及 V3 固定分组 ID 排序无法保存用户指定顺序。
+- 后端 `backend/internal/service/channel_monitor_v2.go`：兼容补齐缺失的 Kimi、智谱 GLM、DeepSeek、MiniMax、OpenCode，保留显式关闭状态；`platforms` 数组顺序作为厂商顺序，新增可选 `group_order`，校验正 ID 并稳定去重。继续存入既有 JSONB 与版本冲突检查，无新增迁移 SQL。用户快照只暴露权限范围与监控配置范围内的排序 ID。因共享管线，国模补齐也影响 V2 的可见数据和汇总范围。
+- 前端 `ChannelStatusV3View.vue`、`monitorVendorLayout.ts`：同厂商分组集中显示，多分组厂商独占网格段、单分组厂商并排、手机单列；只排列服务端返回的矩阵行。后台 `MonitorSettingsPanel.vue` 提供两级上下移动、厂商分组折叠列表及保存；综合分组可按实际数据所在厂商分别排序，选择范围外的已有顺序保留。中英文配置入口更新为 V2 / V3。
+- 验证：前端监控相关 11 文件 / 52 测试通过；最终 `pnpm run build`（含语言键检查及 vue-tsc）通过；本次全部修改前端文件的 ESLint、`git diff --check` 通过。后端 service 的 ChannelMonitorV2/快照权限定向测试、repository 的 ChannelMonitorV2 定向测试（含 JSONB 保存读取）、handler 的 ChannelMonitorV2 定向测试均通过。
+- 浏览器使用本地合成数据复用真实 Vue 页面进行桌面/390px 手机及明暗主题验证，国模分区显示正常且手机无横向溢出；后台箭头及折叠交互已查看。该验证不代表已连接生产 API 验收。临时预览进程与标签已关闭。
+- 使用说明：`docs/channel-monitor-v3-vendors.md`。未连接服务器、未修改生产配置或数据库、未部署/切换、未创建回滚目标。此前已有记忆改动完整保留；下一步如需线上使用，按维护者授权另行准备发布。
+
+## 2026-09-18（Asia/Shanghai）— 渠道监控 V3 线上更新前置完成，停在人工切换前
+
+- 最新实时状态以本条为准：线上实际为 `169469943423b03ae1eebeee218d8436265beb9e`，容器 `69a7379da5363cd726cf3a5ed523c3c551c12ea5dceb91938278938e00ac0716`，镜像 `sha256:973742706b5b62e05a3fb848e28faaeb0d43c451257ed4e08825154903286a6a`，启动时间 `2026-09-16T04:50:20.627343492Z`。旧文档 9 月 16 日 prepared 描述已过时，对应 run 已 switched，旧命令不得重复执行。
+- 用户授权本次全部前置，最终 switch 留给用户；不创建新回滚目标。SSH 已成功连接，本次不需更改 SSH 配置。原先的 TLS 及 V3 实现记忆完整保留。
+- 冻结候选 commit/tree=`d032a91abbb7fb9ae828fd3654095b89ad28b11f`/`7907b9ce57fc87f639db09e3383a012d4cfaae2a`；镜像 `sha256:adfb848e6c3ff80007946d3aac999b89d6a19030a492607c2763ebcf2c1412f1`，归档 SHA256=`eba68de652387c2312fbaedbb7f16271af42db562b974424bf9ebf963aab17ad`。本地 source.bundle 与服务器干净 detached 源码、镜像 OCI 标签和归档均核验。没有重新构建或改变既有回滚镜像。
+- 候选 Gate 和精确镜像隔离兼容测试通过：旧配置补齐缺失国模并保留关闭状态、GET 不写配置、厂商及 group_order 稳定去重/排序、国模零流量矩阵、用户权限与已配置分组范围交集；new→current→new→retained→new 中合成余额/订单/用量/keys/订阅/HTML/配额/监控 JSONB/迁移指纹保持。两套隔离资源按本次标签和完整 ID 清理，生产容器未变化。相对线上迁移 SQL 与非测试 repository 源码逐字节一致；本次合成回归不等同于全量生产快照恢复。
+- 新正式 run=`/srv/subnexus-migration/cutover/20260918100818-2913221`，state/ui_state/ui_commit_intent=`prepared/prepared/no`，retained_commit_phase=`none`，三个 READY 有效；manifest SHA256=`4986f79de115246b2bf5f6ca138f5ebb7db6f126d1bfbc1d23a11dfb50585884`。PostgreSQL/Redis/应用文件备份及目录、完整 SHA256、sidecar、manifest 对应通过；PostgreSQL `3404653088` bytes，SHA256=`bc38cfaff0717c9b731e8177855ba8cae400aae2fd5ab280f90c486578c0bdc6`。备份为数据保护工件，不是新回滚镜像/容器。
+- 最终审计 `1830903b8a5717a790ac789af21d96ddd2c98eb8868dd33cbb5baa2094ae585a`：全部停止前检查、never-started probe 运行合同/删除和健康检查通过，`FINAL_SWITCH_EXECUTED=false`。最终 2026-09-18 18:25:41 Asia/Shanghai 只读复核生产 app/PG/Redis/回滚完整 ID、镜像、启动时间及重启数不变；迁移账本 384 条/`da0fc0f4da2518252ee0db5d9636c45c`，活动结算=0、DDL=0、受保护设置哈希不变、内部/公网 HTTP 200；剩余 30541107200 bytes，无需清理旧资料。
+- 继续复用回滚容器 `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，名称 `subnexus-cutover-ui-prior-20260915144333-1506840`。未创建回滚 tag、镜像归档或永久对象；切换成功后仅删除本轮临时 current 恢复容器，正常 rollback 仍回到既有 e9462 版本，不恢复数据库。
+- 脱敏证据、可执行完整单行命令：`F:\MySub2\candidate-transfer\monitor-v3-release\handoff.md` 和 `handoff-ready.json`；切换手册第 15.7 节为当前唯一交接入口。交付命令 timeout=600，独立验证参数及脚本哈希；代理未执行 switch/rollback/生产迁移或业务 SQL 写入。

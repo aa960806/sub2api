@@ -2,7 +2,7 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-16 12:30 Asia/Shanghai）：线上仍为 v0.2.5（bdbb73ca9f51），Grok Canvas 兼容候选 169469943423b03ae1eebeee218d8436265beb9e 已完成全部发布前置，run=/srv/subnexus-migration/cutover/20260916042849-1880282，状态 prepared/prepared/no，尚未切换。沿用既有 5b44c72e46bf 回滚目标，没有创建新回滚对象。唯一人工命令见第 15.6 节。
+> 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
 
 ## 项目身份
 
