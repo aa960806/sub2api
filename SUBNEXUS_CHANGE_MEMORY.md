@@ -2055,3 +2055,8 @@
 - 边界：本轮未运行 Docker 数据库集成测试和全量 golangci-lint，不能将本地测试/编译表述为完整 CI、数据库兼容 Gate 或线上验收。未连接生产数据库或 Redis，没有数据清理/迁移/恢复操作。候选 exe 仅为本地编译工件，未启动。
 - Git 历史使用新撤销提交保留审计链，不 reset、不强推；旧 #7315/0.2.6 提交仍在祖先历史，但其功能已经撤销。后续若上游重引相同提交，需要检查代码树和撤销提交，不能只以 merge-base/Already up to date 判断功能是否一致；只有维护者重新授权引入时才考虑撤销本次撤销。
 - 验证产物目录：F:\MySub2\candidate-transfer\upstream-withdrawal-alignment，保留 frontend-tests/build/eslint、backend-unit/build 的日志与退出码，以及上述两份范围审计 JSON。本轮不生成线上切换命令；旧 d032a91 / run 20260918100818-2913221 不包含本轮代码。
+
+### 撤回对齐提交确认
+
+- 代码与验证记录提交：bd1d703ac769f24090d7de709a8847f0a2fd15a0，父提交 ed19c03321d7afe7b1d4b3a689b7c8da0febb33b。当前应用 VERSION=0.2.5，对齐 upstream/main=efe9aab1e4ec89a42ba45e8dac20e882c5409a6a；被撤回提交仅保留在历史中，不再生效。
+- 本条仅补充提交标识，不改变已验证代码。后续上线应使用包含 bd1d703ac 的新候选，不能使用之前的 0.2.6 编译制品或旧 Monitor V3 切换命令。
