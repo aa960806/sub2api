@@ -1,7 +1,7 @@
 # SubNexus 操作与变更记忆
 
 
-> 最新状态（Seedance发布准备中，2026-09-18）：本地已对齐上游撤回后的0.2.5并完成Seedance源码接入和验证。维护者现授权新建回滚目标、完成全部发布前置，最终切换仍由维护者执行。线上实时状态正在重新核查；下方历史“当前权威状态”均不是本轮可执行入口。
+> 当前权威状态（2026-09-19 03:47:48 Asia/Shanghai，Seedance）：线上实际版本 d032a91ab；候选 b52db3527 全部发布前置已完成，run=/srv/subnexus-migration/cutover/20260918193509-3177062，状态 prepared/prepared/no，未执行切换。保留本轮此前已建立的回滚目标 d032a91ab；Seedance 默认关闭，供应商真实出片尚未验通。本轮人工命令仅见第 15.8 节；下方旧状态及第 15.7 节是历史记录，不能用于本轮发布。
 > 最新状态补充（2026-09-18 Asia/Shanghai）：作者已将 main 强推回 `efe9aab1e`，本轮按维护者要求撤销 #7315 及 0.2.6 版本号提交，当前 VERSION=0.2.5；保留 SubNexus 与其余上游更新。下述 0.2.6 合并为已被本轮覆盖的历史状态。未访问生产环境，最新验证及提交见文末。
 >
 > 最新本地基线（2026-09-18 Asia/Shanghai）：本轮合入上游 `8b69738d782ccaa7fd26511e1cca26ba8d1b58db` / `0.2.6`，验证与合并信息见文末。本轮未访问生产环境；下面 18:25:41 的发布交接是历史快照，未复核后续人工切换。旧 V3 候选 `d032a91` 和第 15.7 节命令不包含本轮代码，不能用于发布 0.2.6。
@@ -2093,3 +2093,43 @@
 - 最终隔离PostgreSQL媒体包集成测试通过（2.602s）：并发创建/总额度/三个时间窗预留、租约失效、迁移重复、未知结果保留、真实余额冻结/扣除/退款、用量写失败重试、去重归档、已删Key和用户成功/失败结算、错身份/错金额/错方向拒绝、过期参考图清理等；其他测试用户余额42未变。使用全新本地空集群127.0.0.1:55498和独立测试schema，schema自动清理，临时PG已停止。生产账务仓储用于真实SQL计费，用量writer使用隔离测试表，不等同于完整生产启动或端到端供应商测试。
 - 最终Go embed编译通过，产物 F:\MySub2\candidate-transfer\seedance-local-verification.exe 未启动；SHA256=fea993f940e7433a3038539383ee9e01a8d7d404c0c100c7d17b1f3b7b20798d。验收日志/退出码：seedance-backend-unit-final、seedance-backend-build-final、seedance-media-integration-final、seedance-frontend-build-final.log、seedance-frontend-eslint.log；来源/保护范围证据 seedance-local-scope-review.json。未运行Docker全量integration或golangci-lint。
 - 最终后端全量 `go test -tags=unit -p=2 ./...` 通过，58个有测试的包全部成功，service 179.931s；此结果包含最后的软删除恢复补丁，无overlay或跳过失败用例。进程PATH使用已有Git bin提供备份测试所需sh。最终工作区diff check通过，所有本轮测试/构建进程已结束。
+
+## 2026-09-19（Asia/Shanghai）— Seedance 发布前置进行中
+
+- 按维护者授权准备线上发布并新建本次回滚目标，正式 switch/rollback 仍由维护者手动执行。候选提交已固定并推送 feature/subnexus-migration：b318007cc83e1c2ae25a9a3f27f78fb9243c023d，tree=26b5a55ff16e7d795136315bed9c84952247b03f；main 和旧 SubNexus 未改。源码直接迁入 D:\ZCJ 的来源合同、默认关闭和供应商尚未出片验通的边界不变。
+- 专用本地 WSL Docker 构建的候选镜像 sha256:44bee65e988e22be591cf4d77251509fdc8c2054afdbc89f1a83ca16f889899d，归档 SHA256=07028b2d6efa7c140b3b668d2164c70d87de7a688907a7c5bd8888b88cddb1b2。服务器干净 detached 源码与工件安装校验完成，本地空库 smoke 与服务器隔离候选 Gate 均通过；服务器 Gate=/srv/subnexus-migration/docker-candidate/20260918T154149Z-4a6fcb06-9d1b-4461-a306-360f76fcecaa。尚不能据此宣称正式发布准备完成。
+- SSH 服务正常且已恢复认证。真实线上为 d032a91abbb7fb9ae828fd3654095b89ad28b11f，容器 5fe5d284ab100913c1e355adafeba34df6d0970fd7174a6ea49269fa8f2f4885，镜像 sha256:adfb848e6c3ff80007946d3aac999b89d6a19030a492607c2763ebcf2c1412f1，启动时间 2026-09-18T10:29:28.950082546Z，未重启。本次新回滚 tag=subnexus-rollback:seedance-b318007cc-prior-d032a91，已 save 归档并核验 SHA256=648c2bda8877009567cb496c363a3f91d27b20913c1a71d0c4a661d3a90100a0；不是以前的 e9462 回滚目标。
+- 本轮完整只读 PostgreSQL 快照已完成，/srv/subnexus-migration/backups/seedance-b318007cc/postgresql.dump，3412073990 bytes，SHA256=a2530bae9a5816577ec01b27ef0d6f915685f9681aa830627272b270f1072353。快照前后 app/PG/Redis 身份、启动时间及迁移账本不变，未执行生产迁移或业务 DML。9017 只新增4个独立媒体表，生产此时仍为384条迁移且无媒体表，配置未启用媒体功能。
+- 实测跨网传输约数十 KB/s，3.4GB 回传本地耗时不可接受，已停止无用传输；不宣称本地全备份恢复通过。改用服务器本机隔离容器恢复：固定 daemon、真实镜像、不可变备份，独立 Docker volumes，internal + isolated gateway IPv4 无宿主桥入口、禁IPv6、无公开端口或宿主挂载，关闭 token refresh 与后台业务 worker，仅通过已核验 clone PID 的网络命名空间访问测试接口。每容器0.75 CPU/1GiB，磁盘读64MiB/s写32MiB/s且核对 kernel io.max，30GiB恢复预算+8GiB保底，运行锁和精确资源清理；所有 docker exec 拒绝生产容器ID。
+- 为获得隔离恢复空间，按此前空间不足可清旧回滚资料的授权，核对归档 hash/size/挂载与新备份后，只删除四个旧 PostgreSQL 归档：cutover/20260911130706-3232923/postgresql.dump、cutover/20260916030325-1800501/postgresql.dump、cutover/20260916042849-1880282/postgresql.dump、backups/20260903T073714Z/postgres-sub2api.dump；另删除本轮 ubuntu staging 中的重复 dump。共20252559047 bytes，清理后空闲43200262144 bytes；保留全部 manifest、sidecar、镜像、容器、9月15日两套完整备份、9月18日当前版本备份和本轮新备份。删除的是历史恢复工件，不是线上日志表或用户/计费数据。精确审计记录=/srv/subnexus-migration/diagnostics/seedance-b318007cc/obsolete-dump-retirement.json；本轮及旧 anchor 的运行合同不依赖这四个历史 dump。
+- 本条写入时隔离恢复仍进行，token=seedance-remote-realclone-4d412ba367ac，launcher PID=3065813。恢复全部结构及全部业务表数据，仅省略十张既定诊断/监控指标表的 TABLE DATA；用户、订单、用量、扣费去重、额度、订阅、Key 等完整保留。须等16表全量指纹、新→旧→新、默认关闭、完整清理及生产只读前后检查真实通过后，才能生成兼容 Gate、正式 prepare 和最终人工命令。此时未运行正式 prepare/switch。
+- 00:43（Asia/Shanghai）根据8核主机负载余量，仅将精确克隆 PostgreSQL 容器 7f97615013bd20767ad24f43fd0b9c8403666626cf7904f19ded640efd6ba988 的 CPU 配额从0.75调为1.5，以缩短千万级用量索引及指纹验证。1GiB内存和64/32MiB/s磁盘限速不变，未重启克隆，也未更改数据库参数；生产三容器身份前后不变。单独证据为本轮 diagnostics/clone-resource-adjustment.json；此前0.75是初始配置，不应误述为整轮所有时段均不变。
+- 00:51 再次基于真实可用内存21863088128 bytes，只将同一克隆 PostgreSQL 内存上限从1GiB提高为8GiB（memory+swap总量同为8GiB，不使用额外swap），让反复扫描约6.6GB的用量表可复用缓存。CPU1.5和原磁盘限速不变，未重启、未更改数据库参数或生产资源限制；生产三容器身份不变。证据 diagnostics/clone-cache-adjustment.json。隔离Redis/应用仍沿用原1GiB限制，克隆最终会完整清理。
+- 01:16 左右，完整结构与业务数据恢复已通过，进入16表全量指纹阶段。只在8核主机实时负载低于4.5时，将同一克隆 PostgreSQL CPU配额从1.5提高至2.5；8GiB内存、64/32MiB/s磁盘限速不变，未重启克隆，生产三容器运行身份保持一致。实际时间与调整证据为 diagnostics/clone-fingerprint-cpu-adjustment.json；未更改生产容器限制或数据库参数。
+
+- 01:22 完整恢复与16表基线已完成，候选 b318007cc 的登录和核心API通过；关闭状态检查发现 /v1/media/videos 正确返回404，而 /media/videos 返回200 HTML。根因为 embed 前端 bypass 列表漏掉 /media/，此前仅测带 /v1 的本地smoke未覆盖根别名。兼容报告真实失败（SHA f49837db1dd109ae0246d8ccff40dbccfd35cd7c0eb00a1c0b885c79757faee23），new-old-new未完成，不能复用为通过Gate。原测试容器/卷/网络已清理，production_unchanged=true，生产无写入和重启。
+- 修复提交 b52db3527324c0e68046a22a62794ef0c6435a49（tree52b7c3a01dbee1b5361f83c01ec38ab2f57e247a）已推送feature；运行时代码只加 /media/ 路径识别，补实际两种嵌入式前端中间件媒体POST/GET与普通页面回归。新测试修复前重现问题，修复后web embed/unit完整通过；旧静态测试改用实际存在的logo.svg。新的精确镜像空库smoke将检查四个创建/上传端点，全部404 JSON MEDIA_TASK_DISABLED后才重新跑完整兼容。旧备份和回滚目标继续保留，新候选不得使用旧通过证据。
+
+- 修复候选 b52db3527 精确镜像为 sha256:c15b4358834796bb74bf75fe1dbbea704b5f7e563466cf290ee7e2813011a85f，归档SHA343642664b54a35876b29be8cde50c94f9d9f06639ff5382334172dbfc37a871（49007104 bytes），metadata SHA c75acf5d0f37c0f35403bf383eba73f5d8319bd130397626cd616e634f53f36e。专用本地daemon构建完成并清理builder；精确镜像四个媒体端点与登录/原用户接口/重启smoke通过，报告local-empty-smoke-10755fa6b7f3b7d4f99f5f0f.json；初次运行缺Redis镜像参数/指定了仅服务器可用的镜像ID，均在任何容器创建前失败，随后绑定本地已验证Redis12da49后通过。
+- 服务器修复候选Gate=/srv/subnexus-migration/docker-candidate/20260918T174308Z-b0faafcb-988d-4723-9091-bca98084dac3，exit0；新source/artifact/tools/diagnostics均使用b52db3527独立目录。完整备份和回滚镜像保留原backups/seedance-b318007cc及tag，未篡改原manifest，v2 runner明确核验备份原b318候选绑定与相同真实live/dump，再独立核验新candidate metadata；报告记录备份来源。
+- 01:48 启动新的隔离恢复PID3130234；runner SHA9bcdee0e83aa4ba6bb53b862f0ce6add4188c386f8116c1ddaba28ad110027aa。仅新clone PG初始2.5CPU/8GiB，shared_buffers2GB/work_mem16MB/maintenance_work_mem512MB/checkpoint5min/max_wal2GB；app/Redis仍0.75CPU/1GiB，64/32MiB磁盘限速、30GiB预算+8GiB保底不变。启动检查至少8CPU/20GiB可用内存、1/5分钟load不高于4；所有变化限隔离容器启动参数，生产身份不变。此时真实全量new-old-new尚未完成，未正式prepare或切换。
+
+## 2026-09-19（Asia/Shanghai）— Seedance 新候选真实备份隔离兼容验证通过
+
+- 新候选 b52db3527 的完整 new→old→new 验证于 03:34 完成，真实报告 `/srv/subnexus-migration/docker-candidate/seedance-remote-realclone-bc8e39f1862c/production-clone-evidence.json`，SHA256=`831b2fd1176f8bffe45875ff521f18980185790c1621281fc31c8cd145e74190`，退出码0，result/new_old_new/cleanup全部passed，production_unchanged=true。
+- 在独立副本恢复全部schema和业务表数据，仅省略10张诊断监控表的TABLE DATA。16张业务表逐行完整指纹在三个阶段均与基线一致，包含1,419万余条完整用量、计费去重、余额、全部授权额度和订单；核心登录/API通过。唯一新增迁移9017及4张空表，四个媒体新建/上传端点保持404 MEDIA_TASK_DISABLED。验证默认关闭时的镜像与增量schema兼容性，不代表真实供应商出片或启用后的在途回滚已验通。
+- 测试容器、网络、卷已按精确身份清理，空间恢复约42.56GB，生产health200。正式prepare已启动PID3177061，备份仍在生成；此时尚未完成最终审计，也未执行生产switch/rollback。
+
+## 2026-09-19（Asia/Shanghai）— Seedance 发布全部前置完成，停在人工切换前
+
+<!-- seedance-final-handoff:/srv/subnexus-migration/cutover/20260918193509-3177062 -->
+
+- 本条取信依据为本轮真实 `handoff-ready.json`，采集时间 2026-09-19 03:47:48 Asia/Shanghai。该采集已访问服务器完成只读核验；本地文档生成脚本没有 SSH、Docker、API 或发布操作。state/ui_state/ui_commit_intent=`prepared/prepared/no`，`switch_executed=false`。
+- 实际线上 commit=`d032a91abbb7fb9ae828fd3654095b89ad28b11f`，容器 `5fe5d284ab100913c1e355adafeba34df6d0970fd7174a6ea49269fa8f2f4885`，镜像 `sha256:adfb848e6c3ff80007946d3aac999b89d6a19030a492607c2763ebcf2c1412f1`；候选 commit/tree=`b52db3527324c0e68046a22a62794ef0c6435a49` / `52b7c3a01dbee1b5361f83c01ec38ab2f57e247a`，镜像 `sha256:c15b4358834796bb74bf75fe1dbbea704b5f7e563466cf290ee7e2813011a85f`。本次引用实际准备完成的 run=`/srv/subnexus-migration/cutover/20260918193509-3177062`，不是旧记录中的 run。
+- 正式 prepare 和最终审计已由真实回执确认完成；manifest SHA256=`202f45ee70a5afe4469f7450d1d22506a0496cae4cdec0e51e31c309df8a398d`，最终审计日志 SHA256=`8d4fff0e748efb7d0a79766ad90d3dec073f14e2b9eebe79acedb30e1ceb9670`。空库 Gate=`15c24f4e229d58690297700cacea4300d55000d2d16065c4aa0bd65937ef3520`，新→旧→新兼容 Gate=`7174c0c3a2b676c97773ee052e0a4f7d501ca97346d0edaf3ff63c6633f5a1c9`。此前克隆资源调整记录完整保留，本条不覆盖或概括成固定资源配置。
+- 正式 prepare PostgreSQL 备份 `/srv/subnexus-migration/cutover/20260918193509-3177062/postgresql.dump`，`3418269217` bytes，SHA256=`2118434352c551a0b3294efd8767e7929003efab48e0b64988f943f5b16f2cc8`；兼容验证的独立备份 SHA256=`a2530bae9a5816577ec01b27ef0d6f915685f9681aa830627272b270f1072353`，两者不是同一工件。
+- 继续保留本轮此前已创建的回滚镜像标签 `subnexus-rollback:seedance-b318007cc-prior-d032a91`，目标 commit=`d032a91abbb7fb9ae828fd3654095b89ad28b11f`、镜像 `sha256:adfb848e6c3ff80007946d3aac999b89d6a19030a492607c2763ebcf2c1412f1`，归档 SHA256=`648c2bda8877009567cb496c363a3f91d27b20913c1a71d0c4a661d3a90100a0`；此次候选修复未重复创建回滚镜像。正式切换后保留本轮原 live 容器 `5fe5d284ab100913c1e355adafeba34df6d0970fd7174a6ea49269fa8f2f4885` / `subnexus-cutover-ui-prior-20260918193509-3177062`；正常回滚目标为本轮切换前版本，不是更早的 anchor。
+- 最终审计时本地/公网 HTTP=`200` / `200`，活动结算/schema DDL=`0` / `0`；迁移账本 `384` 条 / `da0fc0f4da2518252ee0db5d9636c45c`。采集确认最终审计后生产运行身份未变。
+- Seedance 默认关闭，供应商真实出片尚未验通。发布/兼容门禁通过不代表真实视频生成成功，不能记成已启用或已正式发布。后续单独完成上游出片及计费验收再启用。
+- 应用回滚不恢复数据库。启用 Seedance 后回滚前必须先停止新建/上传并排空所有在途及 `manual_review` 任务；只要有非终态任务就不能执行回滚。
+- 文档更新范围仅为本目录 `handoff.md`、`SUBNEXUS_CUTOVER_RUNBOOK.md` 顶部最新提示及第 15.8 节、`SUBNEXUS_CHANGE_MEMORY.md` 顶部最新提示及本追加记录。历史条目保留，业务代码未改。本轮完整单行切换/回滚命令见第 15.8 节或本目录 `handoff.md`；生成器未执行两条命令。
