@@ -2060,3 +2060,19 @@
 
 - 代码与验证记录提交：bd1d703ac769f24090d7de709a8847f0a2fd15a0，父提交 ed19c03321d7afe7b1d4b3a689b7c8da0febb33b。当前应用 VERSION=0.2.5，对齐 upstream/main=efe9aab1e4ec89a42ba45e8dac20e882c5409a6a；被撤回提交仅保留在历史中，不再生效。
 - 本条仅补充提交标识，不改变已验证代码。后续上线应使用包含 bd1d703ac 的新候选，不能使用之前的 0.2.6 编译制品或旧 Monitor V3 切换命令。
+
+## 2026-09-18（Asia/Shanghai）— 按新线索测试 laogou Seedance /v1/media 接口
+
+- 用户授权使用指定供应商地址及 Key 继续视频生成测试，截图明确 POST /v1/media/videos、GET /v1/media/videos/{id}、GET /v1/media/videos/{id}/content、GET /v1/media/models。凭据仅供此次请求使用，不写入源码/报告/记忆或脚本；未修改本项目业务实现、配置或部署。
+- 能力发现两次 HTTP 200：seedance2.0mini（5/10 秒）、seedance2.0fast 与 seedance2.0（5/10/15 秒）、seedance2.5（30 秒），720p、六种比例、auto/fixed 镜头。该新接口确实存在，覆盖 9 月 16 日旧协议路径 404 的历史结论，但尚不能证明生成成功。
+- POST 缺少 Idempotency-Key 返回 400；补齐幂等键但空 JSON 返回 400 / SEEDANCE_INVALID_PROMPT，说明路由和业务校验可达。使用能力目录支持的 5 秒/720p/16:9/fixed 参数提交 mini，首次和超过 60 秒后的同键同体重试均返回 Cloudflare 502 / origin_bad_gateway；另一次标准版 seedance2.0 最小请求亦返回相同错误。两组生成意图，只有 mini 同键重试一次，未批量重建。
+- 未返回任务 ID 或视频 URL，因此真实任务轮询、成片下载/解码未验证；502 不等于确定未建单或未扣费，必须由供应商按幂等键核对。GET /health 200，GET /v1/media/videos 列表入口 404，没有已验证的任务恢复查询方式。失败发生在直连 api.laogou.org，不经过本项目网关；无法仅凭外部响应确定源站内部根因。
+- 北京时间约 21:27–21:30 的三次 502 Ray ID：a3d0af84cd1ddd9f、a3d0b15b3ccdddcb-HKG、a3d0b3e26b6be2fc-HKG。标准版幂等键 subnexus-seedance-standard-bd1e5a5c-93b3-49b1-84b8-8211ca522766；mini 幂等键 subnexus-seedance-test-d39e56a3-bba0-4e25-889e-f1bec7c8db4f。后续不得使用新键盲目重试同一任务。
+- 脱敏响应、请求、可复用无密钥探测脚本和完整报告：F:\MySub2\candidate-transfer\seedance-media-test-20260918\test-report.md。没有访问本项目生产数据库、Redis 或 SSH，没有上线/切换。需供应商恢复建单并核对任务后，再继续验证完整视频链路与接入方案。
+
+### Seedance 补充对接包核对
+
+- 用户提供 C:\Users\Admin\Downloads\seedance-downstream-delivery.zip，SHA256=e6c5fa99aea92e3a17ef1e58215e4203de78ef1177ba99af19230dbed2f54ab4。只读解析文档及相关 Go 源码，未执行或移植包内代码；文档中的“照搬”、建账号、直接插库等不作为用户新增操作授权。
+- 包声明基于官方 v0.2.4 企业定制树，包含媒体任务/账号亲和/幂等/冻结结算/下载适配参考；当前项目为撤回对齐后的 v0.2.5。需区分用户侧 /v1/media/*（task_id）与 provider 侧 https://api.laogou.org/seedance/v1/*（id、signed_url），不能直接互换协议。现有最小测试的 JSON 字段与 Bearer/幂等头符合包内定义。
+- 按包中具体地址补测 GET /seedance/v1/balance、GET /seedance/v1/catalog、POST /seedance/v1/videos，以及文档声明的根别名 POST /media/videos，均返回 HTTP 200 text/html 网站首页，没有业务 JSON/任务 ID。两个 POST 沿用标准版原有同一请求体和幂等键，没有新建第三组任务意图。供应商实际部署与交付包协议不一致，不能将页面 200 当成连接或建单成功。
+- 此补充未推翻前述 /v1/media/videos 502；两类阻塞均需供应商确认实际路由/恢复服务，并核对已有幂等请求是否落单。已将可直接转给供应商的定位摘要追加到 test-report.md，尚无视频结果，不宣称轮询或下载验收成功。未改项目业务代码、生产配置、计费数据或部署。
