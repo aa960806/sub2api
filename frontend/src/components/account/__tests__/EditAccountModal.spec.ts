@@ -330,6 +330,46 @@ describe('EditAccountModal', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it('edits a Seedance account without enabling upstream billing probes', async () => {
+    const account = buildAccount()
+    account.platform = 'seedance'
+    account.type = 'apikey'
+    account.credentials = { base_url: 'https://api.laogou.org/seedance', api_key: 'test-seedance-key' }
+    const wrapper = mountModal(account)
+    expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-billing-rate-sync"]').exists()).toBe(false)
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload.rate_multiplier).toBe(1)
+    expect(payload.upstream_billing_probe_enabled).toBeUndefined()
+    expect(payload.upstream_billing_rate_sync_enabled).toBeUndefined()
+    expect(payload.credentials.base_url).toBe('https://api.laogou.org/seedance')
+  })
+
+  it('requires an explicit reset of Seedance account caps and preserves historical quota counters', async () => {
+    const account = buildAccount()
+    account.platform = 'seedance'
+    account.credentials = { base_url: 'https://api.laogou.org/seedance', api_key: 'test-key' }
+    account.extra = { quota_limit: 100, quota_daily_limit: 20, quota_weekly_limit: 50,
+      quota_used: 8, quota_daily_used: 3, quota_weekly_used: 5,
+      quota_daily_start: '2026-09-18', custom_metadata: 'keep' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    expect(wrapper.findComponent({ name: 'QuotaLimitCard' }).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="seedance-quota-blocked"]').exists()).toBe(true)
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="seedance-clear-account-quota"]').trigger('click')
+    expect(wrapper.find('[data-testid="seedance-quota-blocked"]').exists()).toBe(false)
+    expect(account.extra.quota_limit).toBe(100)
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toEqual({
+      ...account.extra, quota_limit: 0, quota_daily_limit: 0, quota_weekly_limit: 0,
+    })
+  })
+
   it('sets expiry presets from now instead of extending the saved expiry', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2028-02-29T12:34:00'))

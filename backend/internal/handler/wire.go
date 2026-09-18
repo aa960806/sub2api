@@ -221,6 +221,7 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	mediaTaskHandler MediaTaskRoutes,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
@@ -258,6 +259,7 @@ func ProvideHandlers(
 		ModelPlaza:               modelPlazaHandler,
 		AsyncImage:               asyncImageHandler,
 		BatchImage:               batchImageHandler,
+		MediaTask:                mediaTaskHandler,
 	}
 }
 

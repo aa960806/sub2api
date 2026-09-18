@@ -2780,6 +2780,14 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	// Handle OpenAI accounts
+	if account.IsSeedance() {
+		models := make([]openai.Model, 0, len(service.DefaultSeedanceModelIDs()))
+		for _, id := range service.DefaultSeedanceModelIDs() {
+			models = append(models, openai.Model{ID: id, Object: "model", Type: "model", DisplayName: id, OwnedBy: service.PlatformSeedance})
+		}
+		response.Success(c, models)
+		return
+	}
 	if account.IsOpenAI() {
 		// Prefer the shared, account-keyed upstream catalog. If discovery fails,
 		// retain the legacy local catalog below so the test dialog remains usable.

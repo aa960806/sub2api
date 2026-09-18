@@ -80,7 +80,7 @@ const hasCustomRate = computed(() => {
 const appStore = useAppStore()
 
 const hasPeakRate = computed(() => {
-  return Boolean(props.showRate && props.peakRateEnabled && props.peakStart && props.peakEnd)
+  return Boolean(props.platform !== 'seedance' && props.showRate && props.peakRateEnabled && props.peakStart && props.peakEnd)
 })
 
 const peakRateText = computed(() => {
@@ -101,7 +101,7 @@ const peakRateTitle = computed(() => {
 
 // 是否显示右侧标签
 const showLabel = computed(() => {
-  if (!props.showRate) return false
+  if (!props.showRate || props.platform === 'seedance') return false
   // 订阅类型：显示天数或"订阅"
   if (isSubscription.value) return true
   // 标准类型：显示倍率（包括专属倍率）
@@ -186,6 +186,7 @@ const peakRateClass = computed(() => {
 
 // Badge color based on platform and subscription type
 const badgeClass = computed(() => {
+  if (props.platform === 'seedance') return 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-300'
   if (props.platform === 'anthropic') {
     // Claude: orange theme
     return isSubscription.value

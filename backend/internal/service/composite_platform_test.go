@@ -206,7 +206,7 @@ func TestQuotaPlatformCompositeUsesResolvedOrForceOnly(t *testing.T) {
 	require.Equal(t, PlatformAntigravity, QuotaPlatform(ctx, apiKey))
 }
 
-func TestCompositeGroupSchedulerHasAllCanonicalPlatformBuckets(t *testing.T) {
+func TestSchedulerHasAllCanonicalPlatformBuckets(t *testing.T) {
 	seen := make(map[string]struct{})
 	for _, bucket := range schedulerCanonicalBuckets(99) {
 		seen[bucket.Platform] = struct{}{}
@@ -216,9 +216,23 @@ func TestCompositeGroupSchedulerHasAllCanonicalPlatformBuckets(t *testing.T) {
 		platforms = append(platforms, platform)
 	}
 	require.ElementsMatch(t,
-		[]string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo},
+		[]string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformSeedance},
 		platforms,
 	)
+}
+
+func TestSeedanceCanonicalSchedulerBucketsDoNotEnableCompositeRouting(t *testing.T) {
+	// Snapshot rebuilding covers dedicated media groups as well as text groups;
+	// being present in that cache does not make Seedance a composite route target.
+	require.False(t, isConcreteRequestPlatform(PlatformSeedance))
+	require.False(t, canCopyAccountsFromGroupPlatform(PlatformComposite, PlatformSeedance))
+	var modes []string
+	for _, bucket := range schedulerCanonicalBuckets(99) {
+		if bucket.Platform == PlatformSeedance {
+			modes = append(modes, bucket.Mode)
+		}
+	}
+	require.ElementsMatch(t, []string{SchedulerModeSingle, SchedulerModeForced}, modes)
 }
 
 func TestCompositeConcretePlatformsIncludeCNProviders(t *testing.T) {

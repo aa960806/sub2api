@@ -1,0 +1,75 @@
+{
+  "source_directory": "D:/ZCJ",
+  "declared_base": "sub2api v0.2.4 / 0c71c2620",
+  "target_base": "sub2api v0.2.5 plus SubNexus customizations",
+  "files": [
+    {
+      "source": "README.md",
+      "sha256": "63f5987e9b2f2453406c43c1525c65c98fb7a4f5a29bf519279bd5dfde62f0fd"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/aliases.go",
+      "sha256": "01c7dbb4c7e7d6c3579aef466aab67675a806303c725f1a95ed9773c241de689"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/billing.go",
+      "sha256": "52c753bfc6ddee4039f40ddeea207c76a96da625994b4b939263c382866e6c9a"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/billing_test.go",
+      "sha256": "3a8631ad7fab72fee14234e301c17fbf848a8ab3ba849980c120d8188455c414"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/handler.go",
+      "sha256": "58c5e9f6c154b4217de562ce3228951c1dcd38438c2eff4e9c4496e23e7ea3ae"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/handler_test.go",
+      "sha256": "aa822ceae12f3579fd3b4ad46f840aeaffed569b48412dd83fedab38cbe96eda"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/provider_seedance.go",
+      "sha256": "f90210ab6f6c3ce427075486e84274b2511ff4adba49370ebc0b7857f349faf9"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/provider_seedance_test.go",
+      "sha256": "f15f9202c63cb00f0780f48828a54728f71b7cec142819f99ec188a6303bd11d"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/seedance_capability.go",
+      "sha256": "342be3fe25b0336072bd4ce4cb72238c632e78729ea6757c9597ab8b40a7f2dc"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/service.go",
+      "sha256": "8bcc8ca2e2373709c602bb7f6fdf0fe9e435f779f4ba5e4d434307a4e3f60c1f"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/store.go",
+      "sha256": "9026f334b4487e294d7366feb0d8e4dacfd67f3ed3e18c956977a88807c101d7"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/sweeper.go",
+      "sha256": "8e78bfeeb4ea859176005fd7168c7b93bc5fb41fa54c244900d666bfe27f3f11"
+    },
+    {
+      "source": "src/backend/internal/custom/business/media/wire.go",
+      "sha256": "284f9319564d2668208ecf4e270ff39b47fbef454e2207a8b032572b8aeea96a"
+    },
+    {
+      "source": "src/backend/internal/handler/media_bridge.go",
+      "sha256": "41c63b9969a3d07ca6b506006fa64211668aba4405472807ef8ce52393ed7755"
+    },
+    {
+      "source": "src/backend/internal/service/media_bridge.go",
+      "sha256": "1b5b3f408d6b4e753ee9723d8341c03feee8fe7839e85f0588e3d3c909557aa0"
+    },
+    {
+      "source": "接线点补丁说明.md",
+      "sha256": "215febfc4f25aae20f2590c8553068981b1cc28d75c52d1725bde4d08c9ac72b"
+    },
+    {
+      "source": "移植指南.md",
+      "sha256": "d001852e4f718d4f90c4ba31482447c317a9fda8b5790d5dc229867fbfde76cc"
+    }
+  ]
+}

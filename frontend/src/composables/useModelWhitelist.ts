@@ -1,3 +1,4 @@
+import { SEEDANCE_MODELS } from '@/constants/platforms'
 // =====================
 // 模型列表（硬编码，与 new-api 一致）
 // =====================
@@ -251,6 +252,7 @@ const perplexityModels = [
 
 // 所有模型（去重）
 const allModelsList: string[] = [
+  ...SEEDANCE_MODELS,
   ...openaiModels,
   ...claudeModels,
   ...geminiModels,
@@ -437,6 +439,7 @@ export const commonErrorCodes = [
 // 按平台获取模型
 export function getModelsByPlatform(platform: string): string[] {
   switch (platform) {
+    case 'seedance': return [...SEEDANCE_MODELS]
     case 'openai': return openaiModels
     case 'anthropic':
     case 'claude': return claudeModels
@@ -477,6 +480,7 @@ export function getModelsByPlatform(platform: string): string[] {
 
 // 按平台获取预设映射
 export function getPresetMappingsByPlatform(platform: string) {
+  if (platform === 'seedance') return SEEDANCE_MODELS.map(model => ({ label: model, from: model, to: model, color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' }))
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'grok' || platform === 'xai') return grokPresetMappings

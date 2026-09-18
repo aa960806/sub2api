@@ -954,6 +954,9 @@ const (
 
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
+	// Media controls independent Seedance video creation. Reads and settlement of
+	// previously accepted tasks continue when creation is disabled.
+	Media GatewayMediaConfig `mapstructure:"media"`
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
@@ -2476,6 +2479,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.cn_providers.balance_threshold", 0.5)
 	viper.SetDefault("gateway.cn_providers.balance_check_interval_minutes", 10)
 	viper.SetDefault("gateway.image_concurrency.enabled", false)
+	viper.SetDefault("gateway.media.enabled", false)
+	viper.SetDefault("gateway.media.max_image_bytes", 12*1024*1024)
+	viper.SetDefault("gateway.media.max_images_total_bytes", 70*1024*1024)
 	viper.SetDefault("gateway.image_concurrency.max_concurrent_requests", 0)
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
 	viper.SetDefault("gateway.image_concurrency.wait_timeout_seconds", 30)
@@ -3328,6 +3334,12 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("gateway.connection_pool_isolation must be one of: %s/%s/%s",
 				ConnectionPoolIsolationProxy, ConnectionPoolIsolationAccount, ConnectionPoolIsolationAccountProxy)
 		}
+	}
+	if c.Gateway.Media.MaxImageBytes < 0 || c.Gateway.Media.MaxImagesTotalBytes < 0 {
+		return fmt.Errorf("gateway.media image byte limits must be non-negative")
+	}
+	if c.Gateway.Media.MaxImageBytes > 0 && c.Gateway.Media.MaxImagesTotalBytes > 0 && c.Gateway.Media.MaxImagesTotalBytes < c.Gateway.Media.MaxImageBytes {
+		return fmt.Errorf("gateway.media.max_images_total_bytes must be at least max_image_bytes")
 	}
 	if c.Gateway.ImageConcurrency.MaxConcurrentRequests < 0 {
 		return fmt.Errorf("gateway.image_concurrency.max_concurrent_requests must be non-negative")

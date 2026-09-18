@@ -1,5 +1,7 @@
 # SubNexus 同库切换手册
 
+> 本轮Seedance发布正在准备：授权新建回滚目标，保持Seedance默认关闭，最终切换由维护者执行。本轮命令尚未生成；下方旧run与命令仅作历史审计，不能用于发布本轮代码。
+
 > 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
 
 本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧 SubNexus anchor 及容器身份和 never-started probe 均核验完成之后。本轮最终 `switch` 仍由维护者手动执行；构建或 Gate 通过本身不代表可以切换。

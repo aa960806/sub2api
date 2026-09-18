@@ -21,6 +21,7 @@
         </div>
       </div>
 
+      <SeedanceKeyGuide v-else-if="platform === 'seedance'" :base-url="baseUrl" :api-key="apiKey" />
       <!-- Platform-specific content -->
       <template v-else>
         <!-- Description -->
@@ -259,6 +260,7 @@ import { ref, computed, h, watch, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import SeedanceKeyGuide from './SeedanceKeyGuide.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { fetchCodexModelsManifest } from '@/api/codex'
@@ -1247,6 +1249,7 @@ function generateRoutedCodexFiles(
     gemini: 'Gemini',
     antigravity: 'Antigravity',
     grok: 'Grok',
+    seedance: 'Seedance',
     kimi: 'Kimi',
     zhipu: 'Zhipu',
     deepseek: 'DeepSeek',

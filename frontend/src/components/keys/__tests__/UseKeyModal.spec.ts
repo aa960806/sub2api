@@ -40,6 +40,20 @@ describe('UseKeyModal', () => {
     saveAsMock.mockClear()
   })
 
+  it('shows the independent media flow for Seedance without chat-client setup', () => {
+    const wrapper = mount(UseKeyModal, {
+      props: { show: true, apiKey: 'test-seedance', baseUrl: 'https://example.com/v1/', platform: 'seedance' },
+      global: { stubs: { BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' }, Icon: true } },
+    })
+    expect(wrapper.find('[data-testid="seedance-key-guide"]').exists()).toBe(true)
+    const content = wrapper.findAll('pre code').map(code => code.text()).join('\n')
+    expect(content).toContain('POST https://example.com/v1/media/videos')
+    expect(content).toContain('Idempotency-Key: <unique-request-id>')
+    expect(content).toContain('GET https://example.com/v1/media/videos/<task_id>/content')
+    expect(content).not.toContain('config.toml')
+    expect(content).not.toContain('/responses')
+  })
+
   it('omits the attribution override from every standard Claude Code setup form', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {

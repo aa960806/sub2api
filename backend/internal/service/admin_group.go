@@ -296,6 +296,8 @@ func defaultModelsListCandidateIDs(platform string) []string {
 		return xai.DefaultModelIDs()
 	case PlatformOpenCodeGo:
 		return DefaultOpenCodeGoModelIDs()
+	case PlatformSeedance:
+		return DefaultSeedanceModelIDs()
 	case PlatformComposite:
 		return compositeDefaultModelsListCandidateIDs()
 	default:
@@ -386,6 +388,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	platform := NormalizeGroupPlatform(input.Platform)
+	if err := validateSeedanceGroup(platform, input.SubscriptionType, input.RateMultiplier); err != nil {
+		return nil, err
+	}
 	// 固定账号 manifest 配置：账号绑定发生在创建之后，创建时无法校验成员关系，
 	// 拒绝开启并在创建后的编辑里配置。
 	if normalizeCodexModelsManifestConfig(platform, input.CodexModelsManifestConfig).Enabled {
@@ -759,6 +764,20 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 
 	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）
 	previousPlatform := group.Platform
+	if input.Platform != "" && input.Platform != previousPlatform &&
+		(input.Platform == PlatformSeedance || previousPlatform == PlatformSeedance) {
+		return nil, infraerrors.BadRequest("SEEDANCE_PLATFORM_IMMUTABLE", "create a dedicated Seedance group instead of changing an existing group's platform")
+	}
+	effectiveSubscriptionType, effectiveRateMultiplier := group.SubscriptionType, group.RateMultiplier
+	if input.SubscriptionType != "" {
+		effectiveSubscriptionType = input.SubscriptionType
+	}
+	if input.RateMultiplier != nil {
+		effectiveRateMultiplier = *input.RateMultiplier
+	}
+	if err := validateSeedanceGroup(group.Platform, effectiveSubscriptionType, effectiveRateMultiplier); err != nil {
+		return nil, err
+	}
 
 	if input.Name != "" {
 		group.Name = input.Name

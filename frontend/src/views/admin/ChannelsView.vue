@@ -370,7 +370,7 @@
             </div>
 
             <!-- Model Mapping -->
-            <div>
+            <div v-if="section.platform !== 'seedance'">
               <div class="mb-1 flex items-center justify-between">
                 <label class="input-label text-xs mb-0">{{ t('admin.channels.form.modelMapping', 'Model Mapping') }}</label>
                 <button type="button" @click="addMappingEntry(sIdx)" class="text-xs text-primary-600 hover:text-primary-700">
@@ -417,6 +417,7 @@
               </div>
             </div>
 
+            <p v-if="section.platform === 'seedance'" class="input-hint">{{ t('admin.accounts.seedance.hint') }}</p>
             <!-- Model Pricing -->
             <div>
               <div class="mb-1 flex items-center justify-between">
@@ -638,6 +639,7 @@ import { apiIntervalsToForm, apiTimePricingToForm, createDefaultTimePricingForm,
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass } from '@/utils/platformColors'
+import { CONCRETE_PLATFORM_OPTIONS, SEEDANCE_MODELS, defaultPlatformBillingMode } from '@/constants/platforms'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -763,7 +765,7 @@ const form = reactive({
 let abortController: AbortController | null = null
 
 // ── Platform config ──
-const platformOrder: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go']
+const platformOrder: GroupPlatform[] = CONCRETE_PLATFORM_OPTIONS.map(option => option.value)
 // Composite pricing/mapping may target every concrete schedulable provider.
 const compositePlatforms: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go']
 
@@ -857,7 +859,7 @@ function toggleGroupInSection(sectionIdx: number, groupId: number) {
 function addPricingEntry(sectionIdx: number) {
   form.platforms[sectionIdx].model_pricing.push({
     models: [],
-    billing_mode: 'token',
+    billing_mode: defaultPlatformBillingMode(form.platforms[sectionIdx].platform),
     input_price: null,
     output_price: null,
     cache_write_price: null,
@@ -881,7 +883,7 @@ async function syncLatestModels(sectionIdx: number) {
   if (syncingPlatform.value) return
   syncingPlatform.value = platform
   try {
-    const result = await adminAPI.channels.syncPricingModels(platform)
+    const result = platform === 'seedance' ? { models: [...SEEDANCE_MODELS] } : await adminAPI.channels.syncPricingModels(platform)
     // Collect all model names already present in this platform's pricing entries
     const existingModels = new Set<string>()
     for (const entry of form.platforms[sectionIdx].model_pricing) {
@@ -895,7 +897,7 @@ async function syncLatestModels(sectionIdx: number) {
     // Add new models as a single new pricing entry (user fills in prices)
     form.platforms[sectionIdx].model_pricing.push({
       models: newModels,
-      billing_mode: 'token',
+      billing_mode: defaultPlatformBillingMode(form.platforms[sectionIdx].platform),
       input_price: null,
       output_price: null,
       cache_write_price: null,
@@ -965,7 +967,7 @@ function addAccountStatsRule(sectionIdx: number) {
 function addRulePricingEntry(sectionIdx: number, ruleIndex: number) {
   form.platforms[sectionIdx].account_stats_pricing_rules[ruleIndex].pricing.push({
     models: [],
-    billing_mode: 'token',
+    billing_mode: defaultPlatformBillingMode(form.platforms[sectionIdx].platform),
     input_price: null,
     output_price: null,
     cache_write_price: null,

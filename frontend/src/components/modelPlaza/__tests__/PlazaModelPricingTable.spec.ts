@@ -56,6 +56,18 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it('shows Seedance final per-video pricing without applying a user group multiplier', () => {
+    const model = tokenModel({ name: 'seedance2.0mini', platform: 'seedance', official_pricing: null })
+    model.pricing!.billing_mode = 'per_request'
+    model.pricing!.per_request_price = 2
+    const wrapper = mount(PlazaModelPricingTable, {
+      props: { models: [model], platform: 'seedance', rateMultiplier: 1, userRateMultiplier: 0.5 },
+    })
+    expect(wrapper.text()).toContain('$2.00')
+    expect(wrapper.text()).not.toContain('$1.00')
+    expect(wrapper.text()).not.toContain('0.5x')
+  })
+
   it('倍率为 1 时展示渠道单价原值($/1M),价格保底 2 位小数', () => {
     const wrapper = mountTable([tokenModel()], 1)
     const text = wrapper.text()

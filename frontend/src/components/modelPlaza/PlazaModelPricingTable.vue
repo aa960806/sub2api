@@ -363,9 +363,9 @@ const sortedModels = computed(() => {
   })
 })
 
-const effectiveRate = computed(() => props.userRateMultiplier ?? props.rateMultiplier)
+const effectiveRate = computed(() => props.platform === 'seedance' ? 1 : props.userRateMultiplier ?? props.rateMultiplier)
 const hasCustomRate = computed(
-  () => props.userRateMultiplier != null && props.userRateMultiplier !== props.rateMultiplier
+  () => props.platform !== 'seedance' && props.userRateMultiplier != null && props.userRateMultiplier !== props.rateMultiplier
 )
 
 function billingMode(m: PlazaModel): BillingMode {

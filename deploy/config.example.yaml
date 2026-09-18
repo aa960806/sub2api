@@ -209,6 +209,11 @@ security:
 # 网关配置
 # =============================================================================
 gateway:
+  # Seedance 独立媒体接口；默认禁止新建任务和上传，已有任务仍可查询、下载和结算。
+  media:
+    enabled: false
+    max_image_bytes: 12582912       # 12 MiB / image
+    max_images_total_bytes: 73400320 # 70 MiB / request
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）
   response_header_timeout: 600

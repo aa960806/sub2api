@@ -156,6 +156,14 @@ export default {
     lastUsedIP: 'Last Used IP',
     useKey: 'Use Key',
     useKeyModal: {
+      seedance: {
+        description: 'Create, poll and download videos through the independent media API. Use an API key assigned to a Seedance group.',
+        note: 'Use a new Idempotency-Key for each new video. On a timeout, retry with the same key and identical request body. Poll the returned task_id until status is succeeded and downloadable is true, then download. GET /v1/media/models lists supported models and parameters.',
+        create: '1. Create a video (HTTP request example)',
+        poll: '2. Poll with the returned task_id',
+        download: '3. Download when the video is available',
+      },
+
       title: 'Use API Key',
       description:
         'Add the following environment variables to your terminal profile or run directly in terminal to configure API access.',

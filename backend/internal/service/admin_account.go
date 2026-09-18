@@ -411,6 +411,15 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 // Grok media eligibility helpers live in account_grok_media_eligibility.go.
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
+	if err := validateSeedanceAccount(input.Platform, input.Type, input.Credentials); err != nil {
+		return nil, err
+	}
+	if err := validateSeedanceAccountMultiplier(input.Platform, input.RateMultiplier); err != nil {
+		return nil, err
+	}
+	if err := validateSeedanceAccountQuota(input.Platform, accountExtra); err != nil {
+		return nil, err
+	}
 	// Probe/session state is system-managed. New accounts always start with automatic refresh disabled.
 	delete(accountExtra, UpstreamBillingProbeEnabledExtraKey)
 	delete(accountExtra, UpstreamBillingRateSyncEnabledExtraKey)
@@ -525,6 +534,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 
 	account, err := buildAccountForCreate(input, accountExtra)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateSeedanceAccountGroups(ctx, account, groupIDs); err != nil {
 		return nil, err
 	}
 	if err := s.ValidateAccountGroupBindings(ctx, groupIDs); err != nil {
@@ -838,6 +850,20 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 
 	billingSettingsAppliedAtomically := false
+	if err := validateSeedanceAccount(account.Platform, account.Type, account.Credentials); err != nil {
+		return nil, err
+	}
+	if err := validateSeedanceAccountMultiplier(account.Platform, account.RateMultiplier); err != nil {
+		return nil, err
+	}
+	if err := validateSeedanceAccountQuota(account.Platform, account.Extra); err != nil {
+		return nil, err
+	}
+	if input.GroupIDs != nil {
+		if err := s.validateSeedanceAccountGroups(ctx, account, *input.GroupIDs); err != nil {
+			return nil, err
+		}
+	}
 	updater := s.accountBillingRepo
 	if updater == nil {
 		// Unit tests and narrow internal callers may construct adminServiceImpl
@@ -902,6 +928,15 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键
 // （如 model_rate_limits / passive_usage_* 等）。
 func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	if containsSeedanceAccountQuota(updates) {
+		account, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := validateSeedanceAccountQuota(account.Platform, updates); err != nil {
+			return err
+		}
+	}
 	updates = sanitizedCodexFingerprintExtraUpdates(updates)
 	updates = stripOpenAIAutoResetCreditManagedExtra(updates, true)
 	delete(updates, UpstreamBillingProbeEnabledExtraKey)
@@ -972,7 +1007,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || input.GroupIDs != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil || containsSeedanceAccountQuota(input.Extra) {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -980,6 +1015,27 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		cachedTargets = loaded
 	}
 	targetsByID := make(map[int64]*Account, len(cachedTargets))
+	for _, account := range cachedTargets {
+		if account == nil || !account.IsSeedance() {
+			continue
+		}
+		if err := validateSeedanceAccountMultiplier(account.Platform, input.RateMultiplier); err != nil {
+			return nil, err
+		}
+		if err := validateSeedanceAccountQuota(account.Platform, input.Extra); err != nil {
+			return nil, err
+		}
+		if len(input.Credentials) > 0 {
+			if err := validateSeedanceAccount(account.Platform, account.Type, MergePreservingSensitiveCreds(account.Credentials, input.Credentials)); err != nil {
+				return nil, err
+			}
+		}
+		if input.GroupIDs != nil {
+			if err := s.validateSeedanceAccountGroups(ctx, account, *input.GroupIDs); err != nil {
+				return nil, err
+			}
+		}
+	}
 	for _, account := range cachedTargets {
 		if account != nil {
 			targetsByID[account.ID] = account

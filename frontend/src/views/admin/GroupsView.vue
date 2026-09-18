@@ -520,6 +520,7 @@
             @change="createForm.copy_accounts_from_group_ids = []"
           />
           <p class="input-hint">{{ t("admin.groups.platformHint") }}</p>
+          <p v-if="createForm.platform === 'seedance'" class="input-hint" data-testid="seedance-group-hint">{{ t('admin.accounts.seedance.hint') }}</p>
         </div>
         <!-- 从分组复制账号 -->
         <div v-if="!authStore.isSimpleMode && copyAccountsGroupOptions.length > 0">
@@ -617,6 +618,7 @@
           }}</label>
           <input
             v-model.number="createForm.rate_multiplier"
+            :disabled="createForm.platform === 'seedance'"
             type="number"
             step="0.001"
             min="0.001"
@@ -714,7 +716,7 @@
             }}</label>
             <Select
               v-model="createForm.subscription_type"
-              :options="subscriptionTypeOptions"
+              :options="createForm.platform === 'seedance' ? subscriptionTypeOptions.filter(option => option.value === 'standard') : subscriptionTypeOptions"
             />
             <p class="input-hint">
               {{ t("admin.groups.subscription.typeHint") }}
@@ -1482,11 +1484,11 @@
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.title") }}</h4>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.groups.modelPricing.description") }}</p>
             </div>
-            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(createForm.model_pricing)">
+            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(createForm.model_pricing, createForm.platform)">
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
           </div>
-          <label class="mt-3 flex items-start gap-2">
+          <label v-if="createForm.platform !== 'seedance'" class="mt-3 flex items-start gap-2">
             <input v-model="createForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
             <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
           </label>
@@ -2157,6 +2159,7 @@
             data-tour="group-form-platform"
           />
           <p class="input-hint">{{ t("admin.groups.platformNotEditable") }}</p>
+          <p v-if="editForm.platform === 'seedance'" class="input-hint" data-testid="seedance-group-hint">{{ t('admin.accounts.seedance.hint') }}</p>
         </div>
         <template v-if="!authStore.isSimpleMode">
         <!-- 从分组复制账号（编辑时） -->
@@ -2256,6 +2259,7 @@
           }}</label>
           <input
             v-model.number="editForm.rate_multiplier"
+            :disabled="editForm.platform === 'seedance'"
             type="number"
             step="0.001"
             min="0.001"
@@ -2353,7 +2357,7 @@
             }}</label>
             <Select
               v-model="editForm.subscription_type"
-              :options="subscriptionTypeOptions"
+              :options="editForm.platform === 'seedance' ? subscriptionTypeOptions.filter(option => option.value === 'standard') : subscriptionTypeOptions"
               :disabled="true"
             />
             <p class="input-hint">
@@ -3132,11 +3136,11 @@
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.title") }}</h4>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.groups.modelPricing.description") }}</p>
             </div>
-            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(editForm.model_pricing)">
+            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(editForm.model_pricing, editForm.platform)">
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
           </div>
-          <label class="mt-3 flex items-start gap-2">
+          <label v-if="editForm.platform !== 'seedance'" class="mt-3 flex items-start gap-2">
             <input v-model="editForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
             <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
           </label>
@@ -4284,6 +4288,7 @@ import type {
 } from "@/types";
 import {
   CONCRETE_PLATFORM_OPTIONS,
+  defaultPlatformBillingMode,
   GROUP_PLATFORM_OPTIONS,
 } from "@/constants/platforms";
 import type { Column } from "@/components/common/types";
@@ -4378,9 +4383,9 @@ import {
 const supportsLivePlatform = (platform: string): boolean =>
   platform === "openai" || platform === "composite";
 
-const emptyGroupPricing = (): PricingFormEntry => ({
+const emptyGroupPricing = (platform: string): PricingFormEntry => ({
   models: [],
-  billing_mode: "token",
+  billing_mode: defaultPlatformBillingMode(platform),
   input_price: null,
   output_price: null,
   cache_write_price: null,
@@ -4393,8 +4398,8 @@ const emptyGroupPricing = (): PricingFormEntry => ({
   time_pricing: createDefaultTimePricingForm(),
 });
 
-const addGroupPricing = (entries: PricingFormEntry[]) =>
-  entries.push(emptyGroupPricing());
+const addGroupPricing = (entries: PricingFormEntry[], platform: string) =>
+  entries.push(emptyGroupPricing(platform));
 
 const groupPricingFromAPI = (
   pricing: ChannelModelPricing[] | undefined,
@@ -4614,7 +4619,7 @@ const platformFilterOptions = computed(() => [
 ]);
 
 const compositeRoutePlatformOptions = computed(() => [
-  ...CONCRETE_PLATFORM_OPTIONS,
+  ...CONCRETE_PLATFORM_OPTIONS.filter((option) => option.value !== "seedance"),
 ]);
 
 const compositeRouteEndpointOptions = computed(() => [
@@ -6656,6 +6661,12 @@ watch(
 watch(
   () => createForm.platform,
   (newVal) => {
+    if (newVal === "seedance") {
+      createForm.subscription_type = "standard";
+      createForm.rate_multiplier = 1;
+      createForm.long_context_pricing_enabled = false;
+      createForm.model_pricing = createForm.model_pricing.map((entry) => ({ ...entry, billing_mode: "per_request", intervals: [], time_pricing: createDefaultTimePricingForm() }));
+    }
     if (!["anthropic", "antigravity"].includes(newVal)) {
       createForm.fallback_group_id_on_invalid_request = null;
     }
@@ -6713,6 +6724,12 @@ watch(
 watch(
   () => editForm.platform,
   (newVal) => {
+    if (newVal === "seedance") {
+      editForm.subscription_type = "standard";
+      editForm.rate_multiplier = 1;
+      editForm.long_context_pricing_enabled = false;
+      editForm.model_pricing = editForm.model_pricing.map((entry) => ({ ...entry, billing_mode: "per_request", intervals: [], time_pricing: createDefaultTimePricingForm() }));
+    }
     if (!["anthropic", "antigravity"].includes(newVal)) {
       editForm.fallback_group_id_on_invalid_request = null;
     }

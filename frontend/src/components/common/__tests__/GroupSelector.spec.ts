@@ -30,6 +30,20 @@ describe('GroupSelector simple-mode binding policy', () => {
     expect(wrapper.text()).not.toContain('Composite')
   })
 
+  it('only offers standalone balance groups to Seedance accounts', () => {
+    const wrapper = mount(GroupSelector, {
+      props: { modelValue: [], platform: 'seedance', groups: [...groups,
+        { id: 3, name: 'Video balance', platform: 'seedance', status: 'active', subscription_type: 'standard' },
+        { id: 4, name: 'Video subscription', platform: 'seedance', status: 'active', subscription_type: 'subscription' },
+      ] as any },
+      global: { stubs: { GroupBadge: { props: ['name'], template: '<span>{{ name }}</span>' }, Icon: true } },
+    })
+    expect(wrapper.text()).toContain('Video balance')
+    expect(wrapper.text()).not.toContain('Video subscription')
+    expect(wrapper.text()).not.toContain('Composite')
+    expect(wrapper.text()).not.toContain('Basic')
+  })
+
   it('keeps composite groups available in advanced mode', () => {
     const wrapper = mountSelector()
     expect(wrapper.text()).toContain('Composite')

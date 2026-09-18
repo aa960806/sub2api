@@ -156,6 +156,14 @@ export default {
     lastUsedIP: '最近使用 IP',
     useKey: '使用密钥',
     useKeyModal: {
+      seedance: {
+        description: '通过独立视频任务接口创建、查询和下载视频。请使用绑定 Seedance 分组的 API Key。',
+        note: '每个新视频使用新的 Idempotency-Key；同一请求超时重试必须复用原键与原请求内容。拿到 task_id 后查询，直到 status 为 succeeded 且 downloadable 为 true，再下载。具体可用模型和参数可查询 GET /v1/media/models。',
+        create: '1. 创建视频（HTTP 请求示例）',
+        poll: '2. 使用返回的 task_id 查询任务',
+        download: '3. 视频可下载后获取文件',
+      },
+
       title: '使用 API 密钥',
       description: '将以下环境变量添加到您的终端配置文件或直接在终端中运行。',
       copy: '复制',

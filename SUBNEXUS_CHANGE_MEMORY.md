@@ -1,5 +1,7 @@
 # SubNexus 操作与变更记忆
 
+
+> 最新状态（Seedance发布准备中，2026-09-18）：本地已对齐上游撤回后的0.2.5并完成Seedance源码接入和验证。维护者现授权新建回滚目标、完成全部发布前置，最终切换仍由维护者执行。线上实时状态正在重新核查；下方历史“当前权威状态”均不是本轮可执行入口。
 > 最新状态补充（2026-09-18 Asia/Shanghai）：作者已将 main 强推回 `efe9aab1e`，本轮按维护者要求撤销 #7315 及 0.2.6 版本号提交，当前 VERSION=0.2.5；保留 SubNexus 与其余上游更新。下述 0.2.6 合并为已被本轮覆盖的历史状态。未访问生产环境，最新验证及提交见文末。
 >
 > 最新本地基线（2026-09-18 Asia/Shanghai）：本轮合入上游 `8b69738d782ccaa7fd26511e1cca26ba8d1b58db` / `0.2.6`，验证与合并信息见文末。本轮未访问生产环境；下面 18:25:41 的发布交接是历史快照，未复核后续人工切换。旧 V3 候选 `d032a91` 和第 15.7 节命令不包含本轮代码，不能用于发布 0.2.6。
@@ -2076,3 +2078,18 @@
 - 包声明基于官方 v0.2.4 企业定制树，包含媒体任务/账号亲和/幂等/冻结结算/下载适配参考；当前项目为撤回对齐后的 v0.2.5。需区分用户侧 /v1/media/*（task_id）与 provider 侧 https://api.laogou.org/seedance/v1/*（id、signed_url），不能直接互换协议。现有最小测试的 JSON 字段与 Bearer/幂等头符合包内定义。
 - 按包中具体地址补测 GET /seedance/v1/balance、GET /seedance/v1/catalog、POST /seedance/v1/videos，以及文档声明的根别名 POST /media/videos，均返回 HTTP 200 text/html 网站首页，没有业务 JSON/任务 ID。两个 POST 沿用标准版原有同一请求体和幂等键，没有新建第三组任务意图。供应商实际部署与交付包协议不一致，不能将页面 200 当成连接或建单成功。
 - 此补充未推翻前述 /v1/media/videos 502；两类阻塞均需供应商确认实际路由/恢复服务，并核对已有幂等请求是否落单。已将可直接转给供应商的定位摘要追加到 test-report.md，尚无视频结果，不宣称轮询或下载验收成功。未改项目业务代码、生产配置、计费数据或部署。
+
+## 2026-09-18（Asia/Shanghai）— 直接复用 D:\ZCJ 源码接入 Seedance（本地实现）
+
+- 用户授权“开始执行接入”，补充要求“尽量使用 D:\ZCJ 中的源代码，而不是按照自己的理解重新写”。基于 feature/subnexus-migration / 5acdb452df235a5d2ba9d527c36f22e534e4fbdb 实施；本轮没有 SSH、生产数据库/Redis访问、上线切换、付费生成或创建回滚目标。main 和旧 SubNexus 仓库未改，未提交/推送。本轮新文件已用 intent-to-add 纳入可审阅工作区 diff。
+- 直接迁入交付包 12 个媒体 Go 文件及 2 个桥接文件；保留供应商协议、能力表、202 建单、image_b64 上传、账号亲和、状态及签名下载解析、Range 下载等实现。17 份原包文件 SHA256 已逐项核验并保存在 docs/seedance-source-manifest.json；必要适配说明及使用/恢复文档为 docs/SEEDANCE_INTEGRATION.md。没有重新设计另一个供应商 API。
+- Seedance 为独立平台：账号、分组、模型白名单、固定按条定价及现有“使用 Key”说明接入现有后台，新增 /v1/media/* 和 /media/* 路由。没有新增侧栏，没有加入 IsOpenAICompatible 或 composite 请求平台白名单。调度快照包含独立 Seedance 的 single/forced 桶；路由先做平台隔离，原文本、图像、Grok 视频等入口不被复用或替换。
+- 第一版明确支持独立余额分组、上游 API Key 账号、固定正数 per_request 价格（模型价优先、seedance兜底）。拒绝订阅、合成分组、别名改写、分组/账号/用户专属倍率、阶梯/时间定价及上游账号预算。用户 API Key 总额度和5h/1d/7d时间窗仍支持，SQL锁下把未完成任务纳入预留，防止并发超额。编辑历史 Seedance 账号的预算需管理员明确清零，保留历史用量字段；其他平台不受限制。
+- 原包 Redis TTL 任务与“超时/过期即退款”不足以安全恢复资金，改为独立 PostgreSQL journal + 租约恢复。先落请求意图、冻结，再由有界worker按固定账号/凭据指纹/幂等键提交；同键不同请求409；超时、HTML和502均保留未知结果，最多3次/10分钟内重放，之后manual_review而非无依据退款。确定结算/退款方向先落库，去重跨重启/归档有效；余额、额度及用量全部落库才允许下载。终态清prompt/参考图请求内容，保留去重及查账资料；过期参考图元数据分批清理，不删除任务资金依据。
+- 补齐在途删除边界：历史账号读取支持软删除但新建pinned账号仍拒绝。独立 repository/usage_billing_seedance.go 的三个可选历史结算方法校验journal身份/金额/方向及hold/capture凭据，允许结清已软删用户；软删Key跳过已失效授权配额，仍写实际用量、保留固定去重指纹，不恢复账号权限。现有 usage_billing_repo.go 和公共 Apply/Reserve/Capture/Release 逐字节不变。成功视频用量记录 VideoCount=1。
+- 9017_subnexus_seedance_media.sql 仅新增4个独立任务/参考图/冻结索引/结算声明表及索引，没有改动任何既有迁移，尤其238非零用量保护不变。依赖和锁文件未改。默认 GATEWAY_MEDIA_ENABLED=false；关闭只停新建与上传，保留已有任务的恢复/查询/下载。第一次发布不得直接开启收费，应先完成供应商出片验通；有在途任务时不能仅切回不含worker的旧镜像，需先结清或保留受控worker，不能删表或回退用户数据。
+- 可用性边界：之前直连 /v1/media/videos 返回502，包声明的 /seedance/v1/* 返回HTML；本轮没有重试真实付费请求，未证明供应商已恢复或真实出片成功。不要把本地测试和编译当作生产发布/真实供应商验收。手工核对场景暂无一键强制退款入口，需供应商按已有幂等键核对，不自动换账号/换键重建。
+- 前端验证：完整 Vitest 曾通过348文件/2494测试，之后模型广场追加验证29项、账号表单及语言检查101项通过；最终typecheck、包含i18n和vue-tsc的pnpm build及全部32个改动文件ESLint通过。追加测试后未重复完整Vitest，因此不将推算总数冒充最终全量结果。build/lint日志保存在candidate-transfer，较早单测/typecheck结果保留在工具会话。
+- 最终隔离PostgreSQL媒体包集成测试通过（2.602s）：并发创建/总额度/三个时间窗预留、租约失效、迁移重复、未知结果保留、真实余额冻结/扣除/退款、用量写失败重试、去重归档、已删Key和用户成功/失败结算、错身份/错金额/错方向拒绝、过期参考图清理等；其他测试用户余额42未变。使用全新本地空集群127.0.0.1:55498和独立测试schema，schema自动清理，临时PG已停止。生产账务仓储用于真实SQL计费，用量writer使用隔离测试表，不等同于完整生产启动或端到端供应商测试。
+- 最终Go embed编译通过，产物 F:\MySub2\candidate-transfer\seedance-local-verification.exe 未启动；SHA256=fea993f940e7433a3038539383ee9e01a8d7d404c0c100c7d17b1f3b7b20798d。验收日志/退出码：seedance-backend-unit-final、seedance-backend-build-final、seedance-media-integration-final、seedance-frontend-build-final.log、seedance-frontend-eslint.log；来源/保护范围证据 seedance-local-scope-review.json。未运行Docker全量integration或golangci-lint。
+- 最终后端全量 `go test -tags=unit -p=2 ./...` 通过，58个有测试的包全部成功，service 179.931s；此结果包含最后的软删除恢复补丁，无overlay或跳过失败用例。进程PATH使用已有Git bin提供备份测试所需sh。最终工作区diff check通过，所有本轮测试/构建进程已结束。

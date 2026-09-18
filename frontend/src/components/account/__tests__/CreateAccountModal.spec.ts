@@ -214,6 +214,36 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it('creates an isolated Seedance API-key account without a billing probe', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    const quotaCard = wrapper.findComponent({ name: 'QuotaLimitCard' })
+    quotaCard.vm.$emit('update:totalLimit', 100)
+    quotaCard.vm.$emit('update:dailyLimit', 20)
+    quotaCard.vm.$emit('update:weeklyLimit', 50)
+    await wrapper.get('[data-testid="select-seedance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="seedance-account-hint"]').exists()).toBe(true)
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Seedance video')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-seedance-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]).toMatchObject({
+      platform: 'seedance', type: 'apikey', rate_multiplier: 1,
+      credentials: { base_url: 'https://api.laogou.org/seedance', api_key: 'test-seedance-key' },
+    })
+    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBeUndefined()
+    expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'QuotaLimitCard' }).exists()).toBe(false)
+    const extra = createAccountMock.mock.calls[0]?.[0]?.extra ?? {}
+    expect(extra.quota_limit).toBeUndefined()
+    expect(extra.quota_daily_limit).toBeUndefined()
+    expect(extra.quota_weekly_limit).toBeUndefined()
+  })
+
   it('sets month and year expiry presets without submitting the account form', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-01-31T12:34:00'))

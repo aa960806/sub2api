@@ -74,6 +74,19 @@ describe('PricingEntryCard time pricing visibility', () => {
 })
 
 describe('PricingEntryCard request multipliers', () => {
+  it('restricts Seedance to the final per-request price without request tiers', () => {
+    const wrapper = shallowMount(PricingEntryCard, {
+      props: { entry: createEntry('per_request'), platform: 'seedance', enableTimePricing: true, enableTierMultipliers: true },
+    })
+    expect(wrapper.findComponent({ name: 'Select' }).props('options')).toEqual([
+      { value: 'per_request', label: 'admin.channels.billingMode.perRequest' },
+    ])
+    expect(wrapper.text()).toContain('admin.channels.form.defaultPerRequestPrice')
+    expect(wrapper.text()).not.toContain('admin.channels.form.requestTiers')
+    expect(wrapper.findComponent({ name: 'TimePricingSection' }).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.channels.form.fastMultiplier')
+  })
+
   it('shows Fast, Flex, and Max effort controls only when explicitly enabled', () => {
     const hidden = shallowMount(PricingEntryCard, { props: { entry: createEntry() } })
     expect(hidden.text()).not.toContain('admin.channels.form.fastMultiplier')

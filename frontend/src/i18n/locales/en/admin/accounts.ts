@@ -1,5 +1,15 @@
 export default {
     accounts: {
+      seedance: {
+        accountQuotaUnavailable: 'Seedance upstream account total, daily and weekly caps are unavailable until in-flight video quota reservations are supported. User API key quotas remain available.',
+        accountQuotaExisting: 'This account has unsupported quota caps. Explicitly clear them before saving and using Seedance. Historical usage and user balances will be preserved.',
+        clearAccountQuota: 'Clear the three account quota caps',
+        accountQuotaClearPending: 'The three caps will be cleared when saved. Canceling leaves the account unchanged.',
+
+        hint: 'Independent video API at /v1/media/*. API-key accounts, standalone balance groups and per-request pricing only. Configure model prices before use; all durations of the same model share one price. Subscriptions, composite groups, model aliases and custom user group multipliers are not supported.',
+        baseUrlHint: 'Keep the provider-required /seedance path prefix. A connection test checks credentials only; verify video creation, polling and download before opening access.',
+        apiKeyHint: 'Enter the Seedance API key supplied by your provider.'
+      },
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',

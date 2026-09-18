@@ -1,5 +1,15 @@
 export default {
     accounts: {
+      seedance: {
+        accountQuotaUnavailable: 'Seedance 暂不支持上游账号总额、每日和每周限额，因为这些限额尚不能预留生成中任务的额度。用户 API Key 的额度限制仍可使用。',
+        accountQuotaExisting: '此账号已有不支持的额度限制，需明确清除后才能保存并用于 Seedance。不会清除历史用量或用户余额。',
+        clearAccountQuota: '清除本账号的三项额度限制',
+        accountQuotaClearPending: '已选择清除三项限额，保存后生效；取消编辑不修改账号。',
+
+        hint: '独立视频任务接口 /v1/media/*；仅支持 API Key、独立余额分组及按条计费。请先配置模型价格，同一模型不同时长使用同一单价；不支持订阅、合成分组、模型映射或用户专属倍率。',
+        baseUrlHint: '保留供应商指定的 /seedance 路径前缀。连接测试仅验证凭证，仍需完成真实出片、查询及下载验收。',
+        apiKeyHint: '填写供应商提供的 Seedance API Key。'
+      },
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',

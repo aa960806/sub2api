@@ -678,6 +678,9 @@ func validateChannelConfig(pricing []ChannelModelPricing, mapping map[string]map
 // validatePricingEntries 校验定价条目（冲突检测 + 区间校验 + 计费模式校验），
 // 同时用于主渠道定价和 account_stats_pricing_rules 的内部定价。
 func validatePricingEntries(pricing []ChannelModelPricing) error {
+	if err := validateSeedancePricing(pricing); err != nil {
+		return err
+	}
 	if err := validateNoConflictingModels(pricing); err != nil {
 		return err
 	}
