@@ -2,7 +2,9 @@
 
 > 本文件是新 fork 的长期维护入口。任何 AI 或开发者在修改代码前必须先阅读本文件、`SUBNEXUS_CHANGE_MEMORY.md`、`SUBNEXUS_MIGRATION_PLAN.md` 和 `SUBNEXUS_MIGRATION_LEDGER.md`。
 >
-> 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
+> 当前本地上游基线（2026-09-18 Asia/Shanghai）：已合入 upstream/main=8b69738d782ccaa7fd26511e1cca26ba8d1b58db，版本 0.2.6，保留现有 SubNexus 改动；最终验证与合并提交见变更记忆文末。本轮仅本地合并，未连接生产服务器、未部署或创建回滚目标。
+>
+> 最近生产观察仍为 2026-09-18 18:25:41 的历史快照：线上 169469943，渠道监控 V3 候选 d032a91 的 run=/srv/subnexus-migration/cutover/20260918100818-2913221 当时为 prepared/prepared/no。未复核用户是否随后手动切换。该候选及切换手册第 15.7 节命令不包含本轮 0.2.6 合并，不能用来发布本轮代码。
 
 ## 项目身份
 
@@ -11,8 +13,8 @@
 - 旧二开输入：`F:\Sub2Api\SubNexus`
 - 当前迁移分支：`feature/subnexus-migration`
 - 目标 fork `main`：`d596d0844`（保持不变）
-- 最新本地上游基线：`upstream/main=881f3202694c6bc932446931a30c27d9675178b9`（版本 `0.2.5`，2026-09-15；功能基线为标签提交 `86f93c28e`，其后版本同步提交为 `881f32026`）；以下历史生产信息不代表本轮已部署。
-- 本轮实际生产应用基线为 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`（TON/ERC20），v0.2.5 应用候选为 `bd174adbb143a943e15be66837449d76695888e7`；后续测试/记忆提交不替代该应用构建身份，`main` 未修改。
+- 最新本地上游基线：`upstream/main=8b69738d782ccaa7fd26511e1cca26ba8d1b58db`（版本 `0.2.6`，2026-09-18；标签 `v0.2.6` 解引用为 `49a39b6dc1abed30fd227611e8af1108bc427610`，随后 `8b69738d7` 同步 VERSION）；以下历史生产信息不代表本轮已部署。
+- 2026-09-15 历史发布基线为 `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`（TON/ERC20），当时 v0.2.5 应用候选为 `bd174adbb143a943e15be66837449d76695888e7`；当前生产状态必须重新只读核验，`main` 未修改。
 - 旧二开参考 HEAD：`62ea35e1c78416fd83e1e41bbb310b307941811a`，分支 `alignment/v0.1.181-local`
 - 两仓库没有 Git merge-base，不能使用整体 merge、整体覆盖或直接 cherry-pick 作为迁移策略。
 

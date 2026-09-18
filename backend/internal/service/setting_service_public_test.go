@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -508,6 +509,10 @@ func TestSettingService_GetPublicSettings_PaymentBalanceDisabledStrictTrue(t *te
 	}{
 		{name: "missing key stays enabled", value: map[string]string{}, want: false},
 		{name: "explicit false", value: map[string]string{SettingBalancePayDisabled: "false"}, want: false},
+		{name: "empty stays enabled", value: map[string]string{SettingBalancePayDisabled: ""}, want: false},
+		{name: "uppercase stays enabled", value: map[string]string{SettingBalancePayDisabled: "TRUE"}, want: false},
+		{name: "whitespace stays enabled", value: map[string]string{SettingBalancePayDisabled: " true "}, want: false},
+		{name: "numeric stays enabled", value: map[string]string{SettingBalancePayDisabled: "1"}, want: false},
 		{name: "explicit true disables balance recharge", value: map[string]string{SettingBalancePayDisabled: "true"}, want: true},
 	}
 	for _, tc := range cases {
@@ -523,6 +528,13 @@ func TestSettingService_GetPublicSettings_PaymentBalanceDisabledStrictTrue(t *te
 			payload, ok := raw.(*PublicSettingsInjectionPayload)
 			require.True(t, ok)
 			require.Equal(t, tc.want, payload.PaymentBalanceDisabled)
+
+			encoded, err := json.Marshal(payload)
+			require.NoError(t, err)
+			var injected map[string]any
+			require.NoError(t, json.Unmarshal(encoded, &injected))
+			require.Contains(t, injected, "payment_balance_disabled")
+			require.Equal(t, tc.want, injected["payment_balance_disabled"])
 		})
 	}
 }

@@ -1,6 +1,6 @@
 # SubNexus 迁移台账
 
-> 当前权威状态（2026-09-12 00:45 Asia/Shanghai）：本轮模型监控修复候选 `ccb69f00132d` 全部发布前置已完成，run `20260911163046-3338612` 为 prepared，代理未切换。最新授权不新建回滚目标，复用既有 v0.2.4 容器 `e389b3b1c4f6`；实际线上仍为 `33a9601c9330` / `b4b66b9ca08f`。本轮唯一人工切换命令见切换手册第 15.5 节，所有历史已消费 switch 命令不可重用。
+> 当前本地状态（2026-09-18 Asia/Shanghai）：上游已合入 `8b69738d782ccaa7fd26511e1cca26ba8d1b58db` / `0.2.6`，本轮仅本地合并，验证记录见文末及变更记忆。本轮未连接服务器、未部署。此前渠道监控 V3 prepared 候选 `d032a91` 不包含本轮合并，不可作为 0.2.6 发布入口；下方旧发布状态均为历史记录。
 
 ## 状态定义
 
@@ -14,11 +14,11 @@
 | 旧仓库 | `F:\Sub2Api\SubNexus` |
 | 迁移分支 | `feature/subnexus-migration` |
 | fork `main` 基线 SHA | `d596d0844`（未修改） |
-| 最新本地上游基线 SHA | `98d86915becae9fe9491a91ffc6defd5235c8d2b`（版本 `0.2.4`；合并提交 `c76c04dd170c6eb4d34f864150c8e03536f38c24`，未发布） |
+| 最新本地上游基线 SHA | `8b69738d782ccaa7fd26511e1cca26ba8d1b58db`（版本 `0.2.6`；2026-09-18 本地合并，未发布） |
 | 2026-09-07 历史发布状态 | v0.2.1、`F:\Rain` 首页源码直接迁移及保留二开用户端 UI 候选均已在线 switched；当时 run=`20260907045159-1121373`，production commit=`f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`；F01-F13 仍待功能开关开启后的逐项业务验收 |
 | 2026-09-07 历史应用候选 SHA | `f6f6dafe1fb2008d0a6f41dc746ae831babc3b18`，tree=`7b0ee6db2dc96fd97106ca175640b3a15e8ec233`，image=`sha256:59eb4c84de8b8fec11fb903dc728676e9cffacbcc435ce5ea1b60487cc910fcc`；已推送并固定 |
 | 旧项目参考 SHA | `62ea35e1c78416fd83e1e41bbb310b307941811a` |
-| 目标版本/Go | `0.2.1` / `1.27.0`（本轮 UI 基线） |
+| 目标版本/Go | `0.2.6` / `1.27.0`（2026-09-18 本地合并基线） |
 | 旧版本/Go | `0.1.135` / `1.26.6` |
 | 生产数据库状态 | 第二次候选在自动回滚前运行约 35 秒，`9001`-`9013` 已于 `2026-09-05 01:17:03 UTC` 应用且 checksum 与候选 SQL 全部一致；未恢复数据库。新 run `20260905055413-3958448` 切换后数据库和 Redis 身份未变，均 running/restart=0 |
 
@@ -398,3 +398,18 @@
 ## 模型监控修复发布验收（2026-09-12 00:45）
 
 本轮全部前置已完成，run `/srv/subnexus-migration/cutover/20260911163046-3338612` / manifest SHA `20f1c17d67e37c41debaff189ac09a5ecec6369cc6abcc8fbb199192ecd49600`，停在 prepared。候选 `ccb69f00132dcb9dcbad76e8c3f542231bb002fd` / `sha256:c8a9db0d90f3c99924d7c53c7b9b41b4b90f26d053341abc254888e58c12df55`。本次不创建回滚目标，正常回滚复用 `e389b3b1c4f62fd8d9fb0eb04998b0559d21bf39ae4c1a99bdfc90441def3836` / `sha256:44e8dcf019338e050756c86aba8d2ecf73390b4d058da2ebf916aba19bea28d9`；切换提交前失败恢复当前 live，提交成功删除临时 current。完整生产副本六阶段回归、备份与 never-started probe 通过，生产迁移未执行。唯一人工命令见切换手册第 15.5 节；旧第 15.4 节 run 已 switched，禁止重用。
+
+## 2026-09-18 — upstream/main 0.2.6 本地合并验收
+
+| 检查 | 结果 |
+| --- | --- |
+| 上游冻结 | 8b69738d782ccaa7fd26511e1cca26ba8d1b58db，VERSION=0.2.6，已复核远端 tip |
+| 冲突 | VERSION、Wire、AmountInput、ChannelMonitorView 四处均解决，二开功能保留 |
+| 后端 | 全量 unit 通过；embed 构建通过；修复原公共设置缺项及 OpenCode 常量遗漏 |
+| 前端 | 348 文件 / 2493 测试、完整生产构建/类型检查、改动文件 ESLint 通过 |
+| 数据迁移 | backend/migrations 与合并前完全相同，238 非零用量保护保留 |
+| 验证限制 | Docker 不可用，integration suite 未运行；golangci-lint 未安装，未运行全量 CI lint |
+| 发布状态 | 仅本地合并与提交，未推送、未访问生产、未创建候选镜像或回滚目标 |
+| 旧候选边界 | d032a91 / 20260918100818-2913221 不包含本轮合并，不可复用为 0.2.6 发布凭据 |
+
+详细过程、脱敏日志路径及最终合并提交见 SUBNEXUS_CHANGE_MEMORY.md 文末。

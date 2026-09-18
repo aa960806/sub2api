@@ -1,5 +1,7 @@
 # SubNexus 操作与变更记忆
 
+> 最新本地基线（2026-09-18 Asia/Shanghai）：本轮合入上游 `8b69738d782ccaa7fd26511e1cca26ba8d1b58db` / `0.2.6`，验证与合并信息见文末。本轮未访问生产环境；下面 18:25:41 的发布交接是历史快照，未复核后续人工切换。旧 V3 候选 `d032a91` 和第 15.7 节命令不包含本轮代码，不能用于发布 0.2.6。
+>
 > 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
 > 下方较早的“当前权威状态”为历史快照；以本提示及文件末尾 2026-09-18 发布交接记录为准。
 
@@ -2018,3 +2020,17 @@
 - 最终审计 `1830903b8a5717a790ac789af21d96ddd2c98eb8868dd33cbb5baa2094ae585a`：全部停止前检查、never-started probe 运行合同/删除和健康检查通过，`FINAL_SWITCH_EXECUTED=false`。最终 2026-09-18 18:25:41 Asia/Shanghai 只读复核生产 app/PG/Redis/回滚完整 ID、镜像、启动时间及重启数不变；迁移账本 384 条/`da0fc0f4da2518252ee0db5d9636c45c`，活动结算=0、DDL=0、受保护设置哈希不变、内部/公网 HTTP 200；剩余 30541107200 bytes，无需清理旧资料。
 - 继续复用回滚容器 `5b44c72e46bfdeaa5d9bfce967d92f6fb5256e6496efd270a025ff75b16238f5` / `sha256:10cbbe0c68dd0eef7a701c89f9ed6ef226a8a33f147935c619b58778b044813a`，名称 `subnexus-cutover-ui-prior-20260915144333-1506840`。未创建回滚 tag、镜像归档或永久对象；切换成功后仅删除本轮临时 current 恢复容器，正常 rollback 仍回到既有 e9462 版本，不恢复数据库。
 - 脱敏证据、可执行完整单行命令：`F:\MySub2\candidate-transfer\monitor-v3-release\handoff.md` 和 `handoff-ready.json`；切换手册第 15.7 节为当前唯一交接入口。交付命令 timeout=600，独立验证参数及脚本哈希；代理未执行 switch/rollback/生产迁移或业务 SQL 写入。
+
+## 2026-09-18（Asia/Shanghai）— 合并上游最新 0.2.6，本地验证完成
+
+- 授权范围：维护者要求“合并上游最新的代码”并继续。本轮仅操作 F:\MySub2\sub2api 的 feature/subnexus-migration；未 SSH、未部署/切换/回滚、未直接访问或修改生产数据库、Redis、用户与计费数据，未创建回滚目标，未推送远端。main 仍为 d596d0844f274c3e7933c966231851f9f20b0d47，旧 F:\Sub2Api\SubNexus 保持只读。
+- 合并前先提交原有 Monitor V3 发布文档，形成 1c5c6f3668d3bb07ce71ed19a531e1c168f9d681。fetch 后固定 upstream/main=8b69738d782ccaa7fd26511e1cca26ba8d1b58db；v0.2.6 标签解引用为 49a39b6dc1abed30fd227611e8af1108bc427610，最后一笔 8b69738d7 同步 VERSION 到 0.2.6。19:01 左右再次 ls-remote 确认上游 tip 未变。
+- 上游内容包括 PR #7315 Codex 292 门票采集/注入与后台开关、分组用量汇总索引查询优化、暂停 OAuth 账号继续刷新、DeepSeek 工具输出/图片兼容、Gemini 混合模型发现、developer 角色兼容、充值输入/支付配置并发/退款提示、兑换记录分页与多项 UI 修复。Codex 门票采用上游实现，默认关闭，本轮未配置或开启生产开关。
+- 解决四处文本冲突：VERSION 使用 0.2.6；Wire 依赖注入保留二开全部 handler 并加入上游 settingService/harvester cleanup，使用仓库外临时 modfile 运行 Go 1.27 Wire 重新生成；AmountInput 同时保留二开的默认金额回归与上游非法输入回归，独立输入测试显式传 amounts=[]；ChannelMonitorView 测试保留十厂商和按钮数契约。go.mod/go.sum 与本次 upstream/main 完全一致，前端依赖及锁文件未变。
+- 验证中补齐历史遗漏：公共设置及页面注入补上 payment_balance_disabled 的读取/映射，严格仅 true 禁用充值，补充非法配置和 JSON 注入断言；恢复上游 domain_constants 中漏掉的 OpenCode 配额/调度阈值平台和 IsOpenCodeGo 定义，与既有 Ent schema 及后台配置一致。保留原管理员设置 API 契约，未降低断言绕过问题。
+- 测试环境修复：备份单元测试依赖 sh，复测进程 PATH 添加已有 Git bin，不改产品代码；Ollama 过期回调测试此前两次 time.Now()+5s 在 Windows 粗时钟下可能相同，改为从已记录 reset 加 1 秒构造不同代次，保留原防覆盖断言，不改生产限流实现。
+- 已验证：最终 go test -tags=unit -p=2 ./... 全部通过（无 overlay，包含 service、handler、repository、API contract 和 migrations）；前端完整 Vitest 348 文件 / 2493 测试通过；pnpm run build（语言键校验、vue-tsc、Vite）通过；所有改动前端文件 ESLint 通过；CGO_ENABLED=0 go build -tags embed -trimpath ./cmd/server 通过；无未解决冲突，git diff --check 与 staged diff check 通过。
+- 保留核对：渠道监控 V3 国模/厂商及分组排序与权限、BEpusdt BSC/TRC20/TON/ERC20、Grok multipart/Canvas 视频响应与计费、Rain 首页/用户端性能模式、活动与战令管理员可见行为均保留。backend/migrations 相对合并前逐字节不变，尤其 238_purge_unlimited_user_platform_quotas.sql 原有三项非零用量保护不改动，没有新增 SQL 迁移。
+- 验证边界：本机 Docker Desktop 未运行，既有 WSL 隔离 daemon socket 也不存在，因此未运行依赖 Docker 的 integration suite，不能宣称数据库集成/生产兼容 Gate 或线上回归已通过；本机未安装 golangci-lint，未执行全量 CI lint。此次为本地代码合并验收，非线上发布验收。
+- 脱敏验证产物位于 F:\MySub2\candidate-transfer\upstream-v026-merge：backend-unit-final.log/.exit、backend-final-retest.log/.exit、backend-repository-retest.log/.exit、frontend-tests.log、frontend-build.log/.exit、frontend-eslint.log/.exit、backend-build.log/.exit。初次失败日志保留说明原因；最终 unit 结果以 backend-unit-final.exit=0 为准。本地 sub2api.exe 仅为编译工件，未启动或用作线上候选。
+- 最近生产状态仍以 2026-09-18 18:25:41 的历史只读快照为准，本轮未重新观察。Monitor V3 run 20260918100818-2913221 的候选 d032a91 与 image adfb848e 不包含本次 0.2.6；若后续授权更新线上，必须以新的合并代码构建候选并重新验证，不能把旧切换命令当作本轮发布命令。最终切换仍由维护者执行。
