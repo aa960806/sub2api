@@ -2034,3 +2034,8 @@
 - 验证边界：本机 Docker Desktop 未运行，既有 WSL 隔离 daemon socket 也不存在，因此未运行依赖 Docker 的 integration suite，不能宣称数据库集成/生产兼容 Gate 或线上回归已通过；本机未安装 golangci-lint，未执行全量 CI lint。此次为本地代码合并验收，非线上发布验收。
 - 脱敏验证产物位于 F:\MySub2\candidate-transfer\upstream-v026-merge：backend-unit-final.log/.exit、backend-final-retest.log/.exit、backend-repository-retest.log/.exit、frontend-tests.log、frontend-build.log/.exit、frontend-eslint.log/.exit、backend-build.log/.exit。初次失败日志保留说明原因；最终 unit 结果以 backend-unit-final.exit=0 为准。本地 sub2api.exe 仅为编译工件，未启动或用作线上候选。
 - 最近生产状态仍以 2026-09-18 18:25:41 的历史只读快照为准，本轮未重新观察。Monitor V3 run 20260918100818-2913221 的候选 d032a91 与 image adfb848e 不包含本次 0.2.6；若后续授权更新线上，必须以新的合并代码构建候选并重新验证，不能把旧切换命令当作本轮发布命令。最终切换仍由维护者执行。
+
+### 本轮合并提交确认
+
+- 合并提交：c7c53baef5a0e2f8558b1367c4725bda24f94496；两个父提交为 1c5c6f3668d3bb07ce71ed19a531e1c168f9d681 与 8b69738d782ccaa7fd26511e1cca26ba8d1b58db。上游 tip 已成为当前分支祖先，版本 0.2.6。
+- 最终 backend-unit-final.log 中 57 个有测试的包全部通过，其余为 no test files；验证及未运行项目以本节前述记录为准。后续本条为文档记录，不改变已验证业务代码。
