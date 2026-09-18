@@ -1,5 +1,7 @@
 # SubNexus 操作与变更记忆
 
+> 最新状态补充（2026-09-18 Asia/Shanghai）：作者已将 main 强推回 `efe9aab1e`，本轮按维护者要求撤销 #7315 及 0.2.6 版本号提交，当前 VERSION=0.2.5；保留 SubNexus 与其余上游更新。下述 0.2.6 合并为已被本轮覆盖的历史状态。未访问生产环境，最新验证及提交见文末。
+>
 > 最新本地基线（2026-09-18 Asia/Shanghai）：本轮合入上游 `8b69738d782ccaa7fd26511e1cca26ba8d1b58db` / `0.2.6`，验证与合并信息见文末。本轮未访问生产环境；下面 18:25:41 的发布交接是历史快照，未复核后续人工切换。旧 V3 候选 `d032a91` 和第 15.7 节命令不包含本轮代码，不能用于发布 0.2.6。
 >
 > 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
@@ -2039,3 +2041,17 @@
 
 - 合并提交：c7c53baef5a0e2f8558b1367c4725bda24f94496；两个父提交为 1c5c6f3668d3bb07ce71ed19a531e1c168f9d681 与 8b69738d782ccaa7fd26511e1cca26ba8d1b58db。上游 tip 已成为当前分支祖先，版本 0.2.6。
 - 最终 backend-unit-final.log 中 57 个有测试的包全部通过，其余为 no test files；验证及未运行项目以本节前述记录为准。后续本条为文档记录，不改变已验证业务代码。
+
+
+## 2026-09-18（Asia/Shanghai）— 跟随上游强推撤回 #7315，对齐当前 main
+
+- 维护者明确要求“作者撤回了更新，对齐上游项目最新的代码”。本轮在 feature/subnexus-migration 基于 ed19c0332 操作，未修改 main、旧 SubNexus 仓库或线上环境，未推送、未部署、未创建回滚目标。
+- fetch upstream --prune --no-tags 和随后 ls-remote 均确认 upstream/main=efe9aab1e4ec89a42ba45e8dac20e882c5409a6a；远端 v0.2.6 标签不存在。当前 main 的 VERSION=0.2.5，但仍包含标签 v0.2.5 之后、#7315 之前的其他修复，不能整体退回 v0.2.5 标签或旧部署版本。
+- 对 8b69738d782ccaa7fd26511e1cca26ba8d1b58db（版本号）和 49a39b6dc1abed30fd227611e8af1108bc427610（#7315 合并，第一父提交为当前上游）执行定向反向合并。删除本 PR 的打票采集/存储、无票调度门控、请求头注入、后台开关/代理设置、账号票状态与对应测试，VERSION 恢复为 0.2.5。上游已有的普通 turn-state 处理保留。
+- 唯一冲突为 backend/cmd/server/wire_gen.go，使用 Go 1.27 与仓库外既有临时 Wire modfile 重新生成；二开全部 handler/scanner 仍保留，只去掉本 PR 的 settingService 构造参数和 harvester 清理。没有修改项目依赖文件。
+- 范围审计：撤回涉及 62 个路径；其中 42 个原本没有 fork 改动的路径与当前 upstream 完全一致，其余 20 个路径保留原有 fork 增删内容（Wire 仅归一已撤回的上游构造参数后比较）。源码中无 OpenAICodexTicket、openai_codex_ticket、codex_turn_tickets、codex_turn_ticket: 残留。证据 withdrawal-scope-review.json。
+- 65 项受保护路径逐项核对不变：全部数据库迁移及 238 非零用量保护、依赖/锁文件、渠道监控 V3 排序/权限、BEpusdt、Grok 视频、战令、模型表现监控、Rain 界面。上轮补齐的公共设置充值开关与 OpenCode 平台定义及测试时钟修复保留。证据 preservation-review.json。
+- 验证完成：后端 go test -tags=unit -p=2 ./... 全部通过（57 个有测试的包，无 overlay）；前端完整 Vitest 348 文件 / 2489 测试通过，较上轮减少 4 项为撤销本 PR 对应前端用例；pnpm run build（i18n、vue-tsc、Vite）、修改前端文件 ESLint、CGO_ENABLED=0 Go embed 构建全部通过。无冲突残留，staged/working diff check 通过。
+- 边界：本轮未运行 Docker 数据库集成测试和全量 golangci-lint，不能将本地测试/编译表述为完整 CI、数据库兼容 Gate 或线上验收。未连接生产数据库或 Redis，没有数据清理/迁移/恢复操作。候选 exe 仅为本地编译工件，未启动。
+- Git 历史使用新撤销提交保留审计链，不 reset、不强推；旧 #7315/0.2.6 提交仍在祖先历史，但其功能已经撤销。后续若上游重引相同提交，需要检查代码树和撤销提交，不能只以 merge-base/Already up to date 判断功能是否一致；只有维护者重新授权引入时才考虑撤销本次撤销。
+- 验证产物目录：F:\MySub2\candidate-transfer\upstream-withdrawal-alignment，保留 frontend-tests/build/eslint、backend-unit/build 的日志与退出码，以及上述两份范围审计 JSON。本轮不生成线上切换命令；旧 d032a91 / run 20260918100818-2913221 不包含本轮代码。
