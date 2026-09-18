@@ -29,16 +29,31 @@
       </div>
       <EmptyState v-else-if="rows.length === 0" :title="t('channelMonitorV3.emptyTitle')" :description="t('channelMonitorV3.emptyDescription')" />
       <div v-else class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        <ChannelMonitorV3Card
-          v-for="row in rows"
-          :key="row.group_id != null ? `${row.platform}:${row.group_id}` : `${row.platform}:${row.group_name ?? ''}`"
-          :row="row"
-          :user-rate-multiplier="getUserRateMultiplier(row.group_id)"
-          :countdown-seconds="countdownSeconds"
-          :timeline-length="timelineLength"
-          :timeline-end-at="matrix?.coverage.requested_end"
-          :timeline-bucket-seconds="matrix?.coverage.bucket_seconds"
-        />
+        <section
+          v-for="section in vendorSections"
+          :key="section.platform"
+          :data-vendor="section.platform"
+          :aria-label="providerLabel(section.platform)"
+          class="min-w-0"
+          :class="section.rows.length > 1 ? 'col-span-full' : ''"
+        >
+          <h2 class="mb-3 flex items-center gap-2 px-1 text-sm font-bold text-gray-800 dark:text-gray-200">
+            {{ providerLabel(section.platform) }}
+            <span class="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ section.rows.length }}</span>
+          </h2>
+          <div class="grid grid-cols-1 gap-5" :class="section.rows.length > 1 ? 'md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4' : ''">
+            <ChannelMonitorV3Card
+              v-for="row in section.rows"
+              :key="`${row.platform}:${row.group_id}`"
+              :row="row"
+              :user-rate-multiplier="getUserRateMultiplier(row.group_id)"
+              :countdown-seconds="countdownSeconds"
+              :timeline-length="timelineLength"
+              :timeline-end-at="matrix?.coverage.requested_end"
+              :timeline-bucket-seconds="matrix?.coverage.bucket_seconds"
+            />
+          </div>
+        </section>
       </div>
     </div>
   </AppLayout>
@@ -58,8 +73,11 @@ import type { MonitorFilter, MonitorMatrixResponse, MonitorRange, MonitorSnapsho
 import type { Group } from '@/types'
 import ChannelMonitorV3Card from '@/components/user/monitor/ChannelMonitorV3Card.vue'
 import { formatMonitorPercent } from '@/features/channel-monitor-v2/monitorFormat'
+import { buildMonitorVendorSections } from '@/features/channel-monitor-v2/monitorVendorLayout'
+import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 
 const { t, locale } = useI18n()
+const { providerLabel } = useChannelMonitorFormat()
 const appStore = useAppStore()
 const ranges = computed(() => [
   { value: '90m' as MonitorRange, label: t('channelMonitorV3.ranges.90m') },
@@ -80,9 +98,8 @@ let countdownTimer: number | null = null
 
 // platform_group is intentionally used here: the backend scopes it to the
 // monitor group_ids selected by the operator, so unrelated groups never appear.
-const rows = computed(() => [...(matrix.value?.items ?? [])]
-  .filter(row => row.group_id != null && row.group_id > 0)
-  .sort((a, b) => (a.group_id ?? 0) - (b.group_id ?? 0)))
+const vendorSections = computed(() => buildMonitorVendorSections(matrix.value?.items ?? [], snapshot.value?.config.platforms))
+const rows = computed(() => vendorSections.value.flatMap(section => section.rows))
 const timelineLength = computed(() => ({ '90m': 18, '24h': 24, '7d': 14, '30d': 30 })[filter.value.range])
 const latestSnapshotMetrics = computed(() => {
   const trend = [...(snapshot.value?.trend ?? [])]

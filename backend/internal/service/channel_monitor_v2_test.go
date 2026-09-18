@@ -11,12 +11,14 @@ import (
 
 type channelMonitorV2RepoStub struct {
 	config serviceChannelMonitorV2ConfigAlias
-	users  *ChannelMonitorV2List[ChannelMonitorV2UserRow]
-	matrix *ChannelMonitorV2Matrix
-	errors *ChannelMonitorV2List[ChannelMonitorV2ErrorRow]
-	snap   *ChannelMonitorV2Snapshot
-	group  ChannelMonitorV2GroupBy
-	admin  bool
+	// receivedConfig records the effective configuration passed to a query/save.
+	receivedConfig ChannelMonitorV2Config
+	users          *ChannelMonitorV2List[ChannelMonitorV2UserRow]
+	matrix         *ChannelMonitorV2Matrix
+	errors         *ChannelMonitorV2List[ChannelMonitorV2ErrorRow]
+	snap           *ChannelMonitorV2Snapshot
+	group          ChannelMonitorV2GroupBy
+	admin          bool
 }
 
 // Alias keeps composite literals readable without introducing another package.
@@ -26,10 +28,13 @@ func (s *channelMonitorV2RepoStub) GetConfig(context.Context) (*ChannelMonitorV2
 	cfg := ChannelMonitorV2Config(s.config)
 	return &cfg, nil
 }
-func (s *channelMonitorV2RepoStub) UpdateConfig(context.Context, ChannelMonitorV2Config, int) (*ChannelMonitorV2Config, error) {
-	return nil, nil
+func (s *channelMonitorV2RepoStub) UpdateConfig(_ context.Context, cfg ChannelMonitorV2Config, version int) (*ChannelMonitorV2Config, error) {
+	s.receivedConfig = cfg
+	cfg.Version = version + 1
+	return &cfg, nil
 }
-func (s *channelMonitorV2RepoStub) GetDimensions(context.Context, ChannelMonitorV2Filter, ChannelMonitorV2Config) (*ChannelMonitorV2Dimensions, error) {
+func (s *channelMonitorV2RepoStub) GetDimensions(_ context.Context, _ ChannelMonitorV2Filter, cfg ChannelMonitorV2Config) (*ChannelMonitorV2Dimensions, error) {
+	s.receivedConfig = cfg
 	return nil, nil
 }
 func (s *channelMonitorV2RepoStub) GetSnapshot(_ context.Context, _ ChannelMonitorV2Filter, _ ChannelMonitorV2Config, admin bool) (*ChannelMonitorV2Snapshot, error) {
@@ -42,6 +47,7 @@ func (s *channelMonitorV2RepoStub) GetSnapshot(_ context.Context, _ ChannelMonit
 	cfg.Platforms = append([]ChannelMonitorV2PlatformConfig(nil), s.snap.Config.Platforms...)
 	for i := range cfg.Platforms {
 		cfg.Platforms[i].Models = append([]string(nil), s.snap.Config.Platforms[i].Models...)
+		cfg.Platforms[i].GroupOrder = append([]int64(nil), s.snap.Config.Platforms[i].GroupOrder...)
 	}
 	cfg.GroupIDs = append([]int64(nil), s.snap.Config.GroupIDs...)
 	cfg.IgnoredErrorCategories = append([]string(nil), s.snap.Config.IgnoredErrorCategories...)
@@ -170,7 +176,8 @@ func TestChannelMonitorV2ConfigValidation(t *testing.T) {
 	}
 	require.NoError(t, normalizeChannelMonitorV2Config(&cfg))
 	require.Equal(t, 300, cfg.RefreshIntervalSeconds)
-	require.Equal(t, "anthropic", cfg.Platforms[0].Platform)
+	require.Equal(t, "openai", cfg.Platforms[0].Platform)
+	require.Equal(t, "anthropic", cfg.Platforms[1].Platform)
 	require.Equal(t, []int64{1, 3}, cfg.GroupIDs)
 
 	cfg.RefreshIntervalSeconds = 120
@@ -179,6 +186,72 @@ func TestChannelMonitorV2ConfigValidation(t *testing.T) {
 	cfg.RefreshIntervalSeconds = 60
 	cfg.GroupIDs = []int64{0}
 	require.ErrorIs(t, normalizeChannelMonitorV2Config(&cfg), ErrChannelMonitorV2InvalidConfig)
+}
+
+func TestChannelMonitorV2LegacyConfigIncludesMissingProviders(t *testing.T) {
+	repo := &channelMonitorV2RepoStub{config: ChannelMonitorV2Config{
+		Version: 7, Enabled: true,
+		Platforms: []ChannelMonitorV2PlatformConfig{
+			{Platform: PlatformOpenAI, Enabled: false, Models: []string{}},
+			{Platform: PlatformKimi, Enabled: false, Models: []string{"kimi-k2"}, GroupOrder: []int64{9, 2}},
+			{Platform: PlatformAnthropic, Enabled: true, Models: []string{}},
+		},
+	}}
+	svc := NewChannelMonitorV2Service(repo)
+	cfg, err := svc.GetConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 7, cfg.Version, "read-time compatibility does not alter optimistic locking")
+	require.Len(t, cfg.Platforms, 7)
+	require.Equal(t, repo.config.Platforms, cfg.Platforms[:3], "existing order and disabled/model/group settings are preserved")
+	for i, platform := range []string{PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo} {
+		require.Equal(t, ChannelMonitorV2PlatformConfig{Platform: platform, Enabled: true, Models: []string{}}, cfg.Platforms[i+3])
+	}
+	_, err = svc.Dimensions(context.Background(), ChannelMonitorV2Filter{})
+	require.NoError(t, err)
+	require.Equal(t, cfg.Platforms, repo.receivedConfig.Platforms, "queries must use the same backfilled config as the admin editor")
+
+	updated, err := svc.UpdateConfig(context.Background(), *cfg, cfg.Version, 42)
+	require.NoError(t, err)
+	require.Equal(t, cfg.Platforms, updated.Platforms)
+	require.Equal(t, 8, updated.Version)
+	require.Equal(t, int64(42), *repo.receivedConfig.UpdatedBy)
+
+	backfillChannelMonitorV2Platforms(updated)
+	require.Len(t, updated.Platforms, 7, "backfill is idempotent")
+}
+
+func TestChannelMonitorV2DisplayOrderValidation(t *testing.T) {
+	cfg := ChannelMonitorV2Config{Platforms: []ChannelMonitorV2PlatformConfig{
+		{Platform: PlatformZhipu, Enabled: true, GroupOrder: []int64{9, 2, 9, 4}},
+		{Platform: PlatformOpenAI, Enabled: true, GroupOrder: []int64{8, 2}},
+	}}
+	require.NoError(t, normalizeChannelMonitorV2Config(&cfg))
+	require.Equal(t, PlatformZhipu, cfg.Platforms[0].Platform)
+	require.Equal(t, PlatformOpenAI, cfg.Platforms[1].Platform)
+	require.Equal(t, []int64{9, 2, 4}, cfg.Platforms[0].GroupOrder)
+	require.Equal(t, []int64{8, 2}, cfg.Platforms[1].GroupOrder)
+	require.Empty(t, cfg.GroupIDs, "display order does not restrict or expand group scope")
+
+	for _, id := range []int64{0, -1} {
+		invalid := ChannelMonitorV2Config{Platforms: []ChannelMonitorV2PlatformConfig{{Platform: PlatformKimi, GroupOrder: []int64{2, id}}}}
+		err := normalizeChannelMonitorV2Config(&invalid)
+		require.ErrorIs(t, err, ErrChannelMonitorV2InvalidConfig)
+		require.ErrorContains(t, err, "group_order")
+	}
+	duplicate := ChannelMonitorV2Config{Platforms: []ChannelMonitorV2PlatformConfig{{Platform: "Kimi"}, {Platform: " kimi "}}}
+	require.ErrorIs(t, normalizeChannelMonitorV2Config(&duplicate), ErrChannelMonitorV2InvalidConfig)
+}
+
+func TestChannelMonitorV2BackfillPreservesExplicitlyDisabledProviders(t *testing.T) {
+	cfg := ChannelMonitorV2Config{Platforms: []ChannelMonitorV2PlatformConfig{}}
+	for _, platform := range []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo} {
+		cfg.Platforms = append(cfg.Platforms, ChannelMonitorV2PlatformConfig{Platform: platform, Enabled: false})
+	}
+	require.NoError(t, normalizeChannelMonitorV2Config(&cfg))
+	require.Len(t, cfg.Platforms, 5)
+	for _, platform := range cfg.Platforms {
+		require.False(t, platform.Enabled)
+	}
 }
 
 func TestChannelMonitorV2ErrorTaxonomyPriority(t *testing.T) {
@@ -463,6 +536,37 @@ func TestSnapshotRedactsPublicConfigPolicyFields(t *testing.T) {
 	require.Zero(t, snap.Metrics.RequestCount)
 	require.InDelta(t, 0.1, snap.Metrics.ErrorRate, 0.0001)
 	require.Zero(t, snap.Metrics.RPM)
+}
+
+func TestSnapshotOnlyExposesVisibleGroupOrder(t *testing.T) {
+	repo := &channelMonitorV2RepoStub{
+		config: ChannelMonitorV2Config{Enabled: true},
+		snap: &ChannelMonitorV2Snapshot{Config: ChannelMonitorV2Config{
+			Platforms: []ChannelMonitorV2PlatformConfig{
+				{Platform: PlatformKimi, Enabled: true, GroupOrder: []int64{9, 3, 2, 1}},
+				{Platform: PlatformOpenAI, Enabled: true, GroupOrder: []int64{1, 2}},
+			},
+			GroupIDs: []int64{1, 2, 9},
+		}},
+	}
+	svc := NewChannelMonitorV2Service(repo)
+	filter := ChannelMonitorV2Filter{RestrictGroups: true, AllowedGroupIDs: []int64{1, 2, 3}}
+	snap, err := svc.Snapshot(context.Background(), filter, false)
+	require.NoError(t, err)
+	require.Equal(t, PlatformKimi, snap.Config.Platforms[0].Platform)
+	require.Equal(t, []int64{2, 1}, snap.Config.Platforms[0].GroupOrder)
+	require.Equal(t, []int64{1, 2}, snap.Config.Platforms[1].GroupOrder)
+	require.Empty(t, snap.Config.GroupIDs)
+
+	snap, err = svc.Snapshot(context.Background(), ChannelMonitorV2Filter{}, false)
+	require.NoError(t, err)
+	for _, platform := range snap.Config.Platforms {
+		require.Empty(t, platform.GroupOrder, "unscoped public reads must not expose group IDs")
+	}
+
+	snap, err = svc.Snapshot(context.Background(), filter, true)
+	require.NoError(t, err)
+	require.Equal(t, repo.snap.Config.Platforms, snap.Config.Platforms, "admins retain full display order")
 }
 
 func TestRedactChannelMonitorV2MetricKeepsRates(t *testing.T) {

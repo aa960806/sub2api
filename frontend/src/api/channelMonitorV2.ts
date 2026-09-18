@@ -102,7 +102,8 @@ export interface MonitorConfig {
   version: number
   enabled: boolean
   refresh_interval_seconds: 60 | 300
-  platforms: Array<{ platform: string; enabled: boolean; models: string[] }>
+  /** Array order controls V3 vendor sections; group_order only controls card order. */
+  platforms: Array<{ platform: string; enabled: boolean; models: string[]; group_order?: number[] }>
   group_ids: number[]
   health_thresholds: {
     minimum_sample: number

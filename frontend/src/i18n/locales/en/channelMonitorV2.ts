@@ -77,7 +77,7 @@ export default {
       unranked: 'Unranked',
     },
     settings: {
-      title: 'V2 data monitor config',
+      title: 'V2 / V3 monitor configuration',
       description:
         'Configure passive usage aggregation dimensions (platform / model / group) and refresh cadence. Health colors and details on the user /monitor page show rates, RPM, and TPM — not absolute request volume.',
       save: 'Save',
@@ -91,9 +91,9 @@ export default {
       modeV1: 'V1 active probes',
       modeV2: 'V2 passive monitoring',
       modeV3: 'V3 passive monitoring',
-      enableTitle: 'Enable V2 aggregation',
+      enableTitle: 'Enable passive monitoring aggregation',
       enableHint:
-        'Applies when system mode is V2. Turning this off only stops this config’s aggregation; the system mode switch remains under Feature switches.',
+        'Applies when system mode is V2 or V3. Turning this off only stops this config’s aggregation; the system mode switch remains under Feature switches.',
       refreshTitle: 'Aggregation interval',
       refreshHint: 'Affects matrix time granularity and refresh cadence',
       refreshAria: 'Aggregation interval',
@@ -142,13 +142,24 @@ export default {
       descriptionV3:
         'System mode is V3 presentation: it uses V2 passive monitoring data; V1 active probes do not run.',
       tabAria: 'Monitor management',
-      tabV2: 'V2 data monitor config',
+      tabV2: 'V2 / V3 monitor configuration',
       tabV1Active: 'V1 active probes',
       tabV1History: 'V1 history (probes not active in current mode)',
     },
   },
 
   channelMonitorV3: {
+    settings: {
+      orderTitle: 'Vendor and group order',
+      orderHint: 'Use the arrows to order V3 vendor sections. Expand a vendor to arrange its groups. Save to apply for all users.',
+      groupOrderTitle: 'Group order ({count})',
+      groupOrderHint: 'Only groups included by the group selection below are listed. Ordering does not change which groups users can access.',
+      compositeOrderHint: 'Composite groups are listed for every vendor. Their order applies when they have monitor data for that vendor.',
+      groupOrderEmpty: 'No groups in the current selection for this vendor.',
+      vendorDisabled: 'This vendor is disabled. Its saved order will apply when enabled.',
+      moveUp: 'Move {name} up',
+      moveDown: 'Move {name} down',
+    },
     title: 'Channel Status',
     description: 'Group status overview from real gateway traffic',
     updatedTo: 'Updated to {time}',

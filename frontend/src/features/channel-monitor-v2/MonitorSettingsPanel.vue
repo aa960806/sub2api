@@ -16,6 +16,7 @@
       </div>
       <button
         type="button"
+        data-testid="monitor-settings-save"
         class="btn btn-primary"
         :disabled="saving || !dirty"
         @click="save"
@@ -85,33 +86,109 @@
 
       <div class="card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
         <div class="card-header !py-3">
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('channelMonitorV2.settings.platformsTitle') }}</h3>
+          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('channelMonitorV3.settings.orderTitle') }}</h3>
           <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
+            {{ t('channelMonitorV3.settings.orderHint') }}
+          </p>
+          <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
             {{ t('channelMonitorV2.settings.platformsHint') }}
           </p>
         </div>
         <div class="divide-y divide-gray-100 dark:divide-dark-700">
-          <div
-            v-for="platform in draft.platforms"
+          <article
+            v-for="(platform, platformIndex) in draft.platforms"
             :key="platform.platform"
-            class="grid grid-cols-1 items-center gap-3 px-5 py-3 sm:grid-cols-[auto_7rem_minmax(0,1fr)_auto]"
+            :data-vendor="platform.platform"
+            class="space-y-3 px-5 py-4"
           >
-            <Toggle v-model="platform.enabled" />
-            <strong class="text-sm font-medium text-gray-900 dark:text-white">{{ platformLabel(platform.platform) }}</strong>
-            <input
-              class="input"
-              :value="platform.models.join(', ')"
-              type="text"
-              :placeholder="t('channelMonitorV2.settings.modelsPlaceholder')"
-              @change="setModels(platform, $event)"
-            />
-            <span
-              class="badge justify-self-start sm:justify-self-end"
-              :class="platform.models.length ? 'badge-gray' : 'badge badge-primary'"
-            >
-              {{ platform.models.length ? t('channelMonitorV2.settings.badgeOther') : t('channelMonitorV2.settings.badgeAllModels') }}
-            </span>
-          </div>
+            <div class="grid grid-cols-1 items-center gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+              <div class="flex items-center gap-3">
+                <span class="w-5 text-center text-xs tabular-nums text-gray-400">{{ platformIndex + 1 }}</span>
+                <Toggle v-model="platform.enabled" />
+                <strong class="text-sm font-medium text-gray-900 dark:text-white">{{ platformLabel(platform.platform) }}</strong>
+              </div>
+              <div class="flex min-w-0 items-center gap-2">
+                <input
+                  class="input min-w-0"
+                  :value="platform.models.join(', ')"
+                  type="text"
+                  :placeholder="t('channelMonitorV2.settings.modelsPlaceholder')"
+                  @change="setModels(platform, $event)"
+                />
+                <span class="badge shrink-0" :class="platform.models.length ? 'badge-gray' : 'badge-primary'">
+                  {{ platform.models.length ? t('channelMonitorV2.settings.badgeOther') : t('channelMonitorV2.settings.badgeAllModels') }}
+                </span>
+              </div>
+              <div class="flex items-center gap-1 justify-self-end">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm !p-2"
+                  data-action="vendor-up"
+                  :disabled="saving || platformIndex === 0"
+                  :aria-label="t('channelMonitorV3.settings.moveUp', { name: platformLabel(platform.platform) })"
+                  :title="t('channelMonitorV3.settings.moveUp', { name: platformLabel(platform.platform) })"
+                  @click="movePlatform(platformIndex, -1)"
+                ><Icon name="chevronUp" size="sm" /></button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm !p-2"
+                  data-action="vendor-down"
+                  :disabled="saving || platformIndex === draft.platforms.length - 1"
+                  :aria-label="t('channelMonitorV3.settings.moveDown', { name: platformLabel(platform.platform) })"
+                  :title="t('channelMonitorV3.settings.moveDown', { name: platformLabel(platform.platform) })"
+                  @click="movePlatform(platformIndex, 1)"
+                ><Icon name="chevronDown" size="sm" /></button>
+              </div>
+            </div>
+            <p v-if="!platform.enabled" class="text-xs text-amber-700 dark:text-amber-400">
+              {{ t('channelMonitorV3.settings.vendorDisabled') }}
+            </p>
+            <details class="rounded-xl border border-gray-100 bg-gray-50/60 dark:border-dark-700 dark:bg-dark-900/30">
+              <summary class="cursor-pointer px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-200">
+                {{ t('channelMonitorV3.settings.groupOrderTitle', { count: platformGroups(platform).length }) }}
+              </summary>
+              <div class="px-3 pb-3">
+                <p class="mb-2 text-xs text-gray-500 dark:text-dark-400">{{ t('channelMonitorV3.settings.groupOrderHint') }}</p>
+                <p v-if="platformGroups(platform).some((group) => group.platform === 'composite')" class="mb-2 text-xs text-gray-500 dark:text-dark-400">
+                  {{ t('channelMonitorV3.settings.compositeOrderHint') }}
+                </p>
+                <ol class="max-h-64 space-y-1 overflow-y-auto">
+                  <li
+                    v-for="(group, groupIndex) in platformGroups(platform)"
+                    :key="group.id"
+                    :data-ordered-group="group.id"
+                    class="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 dark:bg-dark-800"
+                  >
+                    <span class="w-5 shrink-0 text-xs tabular-nums text-gray-400">{{ groupIndex + 1 }}</span>
+                    <span class="min-w-0 flex-1 truncate text-sm text-gray-800 dark:text-gray-100">{{ group.name }}</span>
+                    <span v-if="group.platform === 'composite'" class="badge badge-gray shrink-0 text-[10px]">{{ platformLabel(group.platform) }}</span>
+                    <span class="shrink-0 text-xs text-gray-400">#{{ group.id }}</span>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm !p-1.5"
+                      data-action="group-up"
+                      :disabled="saving || groupIndex === 0"
+                      :aria-label="t('channelMonitorV3.settings.moveUp', { name: group.name })"
+                      :title="t('channelMonitorV3.settings.moveUp', { name: group.name })"
+                      @click="moveGroup(platform, groupIndex, -1)"
+                    ><Icon name="chevronUp" size="sm" /></button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm !p-1.5"
+                      data-action="group-down"
+                      :disabled="saving || groupIndex === platformGroups(platform).length - 1"
+                      :aria-label="t('channelMonitorV3.settings.moveDown', { name: group.name })"
+                      :title="t('channelMonitorV3.settings.moveDown', { name: group.name })"
+                      @click="moveGroup(platform, groupIndex, 1)"
+                    ><Icon name="chevronDown" size="sm" /></button>
+                  </li>
+                </ol>
+                <p v-if="platformGroups(platform).length === 0" class="py-2 text-xs text-gray-400">
+                  {{ t('channelMonitorV3.settings.groupOrderEmpty') }}
+                </p>
+              </div>
+            </details>
+          </article>
         </div>
       </div>
 
@@ -145,6 +222,7 @@
             >
               <input
                 type="checkbox"
+                :data-group-selection="group.id"
                 class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40"
                 :checked="draft.group_ids.includes(group.id)"
                 @change="toggleGroup(group.id)"
@@ -275,6 +353,7 @@ import {
   type MonitorConfig,
 } from '@/api/channelMonitorV2'
 import { adminAPI } from '@/api/admin'
+import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
 import type { AdminGroup } from '@/types'
 
 const { t, te } = useI18n()
@@ -363,6 +442,38 @@ function toggleGroup(id: number) {
     : [...draft.value.group_ids, id].sort((a, b) => a - b)
 }
 
+function movePlatform(index: number, direction: -1 | 1) {
+  if (!draft.value || saving.value) return
+  const next = index + direction
+  const platforms = draft.value.platforms
+  if (next < 0 || next >= platforms.length) return
+  const [platform] = platforms.splice(index, 1)
+  platforms.splice(next, 0, platform)
+}
+
+function platformGroups(platform: MonitorConfig['platforms'][number]): AdminGroup[] {
+  const ranks = new Map((platform.group_order || []).map((id, index) => [id, index]))
+  const selected = draft.value?.group_ids || []
+  return groups.value
+    // Composite groups can route to multiple vendors, including dynamically detected destinations.
+    .filter((group) => (group.platform === platform.platform || group.platform === 'composite')
+      && (!selected.length || selected.includes(group.id)))
+    .sort((a, b) => (ranks.get(a.id) ?? Infinity) - (ranks.get(b.id) ?? Infinity) || a.id - b.id)
+}
+
+function moveGroup(platform: MonitorConfig['platforms'][number], index: number, direction: -1 | 1) {
+  if (saving.value) return
+  const visible = platformGroups(platform)
+  const next = index + direction
+  if (next < 0 || next >= visible.length) return
+  // Retain the positions of groups outside the current selection for later use.
+  const order = [...new Set([...(platform.group_order || []), ...visible.map((group) => group.id)])]
+  const currentPosition = order.indexOf(visible[index].id)
+  const nextPosition = order.indexOf(visible[next].id)
+  ;[order[currentPosition], order[nextPosition]] = [order[nextPosition], order[currentPosition]]
+  platform.group_order = order
+}
+
 function isCategoryIgnored(category: string): boolean {
   return Boolean(draft.value?.ignored_error_categories?.includes(category))
 }
@@ -381,21 +492,9 @@ function categoryLabel(category: string) {
 }
 
 function platformLabel(value: string) {
-  return (
-    {
-      anthropic: 'Claude',
-      openai: 'OpenAI',
-      grok: 'Grok',
-      kiro: 'Kiro',
-      gemini: 'Gemini',
-      antigravity: 'Antigravity',
-      kimi: 'Kimi',
-      zhipu: 'Zhipu GLM',
-      deepseek: 'DeepSeek',
-      minimax: 'MiniMax',
-      composite: 'Composite',
-    } as Record<string, string>
-  )[value] || value
+  if (value === 'anthropic') return 'Claude'
+  if (value === 'kiro') return 'Kiro'
+  return GROUP_PLATFORM_OPTIONS.find((option) => option.value === value)?.label || value
 }
 
 function normalizeConfig(value: MonitorConfig): MonitorConfig {

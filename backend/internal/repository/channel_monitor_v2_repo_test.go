@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,53 @@ import (
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
+
+func TestChannelMonitorV2ConfigPersistsDisplayOrderInPlatformsJSON(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	repo := &channelMonitorV2Repository{db: db}
+	actorID := int64(42)
+	cfg := service.ChannelMonitorV2Config{
+		Version: 7, Enabled: true, RefreshIntervalSeconds: 300,
+		Platforms: []service.ChannelMonitorV2PlatformConfig{
+			{Platform: service.PlatformKimi, Enabled: true, Models: []string{}, GroupOrder: []int64{9, 2}},
+			{Platform: service.PlatformOpenAI, Enabled: false, Models: []string{"gpt-5"}, GroupOrder: []int64{8, 1}},
+		},
+		GroupIDs: []int64{}, IgnoredErrorCategories: []string{}, UpdatedBy: &actorID,
+	}
+	raw, err := json.Marshal(cfg.Platforms)
+	require.NoError(t, err)
+	columns := []string{"version", "enabled", "refresh_interval_seconds", "platforms", "group_ids", "ignored_error_categories", "health_thresholds", "updated_at", "updated_by"}
+	updatedAt := time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC)
+	row := func() *sqlmock.Rows {
+		return sqlmock.NewRows(columns).AddRow(8, true, 300, raw, "{}", "{}", []byte(`{}`), updatedAt, actorID)
+	}
+	mock.ExpectQuery("UPDATE channel_monitor_v2_config").
+		WithArgs(true, 300, raw, pq.Array(cfg.GroupIDs), pq.Array(cfg.IgnoredErrorCategories), sqlmock.AnyArg(), actorID, 7).
+		WillReturnRows(row())
+	updated, err := repo.UpdateConfig(context.Background(), cfg, cfg.Version)
+	require.NoError(t, err)
+	require.Equal(t, cfg.Platforms, updated.Platforms)
+	require.Equal(t, 8, updated.Version)
+
+	mock.ExpectQuery("SELECT version, enabled, refresh_interval_seconds, platforms, group_ids").WillReturnRows(row())
+	loaded, err := repo.GetConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, cfg.Platforms, loaded.Platforms)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestChannelMonitorV2AllDisabledProvidersSelectNoTraffic(t *testing.T) {
+	cfg := service.ChannelMonitorV2Config{Platforms: []service.ChannelMonitorV2PlatformConfig{
+		{Platform: service.PlatformKimi, Enabled: false},
+		{Platform: service.PlatformDeepseek, Enabled: false},
+	}}
+	where, args := channelMonitorV2Where(service.ChannelMonitorV2Filter{}, cfg, "m")
+	require.Contains(t, where, "FALSE")
+	require.NotContains(t, where, "m.platform = ANY")
+	require.Len(t, args, 2)
+}
 
 func TestChannelMonitorV2DateBinOriginIsUTC(t *testing.T) {
 	require.Equal(t, "TIMESTAMPTZ '1970-01-01 00:00:00+00'", channelMonitorV2DateBinOrigin)

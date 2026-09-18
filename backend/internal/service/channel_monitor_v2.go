@@ -34,6 +34,8 @@ type ChannelMonitorV2PlatformConfig struct {
 	Platform string   `json:"platform"`
 	Enabled  bool     `json:"enabled"`
 	Models   []string `json:"models"`
+	// GroupOrder controls display order only; it never expands the group scope.
+	GroupOrder []int64 `json:"group_order,omitempty"`
 }
 
 type ChannelMonitorV2Config struct {
@@ -418,11 +420,16 @@ func (s *ChannelMonitorV2Service) hideUserRankingForViewer(ctx context.Context, 
 }
 
 func (s *ChannelMonitorV2Service) GetConfig(ctx context.Context) (*ChannelMonitorV2Config, error) {
-	return s.repo.GetConfig(ctx)
+	cfg, err := s.repo.GetConfig(ctx)
+	if err != nil || cfg == nil {
+		return cfg, err
+	}
+	backfillChannelMonitorV2Platforms(cfg)
+	return cfg, nil
 }
 
 func (s *ChannelMonitorV2Service) getEnabledConfig(ctx context.Context) (*ChannelMonitorV2Config, error) {
-	cfg, err := s.repo.GetConfig(ctx)
+	cfg, err := s.GetConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +501,7 @@ func (s *ChannelMonitorV2Service) Snapshot(ctx context.Context, filter ChannelMo
 		return nil, err
 	}
 	if !admin && snap != nil {
-		redactChannelMonitorV2Snapshot(snap, s.hideThroughputForViewer(ctx, admin))
+		redactChannelMonitorV2Snapshot(snap, s.hideThroughputForViewer(ctx, admin), filter.AllowedGroupIDs)
 	}
 	return snap, nil
 }
@@ -603,7 +610,7 @@ func RedactChannelMonitorV2Dimensions(dims *ChannelMonitorV2Dimensions) {
 	}
 }
 
-func redactChannelMonitorV2Snapshot(snap *ChannelMonitorV2Snapshot, hideThroughput bool) {
+func redactChannelMonitorV2Snapshot(snap *ChannelMonitorV2Snapshot, hideThroughput bool, allowedGroupIDs []int64) {
 	if snap == nil {
 		return
 	}
@@ -613,20 +620,42 @@ func redactChannelMonitorV2Snapshot(snap *ChannelMonitorV2Snapshot, hideThroughp
 	}
 	// Public snapshot only needs display thresholds + refresh cadence, not
 	// operational allow-lists (group_ids, model inventories, ignored categories).
-	redactChannelMonitorV2PublicConfig(&snap.Config)
+	redactChannelMonitorV2PublicConfig(&snap.Config, allowedGroupIDs)
 }
 
 // redactChannelMonitorV2PublicConfig strips operator-policy fields from config
 // embedded in user-facing snapshots. Full config remains on admin /config.
-func redactChannelMonitorV2PublicConfig(cfg *ChannelMonitorV2Config) {
+func redactChannelMonitorV2PublicConfig(cfg *ChannelMonitorV2Config, allowedGroupIDs []int64) {
 	if cfg == nil {
 		return
+	}
+	allowed := make(map[int64]bool, len(allowedGroupIDs))
+	for _, id := range allowedGroupIDs {
+		allowed[id] = true
+	}
+	if len(cfg.GroupIDs) > 0 {
+		configured := make(map[int64]bool, len(cfg.GroupIDs))
+		for _, id := range cfg.GroupIDs {
+			configured[id] = true
+		}
+		for id := range allowed {
+			if !configured[id] {
+				delete(allowed, id)
+			}
+		}
 	}
 	cfg.GroupIDs = nil
 	cfg.IgnoredErrorCategories = nil
 	cfg.UpdatedBy = nil
 	for i := range cfg.Platforms {
 		cfg.Platforms[i].Models = nil
+		var order []int64
+		for _, id := range cfg.Platforms[i].GroupOrder {
+			if allowed[id] {
+				order = append(order, id)
+			}
+		}
+		cfg.Platforms[i].GroupOrder = order
 	}
 }
 
@@ -773,9 +802,49 @@ func normalizeChannelMonitorV2Config(cfg *ChannelMonitorV2Config) error {
 		}
 		seen[p.Platform] = struct{}{}
 		p.Models = normalizeStringSet(p.Models)
+		p.GroupOrder, err = normalizeChannelMonitorV2GroupOrder(p.GroupOrder)
+		if err != nil {
+			return err
+		}
 	}
-	sort.Slice(cfg.Platforms, func(i, j int) bool { return cfg.Platforms[i].Platform < cfg.Platforms[j].Platform })
+	// The array order is the configured vendor display order.
+	backfillChannelMonitorV2Platforms(cfg)
 	return nil
+}
+
+// Older factory configs predate these providers. Append missing entries without
+// overwriting an operator's existing enabled/model/order choices. The next save
+// persists them in the existing platforms JSONB column; no migration is needed.
+func backfillChannelMonitorV2Platforms(cfg *ChannelMonitorV2Config) {
+	seen := make(map[string]bool, len(cfg.Platforms))
+	for _, p := range cfg.Platforms {
+		seen[strings.ToLower(strings.TrimSpace(p.Platform))] = true
+	}
+	for _, platform := range []string{PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo} {
+		if !seen[platform] {
+			cfg.Platforms = append(cfg.Platforms, ChannelMonitorV2PlatformConfig{
+				Platform: platform, Enabled: true, Models: []string{},
+			})
+		}
+	}
+}
+
+func normalizeChannelMonitorV2GroupOrder(values []int64) ([]int64, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	seen := make(map[int64]bool, len(values))
+	out := make([]int64, 0, len(values))
+	for _, id := range values {
+		if id <= 0 {
+			return nil, fmt.Errorf("%w: group_order must contain positive group IDs", ErrChannelMonitorV2InvalidConfig)
+		}
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 // DefaultChannelMonitorV2IgnoredErrorCategories are factory defaults for
