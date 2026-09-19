@@ -2158,3 +2158,16 @@
 - 验证通过：`go test -tags=unit -p=2 ./internal/custom/business/media ./internal/server/routes ./internal/server/middleware ./internal/handler`；服务器 `go build ./cmd/server`；原Grok画布离线合同脚本；`git diff --check`。新 `TestSeedanceCanvasClientContract` 用实际画布 JS→本地HTTP handler→真实provider→模拟上游验证模型、文生视频、双图、幂等头缺省、轮询、结算、无鉴权头下载；真实供应商出片尚未验证，不冒充线上成功。
 - 新运行时测试覆盖审核读取实际文字/图片及阻断、平台隔离、白名单、跨用户/key、重放/冲突、单次计费、结算失败恢复、签名篡改/跨任务/过期/超期/轮换、Range及关闭创建后的查询。可复跑脚本与公开客户端源码SHA位于 `backend/internal/custom/business/media/testdata/canvas/README.md`。
 - 使用及发布边界见 `docs/SEEDANCE_CANVAS_COMPATIBILITY.md`。修复仅在本地工作区，尚未部署；下一步如维护者要求上线，按当前候选重新构建验证，停在人工切换前；不得复用旧已切换run命令或宣称本轮已上线。
+
+## 2026-09-19（Asia/Shanghai）— Seedance 无限画布兼容修复发布前置完成，待人工切换
+
+<!-- seedance-canvas-handoff:/srv/subnexus-migration/cutover/20260919070602-3523600 -->
+
+- 维护者要求完成全部发布准备，switch 人工执行，不新建回滚目标。当前实际 live 仍为 b52db3527 / 074dc211eccd；本轮已连接服务器完成只读核对、隔离验证和 prepare，但没有切换、生产迁移或业务 SQL 写入。
+- 候选 commit/tree `a32858102a48baadb2d06d9cfc70f217f162b2ae` / `b78ff42b25e38adfd1f914a9fc9f3451405af9a2`；镜像 `sha256:6f16cc68ec1848310b81bf60392d09777abfc641b03a8ef00d6c5c77354385a0`，归档 SHA256 `fd2ce17e86df3a4498c34a359df72823ec187044ba955a2f4a4c8d1e36b94a2d`。本地专用 WSL daemon 构建，精确源码、镜像 OCI 标签、上传校验、候选启动/重启 Gate 通过。
+- 后端完整 `go test -tags=unit -p=2 ./...` exit=0。发布脚本生命周期31例、anchor正例+10负例、Seedance回滚守卫25例、最终检查37例通过。本轮无前端/迁移变更；真实画布 JS→本地 handler/provider→模拟上游合同测试通过，不等于真实上游出片。
+- 真实备份 `a89b5ce860cd598c1d8c7178ab96a0be572792cc6c2236921df7e6452118c285` 在无外连内部网络/独立卷/受限clone SQL角色下恢复，只有10张诊断表 TABLE DATA省略。new1→old(b52)→new2→rollback(d032)→new3 五阶段登录、核心只读API、Seedance模型和关闭门禁、全部16张核心表完整二进制COPY+行数+字节数指纹通过；迁移账本无变化；隔离容器/网络/卷精确清理完成。PG 2.5CPU/8GiB、其他0.75CPU/1GiB、读64MiB/s/写32MiB/s限制已核验。首轮真实恢复完成后，管理员用户列表在测试30秒窗口内超时，恢复后缺少统计信息是当时的疑因，首次报告failed且资源精确清理；不把失败证据当成功。两次后续尝试在资源检查阶段因CPU负载门槛拒绝，均未创建测试容器；余量恢复后才启动本次完整验证。重跑补齐ANALYZE，完整指纹改用按主键的PostgreSQL binary COPY流SHA256并比较精确行数/字节数（无抽样/截断），保留全部业务数据和表结构。仅一次性clone PG关闭autovacuum、fsync、synchronous_commit、full_page_writes并使用minimal WAL，避免恢复中无用耐久性开销；这不是备份或生产配置，失败需重建副本。HTTP验证窗口调整至120秒以容纳受限资源，所有核心只读 API 仍必须返回 200，关闭门禁仍必须返回预期 404，生产身份前后不变。
+- 正式 run `/srv/subnexus-migration/cutover/20260919070602-3523600`，prepared/prepared/no；manifest SHA256 `ffcfd71dd4700a99a3de3444a49c4a6701e1e7c1f67740f50b57177bd662c98a`，最终审计 `cfeb62af8880cc57d3b42e29436bdb3da036d00d88c42e16b8b34dceb92621c2`。正式 PostgreSQL备份 3438008706 bytes / `6642a5eef3454afc72f7fbf4065422a40596844026110e4756c3df953cb22340`，Redis/应用数据备份与sidecar、运行合同和never-started probe均通过；Nginx有效配置及文件快照单独留在本次backup目录。生产迁移账本 385 / `fad14c67358c4c5eb9c1e1ba5e8a82c3`，active settling/DDL=0，内外健康200。
+- 不新建回滚tag/镜像归档/永久容器，仍用 `5fe5d284ab100913c1e355adafeba34df6d0970fd7174a6ea49269fa8f2f4885` / `sha256:adfb848e6c3ff80007946d3aac999b89d6a19030a492607c2763ebcf2c1412f1`；旧anchor保留，应用回滚不恢复数据库。切换成功才删除临时前live恢复容器，失败前仍可自动恢复当前live。
+- 线上Seedance总开关只读检查仍关闭，本轮未收到同时启用选择，保留现有配置。用户若要真实生成，仍需另行启用和真实出片验收；不得把关闭门禁验证描述为真实供应商出片成功。
+- 2026-09-19 15:19:37 Asia/Shanghai 最终交接见本地 `F:\MySub2\candidate-transfer\seedance-canvas-release-a32858102` 的 `handoff-ready.json` / `handoff.md`，runbook第15.9节。历史已消费命令不得重复执行。

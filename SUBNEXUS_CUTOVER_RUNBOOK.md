@@ -1,8 +1,8 @@
 # SubNexus 同库切换手册
 
-> 最新状态（2026-09-19 09:31:13 Asia/Shanghai）：维护者已完成 Seedance b52db3527 人工切换，线上容器 074dc211eccd 已只读确认健康。随后安全清理完成，净释放约 51.24 GB，根盘占用约 56.26%，剩余约 90.55 GB；当前 d032a91 回滚及旧 SubNexus anchor 均保留。第 15.8 节切换已完成，不要重复执行 switch；供应商真实出片仍未验通。下方较早状态为历史快照。
+> 最新状态（2026-09-19 15:19:37 Asia/Shanghai）：线上仍为 b52db3527；Seedance 画布兼容候选 a32858102 全部前置完成，run=/srv/subnexus-migration/cutover/20260919070602-3523600，prepared/prepared/no，未切换，不新建回滚目标。唯一当前人工命令见第15.9节；保留现有Seedance关闭配置。
 
-> 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
+> 历史状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
 
 本手册的人工命令只适用于候选提交、镜像、脚本哈希、备份、manifest、固定旧 SubNexus anchor 及容器身份和 never-started probe 均核验完成之后。本轮最终 `switch` 仍由维护者手动执行；构建或 Gate 通过本身不代表可以切换。
 
@@ -482,15 +482,11 @@ Full wrapper=`/srv/subnexus-migration/tools/subnexus-full-release-cutover-737f86
 
 在服务器终端执行下面一整行切换命令：
 
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=2f07061b826dd62c3825314fcdccfdc9dbe4cc503aae239b47ea844b27ddb99e SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS bash /srv/subnexus-migration/tools/monitor-v3-d032a91ab-retained.sh switch /srv/subnexus-migration/tools/monitor-v3-d032a91ab-controller.sh /srv/subnexus-migration/tools/monitor-v3-d032a91ab-ui.sh /srv/subnexus-migration/cutover/20260918100818-2913221
-```
+历史交接命令已消费，不得重复执行；当前交接见第15.9节。
 
 仅在本次切换后需要恢复既有版本时执行回滚命令：
 
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=2f07061b826dd62c3825314fcdccfdc9dbe4cc503aae239b47ea844b27ddb99e SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK bash /srv/subnexus-migration/tools/monitor-v3-d032a91ab-retained.sh rollback /srv/subnexus-migration/tools/monitor-v3-d032a91ab-controller.sh /srv/subnexus-migration/tools/monitor-v3-d032a91ab-ui.sh /srv/subnexus-migration/cutover/20260918100818-2913221
-```
+历史交接命令已消费，不得重复执行；当前交接见第15.9节。
 
 本次没有创建新的回滚镜像、标签、镜像归档或永久回滚容器，沿用 `subnexus-cutover-ui-prior-20260915144333-1506840`（commit `e9462cf9dc9e7b8c0282f6ebf48e45e3168319f8`）。回滚恢复该既有版本，不恢复数据库。正式切换会有短暂连接中断。
 
@@ -519,15 +515,11 @@ Seedance 首次发布保持默认关闭。供应商真实出片尚未验通；�
 
 在服务器终端执行下面一整行进行切换：
 
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_FULL_RELEASE_SCRIPT_SHA256=5adffdb988b5ddae6ea7901c918e66b6915b36f0acb0df1b3bcde73b4784547c SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS bash /srv/subnexus-migration/tools/seedance-b52db3527-full.sh switch /srv/subnexus-migration/tools/seedance-b52db3527-controller.sh /srv/subnexus-migration/tools/seedance-b52db3527-ui.sh /srv/subnexus-migration/cutover/20260918193509-3177062
-```
+历史交接命令已消费，不得重复执行；当前交接见第15.9节。
 
 仅在本次切换后需要恢复切换前版本时执行下面一整行：
 
-```bash
-sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_FULL_RELEASE_SCRIPT_SHA256=5adffdb988b5ddae6ea7901c918e66b6915b36f0acb0df1b3bcde73b4784547c SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK bash /srv/subnexus-migration/tools/seedance-b52db3527-full.sh rollback /srv/subnexus-migration/tools/seedance-b52db3527-controller.sh /srv/subnexus-migration/tools/seedance-b52db3527-ui.sh /srv/subnexus-migration/cutover/20260918193509-3177062
-```
+历史交接命令已消费，不得重复执行；当前交接见第15.9节。
 
 本轮此前已建立的回滚目标为 `d032a91abbb7fb9ae828fd3654095b89ad28b11f`，镜像 `sha256:adfb848e6c3ff80007946d3aac999b89d6a19030a492607c2763ebcf2c1412f1`，标签 `subnexus-rollback:seedance-b318007cc-prior-d032a91`；此次候选修复继续保留该目标，不重复创建回滚镜像。切换后由本轮保留的原 live 容器 `5fe5d284ab100913c1e355adafeba34df6d0970fd7174a6ea49269fa8f2f4885` 提供应用回滚，名称为 `subnexus-cutover-ui-prior-20260918193509-3177062`；这不是更早的历史 anchor 版本。
 
@@ -556,3 +548,40 @@ sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERI
 最终审计后采集确认生产容器运行身份未变。正式 prepare 的数据库备份与兼容验证的备份分别列出，不混用哈希。隔离克隆曾调整资源限制，具体过程以此前追加的操作记忆为准；本交接不把某次资源参数描述为整个验证过程始终使用的配置。
 
 当前唯一命令来源是本轮 JSON 的 `switch_command` 和 `rollback_command`。本文件只复制经核验的单行命令，未重新推导新的 run 或镜像身份。
+
+### 15.9 2026-09-19 Seedance 无限画布兼容修复（前置完成，待人工切换）
+
+
+核验时间：2026-09-19 15:19:37 Asia/Shanghai。全部前置完成，状态 prepared/prepared/no，未执行正式切换。
+
+本次沿用现有 Seedance 关闭配置；更新代码不等于启用功能。真实供应商出片尚未验通，开关启用需另行完成配置和出片验收。其他图片/Grok 视频处理路径保持原有实现，无新增数据库迁移。
+
+在服务器终端执行下面一整行切换：
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=e33fc7dffca343501e2935b906355ca45d935d204cc75e407a97eba3cf207423 SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_SHORT_PRODUCTION_WINDOW SUBNEXUS_CUTOVER_QUIET_CONFIRM=I_HAVE_CHECKED_NO_SETTLEMENT_TASKS bash /srv/subnexus-migration/tools/seedance-canvas-a32858102-retained.sh switch /srv/subnexus-migration/tools/seedance-canvas-a32858102-controller.sh /srv/subnexus-migration/tools/seedance-canvas-a32858102-ui.sh /srv/subnexus-migration/cutover/20260919070602-3523600
+```
+
+仅在本次切换后需要恢复既有 d032a91 版本时执行回滚：
+
+```bash
+sudo -n env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_CONFIG -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH -u DOCKER_API_VERSION SUBNEXUS_APPROVED_RETAINED_RELEASE_SCRIPT_SHA256=e33fc7dffca343501e2935b906355ca45d935d204cc75e407a97eba3cf207423 SUBNEXUS_CUTOVER_APP_DATA_OWNER_CONFIRM=I_UNDERSTAND_NON_ROOT_APP_DATA_OWNER SUBNEXUS_CUTOVER_APP_DATA_OWNER_UID=1000 SUBNEXUS_CUTOVER_APP_DATA_OWNER_GID=1000 SUBNEXUS_DOCKER_TIMEOUT_SECONDS=600 SUBNEXUS_CUTOVER_CONFIRM=I_UNDERSTAND_APPLICATION_ROLLBACK bash /srv/subnexus-migration/tools/seedance-canvas-a32858102-retained.sh rollback /srv/subnexus-migration/tools/seedance-canvas-a32858102-controller.sh /srv/subnexus-migration/tools/seedance-canvas-a32858102-ui.sh /srv/subnexus-migration/cutover/20260919070602-3523600
+```
+
+本次没有新建回滚镜像、标签、归档或永久回滚容器。沿用 5fe5d284ab100913c1e355adafeba34df6d0970fd7174a6ea49269fa8f2f4885 / sha256:adfb848e6c3ff80007946d3aac999b89d6a19030a492607c2763ebcf2c1412f1。应用回滚不恢复数据库。若后续启用 Seedance，回滚前须先关闭接单并结清所有非终态任务，守卫会拒绝有未完成任务的回滚。
+
+| 核验项 | 结果 |
+| --- | --- |
+| 候选 commit/tree | a32858102a48baadb2d06d9cfc70f217f162b2ae / b78ff42b25e38adfd1f914a9fc9f3451405af9a2 |
+| 候选镜像 | sha256:6f16cc68ec1848310b81bf60392d09777abfc641b03a8ef00d6c5c77354385a0 |
+| 正式 run | /srv/subnexus-migration/cutover/20260919070602-3523600 |
+| manifest SHA256 | ffcfd71dd4700a99a3de3444a49c4a6701e1e7c1f67740f50b57177bd662c98a |
+| 最终审计 SHA256 | cfeb62af8880cc57d3b42e29436bdb3da036d00d88c42e16b8b34dceb92621c2 |
+| 正式 PostgreSQL 备份 | 3438008706 bytes / 6642a5eef3454afc72f7fbf4065422a40596844026110e4756c3df953cb22340 |
+| 兼容测试备份 SHA256 | a89b5ce860cd598c1d8c7178ab96a0be572792cc6c2236921df7e6452118c285 |
+| 迁移账本 | 385 / fad14c67358c4c5eb9c1e1ba5e8a82c3 |
+| 现网/公网健康 | 200 / 200 |
+
+后端全量 unit 测试、隔离镜像构建、服务器候选 Gate、真实生产备份隔离恢复、五阶段版本轮换、16 张核心表完整二进制数据指纹、正式备份、从未启动的容器运行配置探针、最终审计均通过。恢复副本仅省略10张诊断表数据；全部表结构及业务数据完整恢复。发布准备未写入生产用户或计费数据，正常用户交易持续运行；现有应用、数据库、Redis 和回滚容器的身份与启动时间保持。
+
+能力限制沿用供应商：720p；2.0/fast=5/10/15秒，mini=5/10秒，2.5=30秒。画布默认6秒须调整，画布当前最长15秒无法正常配置2.5。
