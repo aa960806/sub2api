@@ -1,6 +1,6 @@
 # SubNexus 同库切换手册
 
-> 当前权威状态（2026-09-19 03:47:48 Asia/Shanghai，Seedance）：线上实际版本 d032a91ab；候选 b52db3527 全部发布前置已完成，run=/srv/subnexus-migration/cutover/20260918193509-3177062，状态 prepared/prepared/no，未执行切换。保留本轮此前已建立的回滚目标 d032a91ab；Seedance 默认关闭，供应商真实出片尚未验通。本轮人工命令仅见第 15.8 节；下方旧状态及第 15.7 节是历史记录，不能用于本轮发布。
+> 最新状态（2026-09-19 09:31:13 Asia/Shanghai）：维护者已完成 Seedance b52db3527 人工切换，线上容器 074dc211eccd 已只读确认健康。随后安全清理完成，净释放约 51.24 GB，根盘占用约 56.26%，剩余约 90.55 GB；当前 d032a91 回滚及旧 SubNexus anchor 均保留。第 15.8 节切换已完成，不要重复执行 switch；供应商真实出片仍未验通。下方较早状态为历史快照。
 
 > 当前权威状态（2026-09-18 18:25:41 Asia/Shanghai）：线上为 169469943；渠道监控 V3 候选 d032a91 已完成全部前置，run=/srv/subnexus-migration/cutover/20260918100818-2913221，状态 prepared/prepared/no，尚未切换。复用既有 5b44c72e46bf 回滚目标，无新增回滚对象。当前人工切换和回滚命令见第 15.7 节。
 

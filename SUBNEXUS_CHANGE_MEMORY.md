@@ -1,7 +1,7 @@
 # SubNexus 操作与变更记忆
 
 
-> 当前权威状态（2026-09-19 03:47:48 Asia/Shanghai，Seedance）：线上实际版本 d032a91ab；候选 b52db3527 全部发布前置已完成，run=/srv/subnexus-migration/cutover/20260918193509-3177062，状态 prepared/prepared/no，未执行切换。保留本轮此前已建立的回滚目标 d032a91ab；Seedance 默认关闭，供应商真实出片尚未验通。本轮人工命令仅见第 15.8 节；下方旧状态及第 15.7 节是历史记录，不能用于本轮发布。
+> 最新状态（2026-09-19 09:31:13 Asia/Shanghai）：维护者已完成 Seedance b52db3527 人工切换，线上容器 074dc211eccd 已只读确认健康。随后安全清理完成，净释放约 51.24 GB，根盘占用约 56.26%，剩余约 90.55 GB；当前 d032a91 回滚及旧 SubNexus anchor 均保留。第 15.8 节切换已完成，不要重复执行 switch；供应商真实出片仍未验通。下方较早状态为历史快照。
 > 最新状态补充（2026-09-18 Asia/Shanghai）：作者已将 main 强推回 `efe9aab1e`，本轮按维护者要求撤销 #7315 及 0.2.6 版本号提交，当前 VERSION=0.2.5；保留 SubNexus 与其余上游更新。下述 0.2.6 合并为已被本轮覆盖的历史状态。未访问生产环境，最新验证及提交见文末。
 >
 > 最新本地基线（2026-09-18 Asia/Shanghai）：本轮合入上游 `8b69738d782ccaa7fd26511e1cca26ba8d1b58db` / `0.2.6`，验证与合并信息见文末。本轮未访问生产环境；下面 18:25:41 的发布交接是历史快照，未复核后续人工切换。旧 V3 候选 `d032a91` 和第 15.7 节命令不包含本轮代码，不能用于发布 0.2.6。
@@ -2133,3 +2133,16 @@
 - Seedance 默认关闭，供应商真实出片尚未验通。发布/兼容门禁通过不代表真实视频生成成功，不能记成已启用或已正式发布。后续单独完成上游出片及计费验收再启用。
 - 应用回滚不恢复数据库。启用 Seedance 后回滚前必须先停止新建/上传并排空所有在途及 `manual_review` 任务；只要有非终态任务就不能执行回滚。
 - 文档更新范围仅为本目录 `handoff.md`、`SUBNEXUS_CUTOVER_RUNBOOK.md` 顶部最新提示及第 15.8 节、`SUBNEXUS_CHANGE_MEMORY.md` 顶部最新提示及本追加记录。历史条目保留，业务代码未改。本轮完整单行切换/回滚命令见第 15.8 节或本目录 `handoff.md`；生成器未执行两条命令。
+
+## 2026-09-19（Asia/Shanghai）— 人工切换确认及服务器深度安全清理
+
+- 维护者截图显示 FULL_RELEASE_SWITCH_COMPLETED；本轮 SSH 只读确认 run `/srv/subnexus-migration/cutover/20260918193509-3177062` 已 switched/switched，线上容器 `074dc211eccd630d6dd66425b46c8c56314a84f68dded976464cffcc71a50c04` 使用 b52db3527 / c15b4358 镜像，healthy、restart0。本代理本轮未执行 switch/rollback。
+- 按维护者“安全前提下深度清理，不影响服务”的授权，先盘点实际占用与挂载、发布依赖和打开文件，再按固定清单删除。保留当前 run 全套备份、`backups/seedance-b318007cc`、旧 anchor `20260915144333-1506840` 全套；两份最新 PostgreSQL dump 实际全文件 SHA256 均已复核通过。所有生产数据库表、用户/余额/订单/用量/去重/额度、支付配置、运行挂载及源码目录均保留。
+- 删除65个旧升级备份、过时发布备份和重复上传工件，38217441311 bytes；其中 /root 下6个8月/9月初数据库旧备份约22.45GB。删除前核对 canonical 路径、常规单链接文件、设备/inode/size/mtime、无挂载和打开句柄；最终审计记录明确区分旧待删文件的首尾1MiB摘要与历史 sidecar，不冒充旧文件全量 SHA 验证。小型manifest/sidecar/审计留存，旧run不得再作为完整灾备入口。
+- 删除20个已退出的过时应用容器、28个无保留用途旧镜像；每次重新检查身份、无运行引用和全部tag。未使用 force、volume删除或全局prune。保留全部8个运行容器、当前 d032a91 回滚容器 `5fe5d284...`、旧 e9462 anchor `5b44c72e...` 及对应镜像；额外保留 bd174 镜像。运行中的 diag-pg/diag-redis、BEpusdt、独角数卡Redis和CPA均未停止。
+- PostgreSQL容器只删除 `/tmp/sub2api-final.dump`、`/tmp/sub2api.dump`、`/tmp/pgx` 三份历史临时备份，共6176513278 bytes；先确认 PGDMP、pg_restore目录解析、全量SHA及无打开句柄，再按固定inode/size/mtime精确删除。没有执行SQL、删表、TRUNCATE、VACUUM、数据库重启或触碰PGDATA。
+- 用 journalctl 原生清理14天前归档日志，释放632.1MiB，保留近14天及活动日志。APT缓存检测到包管理相关进程，故跳过，没有卸载任何软件或改动系统配置。/tmp为独立文件系统，相关历史包排除在本轮根盘文件清单之外。
+- 删除前两次保护检查曾安全中止且未删任何文件：首次独立/tmp挂载不符合白名单，移除相关候选；再次Docker挂载返回顺序变化触发结构比较，重新只读核对实际挂载及服务身份一致后，按Destination排序比较完整挂载对象，未放宽实际身份/路径条件。
+- 最终 2026-09-19 09:31:13 核验：根盘 used 从167744106496降到116507205632 bytes，free从39310970880升到90547871744 bytes，净释放51236900864 bytes（约51.24GB），占用81.01%→56.26%。8运行服务与2回滚容器的ID、image、启动时间、重启数、挂载不变；nginx/docker/ssh主PID和启动时间不变；当前run manifest不变。
+- 内部health、image.yydsapi.uno/health、ustd.yydsapi.uno均200。shop.yydsapi.uno清理前和清理后均502，属于本轮开始前已存在的异常，本轮未修改或重启该服务，需另行排查；不能表述为所有网站均正常。
+- 服务端审计目录 `/srv/subnexus-migration/cleanup/20260919-safe-cleanup`，含固定删除清单、逐项ledger、四阶段result及final-verification.json；本地完整记录 `F:\MySub2\tools\server-cleanup-20260919`。本次任务已完成，没有后台清理任务或新增定时任务。
