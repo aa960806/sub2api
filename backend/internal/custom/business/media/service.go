@@ -190,6 +190,9 @@ type MediaVideoCreateRequest struct {
 	FileIDs []string
 	// ImageURLs 是用户直接提供的公网直链，由上游自行拉取，不产生账号亲和。
 	ImageURLs []string
+	// Compatibility-only inline references. Omitted for native requests so their
+	// persisted idempotency hashes remain unchanged. Removed before journaling.
+	InlineImages []string `json:",omitempty"`
 }
 
 // MediaProviderJob 是 provider 返回的上游任务快照。
@@ -264,11 +267,12 @@ type MediaTaskService struct {
 	store     MediaTaskStore
 	// platform 独立于 provider 保存：provider 未接入（S02 阶段为 nil）时，
 	// 平台门禁与在途任务轮询仍需正常工作。
-	platform string
-	provider MediaProvider
-	billing  MediaBilling
-	taskTTL  time.Duration
-	claimTTL time.Duration
+	platform           string
+	provider           MediaProvider
+	billing            MediaBilling
+	taskTTL            time.Duration
+	claimTTL           time.Duration
+	downloadSigningKey []byte
 }
 
 func NewMediaTaskService(store MediaTaskStore, platform string, provider MediaProvider) *MediaTaskService {

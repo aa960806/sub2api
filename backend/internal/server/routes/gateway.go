@@ -71,6 +71,10 @@ func RegisterGatewayRoutes(
 		dispatchCodexModelsGateway(c, h.OpenAIGateway.CodexModels, h.Gateway.CodexModels)
 	}
 	modelsHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformSeedance {
+			h.MediaTask.SeedanceModels(c)
+			return
+		}
 		if c.Query("client_version") != "" {
 			codexModelsHandler(c)
 			return
@@ -183,6 +187,10 @@ func RegisterGatewayRoutes(
 		}
 	}
 
+	// Task-scoped, expiring Seedance download capability; validation lives in
+	// GetSeedanceResult. Canvas fetches this URL without an Authorization header.
+	r.GET("/v1/media/results/:task_id", bodyLimit, clientRequestID, h.MediaTask.GetSeedanceResult)
+
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	gateway.Use(bodyLimit)
@@ -196,6 +204,8 @@ func RegisterGatewayRoutes(
 	gateway.Use(compositeTarget)
 	gateway.Use(requireGroupAnthropic)
 	{
+		gateway.POST("/contents/generations/tasks", h.MediaTask.CreateSeedanceTask)
+		gateway.GET("/contents/generations/tasks/:task_id", h.MediaTask.GetSeedanceTask)
 		gateway.POST("/media/videos", h.MediaTask.CreateVideo)
 		gateway.GET("/media/videos/:task_id", h.MediaTask.GetVideo)
 		gateway.GET("/media/videos/:task_id/content", h.MediaTask.GetVideoContent)

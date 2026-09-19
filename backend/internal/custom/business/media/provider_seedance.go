@@ -133,13 +133,16 @@ func (p *SeedanceProvider) ValidateCreate(req *MediaVideoCreateRequest) error {
 		return infraerrors.BadRequest("SEEDANCE_INVALID_CAMERA", "unsupported camera movement")
 	}
 	// 上传图与直链合计计入同一张数上限。
-	if total := len(req.FileIDs) + len(req.ImageURLs); total > SeedanceMaxReferenceImages(req.Model) {
+	if total := len(req.FileIDs) + len(req.ImageURLs) + len(req.InlineImages); total > SeedanceMaxReferenceImages(req.Model) {
 		return ErrSeedanceTooManyImages
 	}
 	for _, raw := range req.ImageURLs {
 		if err := validateSeedancePublicImageURL(raw); err != nil {
 			return err
 		}
+	}
+	if err := validateSeedanceInlineImages(req.InlineImages, p.Capabilities()); err != nil {
+		return err
 	}
 	return nil
 }

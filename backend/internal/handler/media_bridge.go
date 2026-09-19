@@ -26,6 +26,10 @@ type MediaTaskRoutes interface {
 	GetVideo(c *gin.Context)
 	GetVideoContent(c *gin.Context)
 	UploadFile(c *gin.Context)
+	SeedanceModels(c *gin.Context)
+	CreateSeedanceTask(c *gin.Context)
+	GetSeedanceTask(c *gin.Context)
+	GetSeedanceResult(c *gin.Context)
 }
 
 // RunSecurityAuditForMedia 让媒体任务复用与网关一致的审计链路。

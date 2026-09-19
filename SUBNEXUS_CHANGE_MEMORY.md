@@ -2146,3 +2146,15 @@
 - 最终 2026-09-19 09:31:13 核验：根盘 used 从167744106496降到116507205632 bytes，free从39310970880升到90547871744 bytes，净释放51236900864 bytes（约51.24GB），占用81.01%→56.26%。8运行服务与2回滚容器的ID、image、启动时间、重启数、挂载不变；nginx/docker/ssh主PID和启动时间不变；当前run manifest不变。
 - 内部health、image.yydsapi.uno/health、ustd.yydsapi.uno均200。shop.yydsapi.uno清理前和清理后均502，属于本轮开始前已存在的异常，本轮未修改或重启该服务，需另行排查；不能表述为所有网站均正常。
 - 服务端审计目录 `/srv/subnexus-migration/cleanup/20260919-safe-cleanup`，含固定删除清单、逐项ledger、四阶段result及final-verification.json；本地完整记录 `F:\MySub2\tools\server-cleanup-20260919`。本次任务已完成，没有后台清理任务或新增定时任务。
+
+## 2026-09-19（Asia/Shanghai）— 仅 Seedance 的无限画布兼容修复（本地，未发布）
+
+- 维护者范围约束：只修复 Seedance，不影响其他生图/视频。本轮未连接生产服务器、未修改生产配置或数据库、未执行切换/回滚、未调用真实付费生成。前一条线上 b52db3527 和回滚对象状态不由本地测试更新。
+- 根因：Seedance 平台门禁拦截画布的 `/v1/models`；现有 `/v1/media/videos` 与画布的 Ark `/v1/contents/generations/tasks` 请求/结果结构不同，画布还会不带 Authorization 下载 `content.video_url`。2026-09-19 从公开网页抓取真实 JS，诊断材料在 `F:\MySub2\candidate-transfer\seedance-canvas-diagnosis-20260919`。
+- 新增独立 `handler_seedance_compat.go` 和 `seedance_download.go`：Seedance 模型发现按组白名单过滤，增加 tasks 建单/查询，嵌套 content 转原 prompt/images 交现有审核器，再复用源包 provider、持久化任务、冻结/结算/恢复。新增内联图先校验并绑定同账号上传，任务只持久化上游图 ID，不写入 base64；原生请求省略新字段，旧幂等指纹保持一致。
+- 下载用独立用途 HMAC（从现有 JWT secret 派生），有效 10 分钟、只限一个已结算 Seedance 任务、Range 支持、不暴露任何 API key 或上游签名链接。查询仍校验原用户/key；额度耗尽查询豁免只补精确 Seedance 模板。已签发 URL 是短期持有者凭证，停用 key 不立即撤销既有 URL；轮换 secret 可撤销。成功未结算映射 running，不提前输出下载地址。
+- `gateway.go` 只增加 Seedance 条件分派和独立路由；Grok/OpenAI 及其他平台原有图片/视频 handler 未改。没有数据库迁移、前端业务或支付/账务实现改动。桥接接口、平台隔离与审核覆盖清单同步。
+- 能力保持供应商原约束：720p，2.0/fast=5/10/15秒、mini=5/10秒、2.5=30秒。画布默认6秒应改为5/10/15，当前画布最长15秒故不能正常配置2.5。音视频参考、asset ID、首尾帧及非默认音频/水印控制明确拒绝；默认音频/水印参数附warnings说明由供应商决定，不能表述为完整官方Ark能力。
+- 验证通过：`go test -tags=unit -p=2 ./internal/custom/business/media ./internal/server/routes ./internal/server/middleware ./internal/handler`；服务器 `go build ./cmd/server`；原Grok画布离线合同脚本；`git diff --check`。新 `TestSeedanceCanvasClientContract` 用实际画布 JS→本地HTTP handler→真实provider→模拟上游验证模型、文生视频、双图、幂等头缺省、轮询、结算、无鉴权头下载；真实供应商出片尚未验证，不冒充线上成功。
+- 新运行时测试覆盖审核读取实际文字/图片及阻断、平台隔离、白名单、跨用户/key、重放/冲突、单次计费、结算失败恢复、签名篡改/跨任务/过期/超期/轮换、Range及关闭创建后的查询。可复跑脚本与公开客户端源码SHA位于 `backend/internal/custom/business/media/testdata/canvas/README.md`。
+- 使用及发布边界见 `docs/SEEDANCE_CANVAS_COMPATIBILITY.md`。修复仅在本地工作区，尚未部署；下一步如维护者要求上线，按当前候选重新构建验证，停在人工切换前；不得复用旧已切换run命令或宣称本轮已上线。

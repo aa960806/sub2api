@@ -41,11 +41,12 @@ func TestSeedanceTaskReadsRetainAuthenticationWithoutBillingGate(t *testing.T) {
 			svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
 			r := gin.New()
 			r.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg)))
+			r.GET("/v1/contents/generations/tasks/:task_id", func(c *gin.Context) { c.Status(http.StatusOK) })
 			for _, prefix := range []string{"/v1", ""} {
 				r.GET(prefix+"/media/videos/:task_id", func(c *gin.Context) { c.Status(http.StatusOK) })
 				r.GET(prefix+"/media/videos/:task_id/content", func(c *gin.Context) { c.Status(http.StatusOK) })
 			}
-			for _, path := range []string{"/v1/media/videos/job", "/v1/media/videos/job/content", "/media/videos/job", "/media/videos/job/content"} {
+			for _, path := range []string{"/v1/media/videos/job", "/v1/media/videos/job/content", "/media/videos/job", "/media/videos/job/content", "/v1/contents/generations/tasks/job"} {
 				w := httptest.NewRecorder()
 				req := httptest.NewRequest(http.MethodGet, path, nil)
 				req.Header.Set("x-api-key", key.Key)

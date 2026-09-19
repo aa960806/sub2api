@@ -13,11 +13,15 @@ import (
 
 type mediaTaskRoutesStub struct{}
 
-func (*mediaTaskRoutesStub) Models(c *gin.Context)          { c.Status(http.StatusNoContent) }
-func (*mediaTaskRoutesStub) CreateVideo(c *gin.Context)     { c.Status(http.StatusAccepted) }
-func (*mediaTaskRoutesStub) GetVideo(c *gin.Context)        { c.Status(http.StatusNoContent) }
-func (*mediaTaskRoutesStub) GetVideoContent(c *gin.Context) { c.Status(http.StatusNoContent) }
-func (*mediaTaskRoutesStub) UploadFile(c *gin.Context)      { c.Status(http.StatusCreated) }
+func (*mediaTaskRoutesStub) Models(c *gin.Context)             { c.Status(http.StatusNoContent) }
+func (*mediaTaskRoutesStub) CreateVideo(c *gin.Context)        { c.Status(http.StatusAccepted) }
+func (*mediaTaskRoutesStub) GetVideo(c *gin.Context)           { c.Status(http.StatusNoContent) }
+func (*mediaTaskRoutesStub) GetVideoContent(c *gin.Context)    { c.Status(http.StatusNoContent) }
+func (*mediaTaskRoutesStub) UploadFile(c *gin.Context)         { c.Status(http.StatusCreated) }
+func (*mediaTaskRoutesStub) SeedanceModels(c *gin.Context)     { c.Status(http.StatusNoContent) }
+func (*mediaTaskRoutesStub) CreateSeedanceTask(c *gin.Context) { c.Status(http.StatusAccepted) }
+func (*mediaTaskRoutesStub) GetSeedanceTask(c *gin.Context)    { c.Status(http.StatusNoContent) }
+func (*mediaTaskRoutesStub) GetSeedanceResult(c *gin.Context)  { c.Status(http.StatusForbidden) }
 
 func TestSeedanceRoutesAreIsolatedFromOtherPlatforms(t *testing.T) {
 	for _, platform := range []string{service.PlatformSeedance, service.PlatformOpenAI, service.PlatformGrok, service.PlatformComposite} {
@@ -56,10 +60,36 @@ func TestSeedanceKeyCannotReachTextOrGrokHandlers(t *testing.T) {
 
 func TestSeedanceMediaCreationHonorsGroupModelAllowlist(t *testing.T) {
 	router := newGatewayRoutesTestRouterWithGroup(allowlistGroup(service.PlatformSeedance, true, "seedance2.0mini"))
-	for _, path := range []string{"/v1/media/videos", "/media/videos"} {
+	for _, path := range []string{"/v1/media/videos", "/media/videos", "/v1/contents/generations/tasks"} {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"seedance2.5"}`)))
 		require.Equal(t, http.StatusNotFound, w.Code)
 		require.Contains(t, w.Body.String(), "not available for this group")
+	}
+}
+
+func TestSeedanceCanvasRoutesRemainPlatformSpecific(t *testing.T) {
+	for _, platform := range []string{service.PlatformSeedance, service.PlatformGrok, service.PlatformOpenAI, service.PlatformComposite, service.PlatformGemini, service.PlatformAnthropic} {
+		router := newGatewayRoutesTestRouter(platform)
+		for _, test := range []struct {
+			method, path string
+			want         int
+		}{
+			{http.MethodPost, "/v1/contents/generations/tasks", http.StatusAccepted},
+			{http.MethodGet, "/v1/contents/generations/tasks/job", http.StatusNoContent},
+		} {
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(test.method, test.path, strings.NewReader(`{"model":"seedance2.0"}`)))
+			want := test.want
+			if platform != service.PlatformSeedance {
+				want = http.StatusNotFound
+			}
+			require.Equal(t, want, w.Code, "%s %s", platform, test.path)
+		}
+	}
+	for _, path := range []string{"/v1/models", "/v1/models?client_version=1", "/models"} {
+		w := httptest.NewRecorder()
+		newGatewayRoutesTestRouter(service.PlatformSeedance).ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		require.Equal(t, http.StatusNoContent, w.Code, path)
 	}
 }

@@ -97,6 +97,21 @@ func (h *MediaTaskHandler) prepareTask(ctx context.Context, key *APIKey, req *Me
 	if account.RateMultiplier != nil && *account.RateMultiplier != 1 {
 		return nil, false, infraerrors.BadRequest("MEDIA_MULTIPLIER_UNSUPPORTED", "Seedance account multiplier must be 1")
 	}
+	// Canvas sends data URLs inline. Upload on the chosen account before any
+	// reservation; retain only upstream reference IDs in the durable intent.
+	// The hash above covers the original bytes, so retries return the same task
+	// even after reference expiry. Concurrent retries can upload twice but only
+	// CreateTask's unique owner-scoped ID can reserve/submit a billable job.
+	if len(req.InlineImages) > 0 {
+		inlineIDs, err := h.uploadSeedanceInlineImages(ctx, account, req.InlineImages)
+		if err != nil {
+			return nil, false, err
+		}
+		images = append(images, inlineIDs...)
+		copyReq := *req
+		copyReq.InlineImages = nil
+		req = &copyReq
+	}
 	task := &MediaTaskRecord{
 		ID: id, UserID: key.UserID, APIKeyID: key.ID, AccountID: account.ID, GroupID: key.GroupID,
 		Platform: PlatformSeedance, Model: req.Model, DurationSeconds: req.DurationSeconds,

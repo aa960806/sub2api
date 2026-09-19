@@ -20,8 +20,10 @@ func seedanceGatewayScope() gin.HandlerFunc {
 		}
 		path := c.FullPath()
 		mediaRoute := strings.HasPrefix(path, "/v1/media/") || strings.HasPrefix(path, "/media/")
+		mediaRoute = mediaRoute || path == "/v1/contents/generations/tasks" || path == "/v1/contents/generations/tasks/:task_id"
 		seedance := apiKey.Group.Platform == service.PlatformSeedance
-		if mediaRoute != seedance && path != "/v1/usage" && path != "/v1/sub2api/billing" {
+		shared := path == "/v1/usage" || path == "/v1/sub2api/billing" || path == "/v1/models" || path == "/models"
+		if mediaRoute != seedance && !shared {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{
 				"type": "not_found_error", "message": "This endpoint is not supported for this platform",

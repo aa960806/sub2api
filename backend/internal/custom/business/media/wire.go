@@ -46,6 +46,9 @@ func ProvideMediaTaskService(
 		provider = provider.WithImageLimits(cfg.Gateway.Media.MaxImageBytes, cfg.Gateway.Media.MaxImagesTotalBytes)
 	}
 	svc := NewMediaTaskService(store, service.PlatformSeedance, provider)
+	if cfg != nil {
+		svc.withDownloadSigningSecret(cfg.JWT.Secret)
+	}
 	return svc.WithBilling(NewMediaTaskBilling(gateway, apiKeyService)).WithEnabled(cfg != nil && cfg.Gateway.Media.Enabled)
 }
 

@@ -16,7 +16,7 @@ func isSeedanceTaskRead(c *gin.Context, apiKey *service.APIKey) bool {
 		return false
 	}
 	switch c.FullPath() {
-	case "/v1/media/videos/:task_id", "/v1/media/videos/:task_id/content", "/media/videos/:task_id", "/media/videos/:task_id/content":
+	case "/v1/media/videos/:task_id", "/v1/media/videos/:task_id/content", "/media/videos/:task_id", "/media/videos/:task_id/content", "/v1/contents/generations/tasks/:task_id":
 		return true
 	default:
 		return false
